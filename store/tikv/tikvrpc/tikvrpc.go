@@ -434,6 +434,14 @@ func CallRPC(ctx context.Context, client tikvpb.TikvClient, req *Request) (*Resp
 	resp := &Response{}
 	resp.Type = req.Type
 	var err error
+	for {
+		select {
+		case <-ctx.Done():
+			return resp, ctx.Err()
+		default:
+			time.Sleep(time.Second)
+		}
+	}
 	switch req.Type {
 	case CmdGet:
 		resp.Get, err = client.KvGet(ctx, req.Get)

@@ -14,7 +14,12 @@
 package tikv
 
 import (
+	"log"
+	"math/rand"
 	"net"
+	"os"
+	"runtime/pprof"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -292,4 +297,92 @@ func (s *testRegionRequestSuite) TestNoReloadRegionForGrpcWhenCtxCanceled(c *C) 
 	// cleanup
 	server.Stop()
 	wg.Wait()
+}
+
+func (s *testRegionRequestSuite) TestSend(c *C) {
+	f, err := os.Create("./pprof.out")
+	if err != nil {
+		log.Fatal("could not create CPU profile: ", err)
+	}
+	defer f.Close()
+	if err := pprof.StartCPUProfile(f); err != nil {
+		log.Fatal("could not start CPU profile: ", err)
+	}
+	defer pprof.StopCPUProfile()
+	cluster := mocktikv.NewCluster()
+	keys := GenerateKeys(20000)
+	mocktikv.BootstrapWithMultiRegions(cluster, keys...)
+	pdCli := &codecPDClient{mocktikv.NewPDClient(cluster)}
+	cache := NewRegionCache(pdCli)
+	bo := NewBackoffer(context.Background(), 20000)
+
+	// prepare a mock tikv grpc server
+	addr := "127.0.0.1:56341"
+	lis, _ := net.Listen("tcp", addr)
+	server := grpc.NewServer()
+	tikvpb.RegisterTikvServer(server, &mockTikvGrpcServer{})
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		server.Serve(lis)
+		wg.Done()
+	}()
+
+	for j := 0; j < 10; j++ {
+		wg.Add(100000)
+		for i := 0; i < 100000; i++ {
+			go func() {
+				defer wg.Done()
+				// start := time.Now()
+				r := time.Duration(rand.Intn(1000))
+				time.Sleep(r * time.Millisecond)
+				client := newRPCClient(config.Security{})
+				sender := NewRegionRequestSender(cache, client)
+				req := &tikvrpc.Request{
+					Type: tikvrpc.CmdRawPut,
+					RawPut: &kvrpcpb.RawPutRequest{
+						Key:   []byte("key"),
+						Value: []byte("value"),
+					},
+				}
+				n := rand.Intn(20000)
+				region, _ := cache.LocateKey(bo, keys[n])
+				bo, _ := bo.Fork()
+				sender.SendReq(bo, req, region.Region, 1*time.Second)
+				// fmt.Println("cost time: ", time.Since(start))
+			}()
+		}
+		time.Sleep(time.Second)
+	}
+	// cleanup
+	server.Stop()
+	wg.Wait()
+}
+
+const (
+	keyChars = "abcdefghijklmnopqrstuvwxyz"
+	keyLen   = 10
+)
+
+// GenerateKeys generates ordered, unique strings.
+func GenerateKeys(size int) [][]byte {
+	m := make(map[string]struct{}, size)
+	for len(m) < size {
+		k := make([]byte, keyLen)
+		for i := range k {
+			k[i] = keyChars[rand.Intn(len(keyChars))]
+		}
+		m[string(k)] = struct{}{}
+	}
+
+	v := make([]string, 0, size)
+	for k := range m {
+		v = append(v, k)
+	}
+	sort.Strings(v)
+	ret := make([][]byte, 0, size)
+	for _, v1 := range v {
+		ret = append(ret, []byte(v1))
+	}
+	return ret
 }

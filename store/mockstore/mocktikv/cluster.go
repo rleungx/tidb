@@ -16,7 +16,9 @@ package mocktikv
 import (
 	"bytes"
 	"math"
+	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
@@ -207,6 +209,7 @@ func (c *Cluster) GetRegionByKey(key []byte) (*metapb.Region, *metapb.Peer) {
 	c.RLock()
 	defer c.RUnlock()
 
+	time.Sleep(time.Duration(rand.Intn(20)) * time.Millisecond)
 	for _, r := range c.regions {
 		if regionContains(r.Meta.StartKey, r.Meta.EndKey, key) {
 			return proto.Clone(r.Meta).(*metapb.Region), proto.Clone(r.leaderPeer()).(*metapb.Peer)

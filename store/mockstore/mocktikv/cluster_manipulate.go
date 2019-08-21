@@ -19,7 +19,7 @@ import "fmt"
 func BootstrapWithSingleStore(cluster *Cluster) (storeID, peerID, regionID uint64) {
 	ids := cluster.AllocIDs(3)
 	storeID, peerID, regionID = ids[0], ids[1], ids[2]
-	cluster.AddStore(storeID, fmt.Sprintf("store%d", storeID))
+	cluster.AddStore(storeID, fmt.Sprintf("127.0.0.1:56341", storeID))
 	cluster.Bootstrap(regionID, []uint64{storeID}, []uint64{peerID}, peerID)
 	return
 }
