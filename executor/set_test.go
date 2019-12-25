@@ -814,6 +814,12 @@ func (s *testSuite5) TestSelectGlobalVar(c *C) {
 	c.Assert(terror.ErrorEqual(err, variable.ErrUnknownSystemVar), IsTrue, Commentf("err %v", err))
 }
 
+
+func (s *testSuite5) TestClusterVar(c *C) {
+	tk := testkit.NewTestKit(c, s.store)
+	tk.Exec("SET CLUSTER pd.region_schedule_limit = 1")
+}
+
 func (s *testSuite5) TestEnableNoopFunctionsVar(c *C) {
 	tk := testkit.NewTestKit(c, s.store)
 

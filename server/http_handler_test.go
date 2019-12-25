@@ -742,7 +742,7 @@ func (ts *HTTPHandlerTestSuite) TestGetSchema(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(dbtbl.TableInfo.Name.L, Equals, "user")
 	c.Assert(dbtbl.DBInfo.Name.L, Equals, "mysql")
-	se, err := session.CreateSession(ts.store.(kv.Storage))
+	se, err := session.CreateSession(ts.store.(kv.Storage), nil)
 	c.Assert(err, IsNil)
 	c.Assert(dbtbl.SchemaVersion, Equals, domain.GetDomain(se.(sessionctx.Context)).InfoSchema().SchemaMetaVersion())
 

@@ -29,6 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pingcap/kvproto/pkg/configpb"
 	"github.com/ngaut/pools"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/errors"
@@ -40,6 +41,7 @@ import (
 	"github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/parser/terror"
+	pd "github.com/pingcap/pd/client"
 	"github.com/pingcap/tidb/bindinfo"
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/domain"
@@ -189,6 +191,8 @@ type session struct {
 
 	// shared coprocessor client per session
 	client kv.Client
+
+	clusterConfig *config.ClusterConfig
 }
 
 // AddTableLock adds table lock to the session lock map.
@@ -346,6 +350,22 @@ func (s *session) SetSessionManager(sm util.SessionManager) {
 
 func (s *session) GetSessionManager() util.SessionManager {
 	return s.sessionManager
+}
+
+func (s *session) GetConfigClient() pd.ConfigClient {
+	return s.clusterConfig.GetConfigClient()
+}
+
+func (s *session) GlobalVersion(component string) uint64 {
+	return s.clusterConfig.GlobalVersion(component)
+}
+
+func (s *session) LocalVersion(component, componentID string) uint64 {
+	return s.clusterConfig.LocalVersion(component, componentID)
+}
+
+func (s *session) SetVersion(component, componentID string, ver *configpb.Version) {
+	s.clusterConfig.SetVersion(component, componentID, ver)
 }
 
 func (s *session) StoreQueryFeedback(feedback interface{}) {
@@ -1703,6 +1723,7 @@ func createSession(store kv.Storage) (*session, error) {
 		sessionVars:     variable.NewSessionVars(),
 		ddlOwnerChecker: dom.DDL().OwnerManager(),
 		client:          store.GetClient(),
+		clusterConfig:   dom.ClusterConfig(),
 	}
 	if plannercore.PreparedPlanCacheEnabled() {
 		s.preparedPlanCache = kvcache.NewSimpleLRUCache(plannercore.PreparedPlanCacheCapacity,

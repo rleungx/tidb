@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/kvproto/pkg/configpb"
 	"github.com/pingcap/parser/ast"
 	"github.com/pingcap/parser/charset"
 	"github.com/pingcap/parser/terror"
@@ -87,6 +88,24 @@ func (e *SetExecutor) Next(ctx context.Context, req *chunk.Chunk) error {
 				sessionVars.Users[name] = fmt.Sprintf("%v", svalue)
 			}
 			continue
+		}
+
+		if v.IsCluster {
+			var component string
+			if strings.HasPrefix(name, "tidb.") {
+				name = name[5:]
+				component = "tidb"
+			} else if strings.HasPrefix(name, "tikv.") {
+				name = name[5:]
+				component = "tikv"
+			} else if strings.HasPrefix(name, "pd.") {
+				name = name[3:]
+				component = "pd"
+			}
+			err := e.setClusterVar(ctx, name, component, v)
+			if err != nil {
+				return err
+			}
 		}
 
 		syns := e.getSynonyms(name)
@@ -209,6 +228,54 @@ func (e *SetExecutor) setSysVariable(name string, v *expression.VarAssignment) e
 	}
 
 	return nil
+}
+
+func (e *SetExecutor) setClusterVar(ctx context.Context, name, component string, v *expression.VarAssignment) error {
+	value, err := v.Expr.Eval(chunk.Row{})
+	if err != nil {
+		return err
+	}
+	if value.IsNull() {
+		value.SetString("")
+	}
+	valStr, err := value.ToString()
+	if err != nil {
+		return err
+	}
+	var kind *configpb.ConfigKind
+	// if componentID!="" {
+	// 	kind= &configpb.ConfigKind{Kind: &configpb.ConfigKind_Local{Local: &configpb.Local{ComponentId: componentID}}}
+	// } else {
+	// 	kind= &configpb.ConfigKind{Kind: &configpb.ConfigKind_Global{Global: &configpb.Global{Component: component}}}
+	// }
+
+	kind = &configpb.ConfigKind{Kind: &configpb.ConfigKind_Global{Global: &configpb.Global{Component: component}}}
+
+	entries := []*configpb.ConfigEntry{{Name: name, Value: valStr}}
+
+	fmt.Printf("debug kind: %v\n", kind)
+	fmt.Printf("debug entries: %v\n", entries)
+	fmt.Printf("debug version: %v", &configpb.Version{Global: e.ctx.GlobalVersion(component), Local: e.ctx.LocalVersion(component, "")})
+	for {
+		version := &configpb.Version{Global: e.ctx.GlobalVersion(component), Local: e.ctx.LocalVersion(component, "")}
+		status, ver, err := e.ctx.GetConfigClient().Update(ctx, version, kind, entries)
+		if err != nil {
+			return errors.Errorf("failed to update config: %v", err)
+		}
+		switch status.GetCode() {
+		case configpb.StatusCode_OK:
+			e.ctx.SetVersion(component, "", ver)
+			return nil
+		case configpb.StatusCode_WRONG_VERSION:
+			e.ctx.SetVersion(component, "", ver)
+			continue
+		case configpb.StatusCode_COMPONENT_NOT_FOUND, configpb.StatusCode_COMPONENT_ID_NOT_FOUND:
+			return errors.Errorf("failed to find component or component ID: %v", status.GetMessage())
+		case configpb.StatusCode_UNKNOWN:
+			return errors.Errorf("unknown error: %v", status.GetMessage())
+		}
+		return nil
+	}
 }
 
 func (e *SetExecutor) setCharset(cs, co string) error {

@@ -100,6 +100,8 @@ const (
 	nmProxyProtocolNetworks      = "proxy-protocol-networks"
 	nmProxyProtocolHeaderTimeout = "proxy-protocol-header-timeout"
 	nmAffinityCPU                = "affinity-cpus"
+
+	nmClusterConfig = "enable-cluster-config"
 )
 
 var (
@@ -141,14 +143,17 @@ var (
 	// PROXY Protocol
 	proxyProtocolNetworks      = flag.String(nmProxyProtocolNetworks, "", "proxy protocol networks allowed IP or *, empty mean disable proxy protocol support")
 	proxyProtocolHeaderTimeout = flag.Uint(nmProxyProtocolHeaderTimeout, 5, "proxy protocol header read timeout, unit is second.")
+
+	// dynamic config
+	dynamicfConfig = flagBoolean(nmClusterConfig, true, "If enable dynamic config")
 )
 
 var (
-	cfg      *config.Config
-	storage  kv.Storage
-	dom      *domain.Domain
-	svr      *server.Server
-	graceful bool
+	cfg           *config.Config
+	storage       kv.Storage
+	dom           *domain.Domain
+	svr           *server.Server
+	graceful      bool
 )
 
 func main() {

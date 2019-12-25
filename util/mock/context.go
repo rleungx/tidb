@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/kvproto/pkg/configpb"
 	"github.com/pingcap/parser/model"
+	pd "github.com/pingcap/pd/client"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/owner"
 	"github.com/pingcap/tidb/sessionctx"
@@ -103,6 +105,25 @@ func (c *Context) GetClient() kv.Client {
 		return nil
 	}
 	return c.Store.GetClient()
+}
+
+// GetConfigClient implements sessionctx.Context GetConfigClient interface.
+func (c *Context) GetConfigClient() pd.ConfigClient {
+	return nil
+}
+
+// GlobalVersion implements sessionctx.Context GlobalVersion interface.
+func (c *Context) GlobalVersion(component string) uint64 {
+	return 0
+}
+
+// LocalVersion implements sessionctx.Context LocalVersion interface.
+func (c *Context) LocalVersion(component, componentID string) uint64 {
+	return 0
+}
+
+// SetVersion implements sessionctx.Context SetVersion interface.
+func (c *Context) SetVersion(component, componentID string, ver *configpb.Version) {
 }
 
 // GetGlobalSysVar implements GlobalVarAccessor GetGlobalSysVar interface.

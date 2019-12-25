@@ -72,6 +72,7 @@ type Domain struct {
 	sysSessionPool       *sessionPool
 	exit                 chan struct{}
 	etcdClient           *clientv3.Client
+	clusterConfig 		 *config.ClusterConfig
 	gvc                  GlobalVariableCache
 	slowQuery            *topNSlowQueries
 	expensiveQueryHandle *expensivequery.Handle
@@ -316,6 +317,11 @@ func (do *Domain) InfoSyncer() *infosync.InfoSyncer {
 // Store gets KV store from domain.
 func (do *Domain) Store() kv.Storage {
 	return do.store
+}
+
+// ClusterConfig gets ClusterConfig from domain.
+func (do *Domain) ClusterConfig() *config.ClusterConfig {
+	return do.clusterConfig
 }
 
 // GetScope gets the status variables scope.
@@ -643,6 +649,10 @@ func (do *Domain) Init(ddlLease time.Duration, sysFactory func(*Domain) (pools.R
 				return errors.Trace(err)
 			}
 			do.etcdClient = cli
+			do.clusterConfig, err = config.NewClusterConfig(addrs)
+			if err != nil {
+				return errors.Trace(err)
+			}
 		}
 	}
 

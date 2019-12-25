@@ -17,7 +17,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/pingcap/kvproto/pkg/configpb"
 	"github.com/pingcap/parser/model"
+	pd "github.com/pingcap/pd/client"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/owner"
 	"github.com/pingcap/tidb/sessionctx/variable"
@@ -99,6 +101,12 @@ type Context interface {
 	HasLockedTables() bool
 	// PrepareTxnFuture uses to prepare txn by future.
 	PrepareTxnFuture(ctx context.Context)
+
+	// GetConfigClient gets a pd.ConfigClient.
+	GetConfigClient() pd.ConfigClient
+	GlobalVersion(component string) uint64
+	LocalVersion(component, componentID string) uint64
+	SetVersion(component, componentID string, ver *configpb.Version)
 }
 
 type basicCtxType int

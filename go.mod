@@ -76,3 +76,7 @@ require (
 )
 
 go 1.13
+
+replace github.com/pingcap/pd => /home/ryan/pd
+
+replace github.com/pingcap/parser => /home/ryan/parser
