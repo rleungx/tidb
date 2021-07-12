@@ -85,3 +85,5 @@ require (
 )
 
 go 1.16
+
+replace github.com/pingcap/parser => github.com/rleungx/parser v0.0.0-20210708041129-143e0652bf51

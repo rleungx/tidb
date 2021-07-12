@@ -2585,6 +2585,10 @@ func (d *ddl) AlterTable(ctx context.Context, sctx sessionctx.Context, ident ast
 			err = d.AlterTableAddStatistics(sctx, ident, spec.Statistics, spec.IfNotExists)
 		case ast.AlterTableDropStatistics:
 			err = d.AlterTableDropStatistics(sctx, ident, spec.Statistics, spec.IfExists)
+		case ast.AlterTableAttributes:
+			err = d.AlterTableAttributes(ctx, ident, spec)
+		case ast.AlterTableAlterPartitionAttributes:
+			err = d.AlterTableAlterPartitionAttributes(ctx, ident, spec)
 		default:
 			// Nothing to do now.
 		}
@@ -5986,6 +5990,65 @@ func (d *ddl) AlterTableAlterPartition(ctx sessionctx.Context, ident ast.Ident, 
 		Type:       model.ActionAlterTableAlterPartition,
 		BinlogInfo: &model.HistoryInfo{},
 		Args:       []interface{}{partitionID, bundle},
+	}
+
+	err = d.doDDLJob(ctx, job)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	err = d.callHookOnChanged(err)
+	return errors.Trace(err)
+}
+
+func (d *ddl) AlterTableAttributes(ctx sessionctx.Context, ident ast.Ident, spec *ast.AlterTableSpec) error {
+	schema, tb, err := d.getSchemaAndTableByIdent(ctx, ident)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	meta := tb.Meta()
+
+	job := &model.Job{
+		SchemaID:   schema.ID,
+		TableID:    meta.ID,
+		SchemaName: schema.Name.L,
+		Type:       model.ActionAlterTable,
+		BinlogInfo: &model.HistoryInfo{},
+		Args:       []interface{}{},
+	}
+
+	err = d.doDDLJob(ctx, job)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	err = d.callHookOnChanged(err)
+	return errors.Trace(err)
+}
+
+func (d *ddl) AlterTableAlterPartitionAttributes(ctx sessionctx.Context, ident ast.Ident, spec *ast.AlterTableSpec) (err error) {
+	schema, tb, err := d.getSchemaAndTableByIdent(ctx, ident)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	meta := tb.Meta()
+	if meta.Partition == nil {
+		return errors.Trace(ErrPartitionMgmtOnNonpartitioned)
+	}
+
+	partitionID, err := tables.FindPartitionByName(meta, spec.PartitionNames[0].L)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	job := &model.Job{
+		SchemaID:   schema.ID,
+		TableID:    meta.ID,
+		SchemaName: schema.Name.L,
+		Type:       model.ActionAlterTableAlterPartition,
+		BinlogInfo: &model.HistoryInfo{},
+		Args:       []interface{}{partitionID},
 	}
 
 	err = d.doDDLJob(ctx, job)
