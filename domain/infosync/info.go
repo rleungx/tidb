@@ -463,6 +463,32 @@ func PutLabelRule(ctx context.Context, rule *attribute.Rule) error {
 	return err
 }
 
+// GetAllLabelRules...
+func GetAllLabelRules(ctx context.Context) ([]*attribute.Rule, error) {
+	is, err := getGlobalInfoSyncer()
+	if err != nil {
+		return nil, err
+	}
+
+	if is.etcdCli == nil {
+		return nil, err
+	}
+
+	addrs := is.etcdCli.Endpoints()
+
+	if len(addrs) == 0 {
+		return nil, errors.Errorf("pd unavailable")
+	}
+
+	rules := []*attribute.Rule{}
+	res, err := doRequest(ctx, addrs, path.Join(pdapi.Config, "region-label", "rule"), "GET", nil)
+
+	if err == nil && res != nil {
+		err = json.Unmarshal(res, &rules)
+	}
+	return rules, err
+}
+
 func (is *InfoSyncer) getAllServerInfo(ctx context.Context) (map[string]*ServerInfo, error) {
 	allInfo := make(map[string]*ServerInfo)
 	if is.etcdCli == nil {
