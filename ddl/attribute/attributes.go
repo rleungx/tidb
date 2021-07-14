@@ -11,10 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package label
+package attribute
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -28,15 +27,15 @@ type Attribute struct {
 type Attributes []Attribute
 
 // NewConstraints will check labels, and build Constraints for rule.
-func NewAttributes(labels []string) (Attributes, error) {
-	attributes := make(Attributes, 0, len(labels))
-	for _, str := range labels {
-		label, err := NewAttribute(strings.TrimSpace(str))
+func NewAttributes(attrs []string) (Attributes, error) {
+	attributes := make(Attributes, 0, len(attrs))
+	for _, str := range attrs {
+		attr, err := NewAttribute(strings.TrimSpace(str))
 		if err != nil {
 			return attributes, err
 		}
 
-		err = attributes.Add(label)
+		err = attributes.Add(attr)
 		if err != nil {
 			return attributes, err
 		}
@@ -64,66 +63,35 @@ func (attributes *Attributes) Restore() (string, error) {
 
 // Add will add a new label constraint, with validation of all constraints.
 // Note that Add does not validate one single constraint.
-func (attributes *Attributes) Add(label Attribute) error {
+func (attributes *Attributes) Add(attr Attribute) error {
 	pass := true
-
-	for _, cnst := range *attributes {
-		res := label.CompatibleWith(&cnst)
-		if res == ConstraintCompatible {
+	for _, attribute := range *attributes {
+		if attr.Value != attribute.Value {
 			continue
-		}
-		if res == ConstraintDuplicated {
+		} else {
 			pass = false
 			continue
 		}
-		s1, err := label.Restore()
-		if err != nil {
-			s1 = err.Error()
-		}
-		s2, err := cnst.Restore()
-		if err != nil {
-			s2 = err.Error()
-		}
-		return fmt.Errorf("%w: '%s' and '%s'", ErrConflictingConstraints, s1, s2)
 	}
 
 	if pass {
-		*attributes = append(*attributes, label)
+		*attributes = append(*attributes, attr)
 	}
 	return nil
 }
 
 // NewConstraint will create a Constraint from a string.
-func NewAttribute(label string) (Attribute, error) {
+func NewAttribute(attr string) (Attribute, error) {
 	r := Attribute{}
-
-	if len(label) < 4 {
-		return r, fmt.Errorf("%w: %s", ErrInvalidConstraintFormat, label)
-	}
-
-	kv := strings.Split(label[1:], "=")
-	if len(kv) != 2 {
-		return r, fmt.Errorf("%w: %s", ErrInvalidConstraintFormat, label)
-	}
-
-	val := strings.TrimSpace(kv[1])
-	if val == "" {
-		return r, fmt.Errorf("%w: %s", ErrInvalidConstraintFormat, label)
-	}
-
+	value := strings.TrimSpace(attr)
 	r.Key = "attribute"
-	r.Value = val
+	r.Value = value
 	return r, nil
 }
 
 // Restore converts a Constraint to a string.
 func (a *Attribute) Restore() (string, error) {
 	var sb strings.Builder
-	if len(a.Value) != 1 {
-		return "", fmt.Errorf("%w: constraint should have exactly one label value, got %v", ErrInvalidConstraintFormat, c.Values)
-	}
-	sb.WriteString(a.Key)
-	sb.WriteString("=")
 	sb.WriteString(a.Value)
 	return sb.String(), nil
 }

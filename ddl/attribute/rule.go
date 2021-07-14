@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package label
+package attribute
 
 import (
 	"encoding/json"
@@ -22,10 +22,10 @@ import (
 
 // Rule is the rule to assign labels to a region.
 type Rule struct {
-	ID       string        `json:"id"`
-	Labels   []RegionLabel `json:"labels"`
-	RuleType string        `json:"rule_type"`
-	Rule     interface{}   `json:"rule"`
+	ID         string      `json:"id"`
+	Attribules []Attribute `json:"labels"`
+	RuleType   string      `json:"rule_type"`
+	Rule       interface{} `json:"rule"`
 }
 
 func NewRule(id string) *Rule {
@@ -35,21 +35,17 @@ func NewRule(id string) *Rule {
 }
 
 func (r *Rule) ApplyAttributesSpec(spec *ast.AttributesSpec) error {
-	newRule = &Rule{}
 	attrBytes := []byte(spec.Attributes)
-
 	attributes := []string{}
 	err := yaml.UnmarshalStrict(attrBytes, &attributes)
 	if err == nil {
-		labelAttributes, err := NewAttributes(constraints1)
+		attributes, err := NewAttributes(attributes)
 		if err != nil {
-			return newRule, err
+			return err
 		}
-		newRule.Labels = labelAttributes
-
-		return newRule, nil
+		r.Attribules = attributes
+		return nil
 	}
-
 	return nil
 }
 

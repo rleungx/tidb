@@ -360,7 +360,7 @@ func tlsOption2GlobalPriv(tlsOptions []*ast.TLSOption) (priv []byte, err error) 
 	gp := privileges.GlobalPrivValue{SSLType: privileges.SslTypeNotSpecified}
 	for _, tlsOpt := range tlsOptions {
 		switch tlsOpt.Type {
-		case ast.TlsNone:
+		case ast.TslNone:
 			gp.SSLType = privileges.SslTypeNone
 		case ast.Ssl:
 			gp.SSLType = privileges.SslTypeAny
