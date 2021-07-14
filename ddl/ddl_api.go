@@ -38,6 +38,7 @@ import (
 	"github.com/pingcap/parser/terror"
 	field_types "github.com/pingcap/parser/types"
 	"github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/ddl/attribute"
 	"github.com/pingcap/tidb/ddl/placement"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/infoschema"
@@ -6008,13 +6009,30 @@ func (d *ddl) AlterTableAttributes(ctx sessionctx.Context, ident ast.Ident, spec
 	}
 	meta := tb.Meta()
 
+	rule := infoschema.GetRule(d.infoCache.GetLatest(), []int64{meta.ID, schema.ID})
+	rule.ID = attribute.ID(meta.ID)
+	err = rule.ApplyAttributesSpec(spec.AttributesSpec)
+	if err != nil {
+		var sb strings.Builder
+		sb.Reset()
+
+		restoreCtx := format.NewRestoreCtx(format.RestoreStringSingleQuotes|format.RestoreKeyWordLowercase|format.RestoreNameBackQuotes, &sb)
+
+		if e := spec.Restore(restoreCtx); e != nil {
+			return ErrInvalidAttributesSpec.GenWithStackByArgs("", err)
+		}
+		return ErrInvalidAttributesSpec.GenWithStackByArgs(sb.String(), err)
+	}
+
+	rule.Reset(meta.ID)
+
 	job := &model.Job{
 		SchemaID:   schema.ID,
 		TableID:    meta.ID,
 		SchemaName: schema.Name.L,
 		Type:       model.ActionAlterTableAttributes,
 		BinlogInfo: &model.HistoryInfo{},
-		Args:       []interface{}{},
+		Args:       []interface{}{rule},
 	}
 
 	err = d.doDDLJob(ctx, job)
@@ -6042,13 +6060,30 @@ func (d *ddl) AlterTablePartitionAttributes(ctx sessionctx.Context, ident ast.Id
 		return errors.Trace(err)
 	}
 
+	rule := infoschema.GetRule(d.infoCache.GetLatest(), []int64{partitionID, meta.ID, schema.ID})
+	rule.ID = attribute.ID(partitionID)
+	err = rule.ApplyAttributesSpec(spec.AttributesSpec)
+	if err != nil {
+		var sb strings.Builder
+		sb.Reset()
+
+		restoreCtx := format.NewRestoreCtx(format.RestoreStringSingleQuotes|format.RestoreKeyWordLowercase|format.RestoreNameBackQuotes, &sb)
+
+		if e := spec.Restore(restoreCtx); e != nil {
+			return ErrInvalidAttributesSpec.GenWithStackByArgs("", err)
+		}
+		return ErrInvalidAttributesSpec.GenWithStackByArgs(sb.String(), err)
+	}
+
+	rule.Reset(partitionID)
+
 	job := &model.Job{
 		SchemaID:   schema.ID,
 		TableID:    meta.ID,
 		SchemaName: schema.Name.L,
 		Type:       model.ActionAlterTablePartitionAttributes,
 		BinlogInfo: &model.HistoryInfo{},
-		Args:       []interface{}{partitionID},
+		Args:       []interface{}{partitionID, rule},
 	}
 
 	err = d.doDDLJob(ctx, job)
