@@ -2587,8 +2587,8 @@ func (d *ddl) AlterTable(ctx context.Context, sctx sessionctx.Context, ident ast
 			err = d.AlterTableDropStatistics(sctx, ident, spec.Statistics, spec.IfExists)
 		case ast.AlterTableAttributes:
 			err = d.AlterTableAttributes(ctx, ident, spec)
-		case ast.AlterTableAlterPartitionAttributes:
-			err = d.AlterTableAlterPartitionAttributes(ctx, ident, spec)
+		case ast.AlterTablePartitionAttributes:
+			err = d.AlterTablePartitionAttributes(ctx, ident, spec)
 		default:
 			// Nothing to do now.
 		}
@@ -6012,7 +6012,7 @@ func (d *ddl) AlterTableAttributes(ctx sessionctx.Context, ident ast.Ident, spec
 		SchemaID:   schema.ID,
 		TableID:    meta.ID,
 		SchemaName: schema.Name.L,
-		Type:       model.ActionAlterTable,
+		Type:       model.ActionAlterTableAttributes,
 		BinlogInfo: &model.HistoryInfo{},
 		Args:       []interface{}{},
 	}
@@ -6026,7 +6026,7 @@ func (d *ddl) AlterTableAttributes(ctx sessionctx.Context, ident ast.Ident, spec
 	return errors.Trace(err)
 }
 
-func (d *ddl) AlterTableAlterPartitionAttributes(ctx sessionctx.Context, ident ast.Ident, spec *ast.AlterTableSpec) (err error) {
+func (d *ddl) AlterTablePartitionAttributes(ctx sessionctx.Context, ident ast.Ident, spec *ast.AlterTableSpec) (err error) {
 	schema, tb, err := d.getSchemaAndTableByIdent(ctx, ident)
 	if err != nil {
 		return errors.Trace(err)
@@ -6046,7 +6046,7 @@ func (d *ddl) AlterTableAlterPartitionAttributes(ctx sessionctx.Context, ident a
 		SchemaID:   schema.ID,
 		TableID:    meta.ID,
 		SchemaName: schema.Name.L,
-		Type:       model.ActionAlterTableAlterPartition,
+		Type:       model.ActionAlterTablePartitionAttributes,
 		BinlogInfo: &model.HistoryInfo{},
 		Args:       []interface{}{partitionID},
 	}

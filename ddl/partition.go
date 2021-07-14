@@ -1748,6 +1748,42 @@ func onAlterTableAlterPartition(t *meta.Meta, job *model.Job) (ver int64, err er
 	return ver, nil
 }
 
+// func onAlterTablePartitionAttributes(t *meta.Meta, job *model.Job) (ver int64, err error) {
+// 	var partitionID int64
+// 	rule := &label.Rule{}
+// 	err = job.DecodeArgs(&partitionID, rule)
+// 	if err != nil {
+// 		job.State = model.JobStateCancelled
+// 		return 0, errors.Trace(err)
+// 	}
+
+// 	tblInfo, err := getTableInfoAndCancelFaultJob(t, job, job.SchemaID)
+// 	if err != nil {
+// 		return 0, err
+// 	}
+
+// 	ptInfo := tblInfo.GetPartitionInfo()
+// 	if ptInfo.GetNameByID(partitionID) == "" {
+// 		job.State = model.JobStateCancelled
+// 		return 0, errors.Trace(table.ErrUnknownPartition.GenWithStackByArgs("drop?", tblInfo.Name.O))
+// 	}
+
+// 	err = infosync.PutLabelRule(context.TODO(), rule)
+// 	if err != nil {
+// 		job.State = model.JobStateCancelled
+// 		return 0, errors.Wrapf(err, "failed to notify PD region label")
+// 	}
+// 	// used by ApplyDiff in updateSchemaVersion
+// 	job.CtxVars = []interface{}{partitionID}
+// 	ver, err = updateVersionAndTableInfo(t, job, tblInfo, true)
+// 	if err != nil {
+// 		return ver, errors.Trace(err)
+// 	}
+// 	job.FinishTableJob(model.JobStateDone, model.StatePublic, ver, tblInfo)
+
+// 	return ver, nil
+// }
+
 type partitionExprProcessor func(sessionctx.Context, *model.TableInfo, ast.ExprNode) error
 
 type partitionExprChecker struct {

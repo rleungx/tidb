@@ -812,6 +812,10 @@ func (w *worker) runDDLJob(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, 
 		ver, err = onAlterSequence(t, job)
 	case model.ActionRenameTables:
 		ver, err = onRenameTables(d, t, job)
+	case model.ActionAlterTableAttributes:
+		ver, err = onAlterTableAlterPartition(t, job)
+	case model.ActionAlterTablePartitionAttributes:
+		ver, err = onAlterTableAlterPartition(t, job)
 	default:
 		// Invalid job, cancel it.
 		job.State = model.JobStateCancelled
