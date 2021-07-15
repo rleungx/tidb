@@ -1521,13 +1521,14 @@ func getPartitionIDs(table *model.TableInfo) []int64 {
 	return physicalTableIDs
 }
 
-func getPartitionNames(table *model.TableInfo) []string {
+func getNames(name string, table *model.TableInfo) []string {
 	if table.GetPartitionInfo() == nil {
 		return []string{}
 	}
 	partNames := make([]string, 0, len(table.Partition.Definitions))
 	for _, def := range table.Partition.Definitions {
-		partNames = append(partNames, def.Name.L)
+		name := fmt.Sprintf("%s/%s/%s/%s", attribute.IdPrefix, name, table.Name.L, def.Name.L)
+		partNames = append(partNames, name)
 	}
 	return partNames
 }

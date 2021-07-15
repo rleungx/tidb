@@ -195,6 +195,7 @@ func onDropTableOrView(t *meta.Meta, job *model.Job) (ver int64, _ error) {
 	case model.StateDeleteOnly:
 		tblInfo.State = model.StateNone
 		oldIDs := getPartitionIDs(tblInfo)
+		oldNames := getNames(job.SchemaName, tblInfo)
 		job.CtxVars = []interface{}{oldIDs}
 		ver, err = updateVersionAndTableInfo(t, job, tblInfo, originalState != tblInfo.State)
 		if err != nil {
@@ -212,7 +213,7 @@ func onDropTableOrView(t *meta.Meta, job *model.Job) (ver int64, _ error) {
 		// Finish this job.
 		job.FinishTableJob(model.JobStateDone, model.StateNone, ver, tblInfo)
 		startKey := tablecodec.EncodeTablePrefix(job.TableID)
-		job.Args = append(job.Args, startKey, oldIDs)
+		job.Args = append(job.Args, startKey, oldIDs, oldNames)
 	default:
 		err = ErrInvalidDDLState.GenWithStackByArgs("table", tblInfo.State)
 	}

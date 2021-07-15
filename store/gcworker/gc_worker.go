@@ -34,6 +34,7 @@ import (
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/terror"
+	"github.com/pingcap/tidb/ddl/attribute"
 	"github.com/pingcap/tidb/ddl/placement"
 	"github.com/pingcap/tidb/ddl/util"
 	"github.com/pingcap/tidb/domain/infosync"
@@ -722,6 +723,16 @@ func (w *GCWorker) deleteRanges(ctx context.Context, safePoint uint64, concurren
 		pid, err := w.doGCPlacementRules(r)
 		if err != nil {
 			logutil.Logger(ctx).Error("[gc worker] gc placement rules failed on range",
+				zap.String("uuid", w.uuid),
+				zap.Int64("jobID", r.JobID),
+				zap.Int64("elementID", r.ElementID),
+				zap.Int64("pid", pid),
+				zap.Error(err))
+			continue
+		}
+		pid, err = w.doGCLabelRules(r)
+		if err != nil {
+			logutil.Logger(ctx).Error("[gc worker] gc label rules failed on range",
 				zap.String("uuid", w.uuid),
 				zap.Int64("jobID", r.JobID),
 				zap.Int64("elementID", r.ElementID),
@@ -1877,9 +1888,10 @@ func (w *GCWorker) doGCPlacementRules(dr util.DelRangeTask) (pid int64, err erro
 	// Get the partition ID from the job and DelRangeTask.
 	switch historyJob.Type {
 	case model.ActionDropTable, model.ActionTruncateTable:
+		var ruleIDs []string
 		var physicalTableIDs []int64
 		var startKey kv.Key
-		if err = historyJob.DecodeArgs(&startKey, &physicalTableIDs); err != nil {
+		if err = historyJob.DecodeArgs(&startKey, &physicalTableIDs, &ruleIDs); err != nil {
 			return
 		}
 		// If it's a partitioned table, then the element ID is the partition ID.
@@ -1894,6 +1906,61 @@ func (w *GCWorker) doGCPlacementRules(dr util.DelRangeTask) (pid int64, err erro
 	// Notify PD to drop the placement rules, even if there may be no placement rules.
 	bundles := []*placement.Bundle{placement.NewBundle(pid)}
 	err = infosync.PutRuleBundles(context.TODO(), bundles)
+	return
+}
+
+func (w *GCWorker) doGCLabelRules(dr util.DelRangeTask) (pid int64, err error) {
+	// Get the job from the job history
+	var historyJob *model.Job
+	failpoint.Inject("mockHistoryJobForGC", func(v failpoint.Value) {
+		args, err1 := json.Marshal([]interface{}{kv.Key{}, []int64{int64(v.(int))}})
+		if err1 != nil {
+			return
+		}
+		historyJob = &model.Job{
+			ID:      dr.JobID,
+			Type:    model.ActionDropTable,
+			RawArgs: args,
+		}
+	})
+	if historyJob == nil {
+		err = kv.RunInNewTxn(context.Background(), w.store, false, func(ctx context.Context, txn kv.Transaction) error {
+			var err1 error
+			t := meta.NewMeta(txn)
+			historyJob, err1 = t.GetHistoryDDLJob(dr.JobID)
+			return err1
+		})
+		if err != nil {
+			return
+		}
+		if historyJob == nil {
+			return 0, admin.ErrDDLJobNotFound.GenWithStackByArgs(dr.JobID)
+		}
+	}
+
+	var ruleIDs []string
+	switch historyJob.Type {
+	case model.ActionDropTable, model.ActionTruncateTable:
+		var startKey kv.Key
+		var physicalTableIDs []int64
+		if err = historyJob.DecodeArgs(&startKey, &physicalTableIDs, &ruleIDs); err != nil {
+			return
+		}
+		// If it's a partitioned table, then the element ID is the partition ID.
+		if len(ruleIDs) > 0 {
+			pid = dr.ElementID
+		}
+	}
+	// Not drop table / truncate table or not a partitioned table, no need to GC label rules.
+	if pid == 0 {
+		return
+	}
+	var rules []*attribute.Rule
+	// Notify PD to drop the placement rules, even if there may be no label rules.
+	for _, id := range ruleIDs {
+		rules = append(rules, &attribute.Rule{ID: id})
+	}
+	err = infosync.PutLabelRules(context.TODO(), rules)
 	return
 }
 
