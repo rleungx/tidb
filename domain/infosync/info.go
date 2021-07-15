@@ -433,6 +433,16 @@ func PutRuleBundles(ctx context.Context, bundles []*placement.Bundle) error {
 	return err
 }
 
+// PutLabelRules ...
+func PutLabelRules(ctx context.Context, rules []*attribute.Rule) error {
+	for _, rule := range rules {
+		if err := PutLabelRule(ctx, rule); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // PutLabelRule ...
 func PutLabelRule(ctx context.Context, rule *attribute.Rule) error {
 	if rule == nil {
@@ -444,7 +454,6 @@ func PutLabelRule(ctx context.Context, rule *attribute.Rule) error {
 		return err
 	}
 
-	fmt.Println("xxxxxxx", rule)
 	if is.etcdCli == nil {
 		return nil
 	}

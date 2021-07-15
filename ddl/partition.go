@@ -924,6 +924,20 @@ func dropRuleBundles(d *ddlCtx, physicalTableIDs []int64) error {
 	return err
 }
 
+func dropLabelRules(d *ddlCtx, schemaName, tableName string, partNames []string) error {
+	rules := make([]*attribute.Rule, 0, len(partNames))
+	for _, partName := range partNames {
+		m := map[string]string{
+			"db":        schemaName,
+			"table":     tableName,
+			"partition": partName,
+		}
+		rules = append(rules, attribute.NewRule(m))
+	}
+	err := infosync.PutLabelRules(context.TODO(), rules)
+	return err
+}
+
 // onDropTablePartition deletes old partition meta.
 func (w *worker) onDropTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ error) {
 	var partNames []string
@@ -943,6 +957,11 @@ func (w *worker) onDropTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (
 		if err != nil {
 			job.State = model.JobStateCancelled
 			return ver, errors.Wrapf(err, "failed to notify PD the placement rules")
+		}
+		err = dropLabelRules(d, tblInfo.Name.L, job.SchemaName, partNames)
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return ver, errors.Wrapf(err, "failed to notify PD the label rules")
 		}
 		ver, err = updateVersionAndTableInfo(t, job, tblInfo, true)
 		if err != nil {
@@ -972,6 +991,11 @@ func (w *worker) onDropTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (
 		if err != nil {
 			job.State = model.JobStateCancelled
 			return ver, errors.Wrapf(err, "failed to notify PD the placement rules")
+		}
+		err = dropLabelRules(d, tblInfo.Name.L, job.SchemaName, partNames)
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return ver, errors.Wrapf(err, "failed to notify PD the label rules")
 		}
 		updateDroppingPartitionInfo(tblInfo, partNames)
 		job.SchemaState = model.StateDeleteOnly
@@ -1495,6 +1519,17 @@ func getPartitionIDs(table *model.TableInfo) []int64 {
 		physicalTableIDs = append(physicalTableIDs, def.ID)
 	}
 	return physicalTableIDs
+}
+
+func getPartitionNames(table *model.TableInfo) []string {
+	if table.GetPartitionInfo() == nil {
+		return []string{}
+	}
+	partNames := make([]string, 0, len(table.Partition.Definitions))
+	for _, def := range table.Partition.Definitions {
+		partNames = append(partNames, def.Name.L)
+	}
+	return partNames
 }
 
 // checkPartitioningKeysConstraints checks that the range partitioning key is included in the table constraint.

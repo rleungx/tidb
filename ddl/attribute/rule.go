@@ -34,7 +34,20 @@ type Rule struct {
 }
 
 // NewRule ...
-func NewRule(id string) *Rule {
+func NewRule(m map[string]string) *Rule {
+	id := idPrefix
+	if v, ok := m["db"]; ok {
+		id = id + "/" + v
+	}
+
+	if v, ok := m["table"]; ok {
+		id = id + "/" + v
+	}
+
+	if v, ok := m["partition"]; ok {
+		id = id + "/" + v
+	}
+
 	return &Rule{
 		ID: id,
 	}

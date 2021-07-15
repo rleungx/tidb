@@ -43,6 +43,9 @@ PARTITION BY RANGE (c) (
 	c.Assert(err, IsNil)
 	_, err = tk.Exec(`alter table t1 partition p3 attributes=" nomerge , somethingelse ";`)
 	c.Assert(err, IsNil)
+
+	_, err = tk.Exec(`alter table t1 drop partition p3;`)
+	c.Assert(err, IsNil)
 }
 
 func (s *testDBSuite8) TestAlterTableAttributes(c *C) {
