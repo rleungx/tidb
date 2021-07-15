@@ -17,41 +17,41 @@ import (
 	"strings"
 )
 
-// Attribute...
-type Attribute struct {
+// Label ...
+type Label struct {
 	Key   string `json:"key,omitempty"`
 	Value string `json:"value,omitempty"`
 }
 
-// Attributes is a slice of Attributes.
-type Attributes []Attribute
+// Labels is a slice of Labels.
+type Labels []Label
 
-// NewConstraints will check labels, and build Constraints for rule.
-func NewAttributes(attrs []string) (Attributes, error) {
-	attributes := make(Attributes, 0, len(attrs))
-	for _, str := range attrs {
-		attr, err := NewAttribute(strings.TrimSpace(str))
+// NewLabels ...
+func NewLabels(attrs []string) (Labels, error) {
+	labels := make(Labels, 0, len(attrs))
+	for _, attr := range attrs {
+		label, err := NewLabel(strings.TrimSpace(attr))
 		if err != nil {
-			return attributes, err
+			return labels, err
 		}
 
-		err = attributes.Add(attr)
+		err = labels.Add(label)
 		if err != nil {
-			return attributes, err
+			return labels, err
 		}
 	}
-	return attributes, nil
+	return labels, nil
 }
 
-// Restore converts label constraints to a string.
-func (attributes *Attributes) Restore() (string, error) {
+// Restore ...
+func (labels *Labels) Restore() (string, error) {
 	var sb strings.Builder
-	for i, attribute := range *attributes {
+	for i, label := range *labels {
 		if i > 0 {
 			sb.WriteByte(',')
 		}
 		sb.WriteByte('"')
-		conStr, err := attribute.Restore()
+		conStr, err := label.Restore()
 		if err != nil {
 			return "", err
 		}
@@ -61,28 +61,25 @@ func (attributes *Attributes) Restore() (string, error) {
 	return sb.String(), nil
 }
 
-// Add will add a new label constraint, with validation of all constraints.
-// Note that Add does not validate one single constraint.
-func (attributes *Attributes) Add(attr Attribute) error {
+// Add ...
+func (labels *Labels) Add(l Label) error {
 	pass := true
-	for _, attribute := range *attributes {
-		if attr.Value != attribute.Value {
-			continue
-		} else {
-			pass = false
+	for _, label := range *labels {
+		if l.Value != label.Value {
 			continue
 		}
+		pass = false
 	}
 
 	if pass {
-		*attributes = append(*attributes, attr)
+		*labels = append(*labels, l)
 	}
 	return nil
 }
 
-// NewConstraint will create a Constraint from a string.
-func NewAttribute(attr string) (Attribute, error) {
-	r := Attribute{}
+// NewLabel ...
+func NewLabel(attr string) (Label, error) {
+	r := Label{}
 	value := strings.TrimSpace(attr)
 	r.Key = "attribute"
 	r.Value = value
@@ -90,7 +87,7 @@ func NewAttribute(attr string) (Attribute, error) {
 }
 
 // Restore converts a Constraint to a string.
-func (a *Attribute) Restore() (string, error) {
+func (a *Label) Restore() (string, error) {
 	var sb strings.Builder
 	sb.WriteString(a.Value)
 	return sb.String(), nil

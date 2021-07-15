@@ -16,7 +16,6 @@ package attribute
 import (
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 
 	"github.com/pingcap/parser/ast"
 	"github.com/pingcap/tidb/tablecodec"
@@ -24,30 +23,34 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+const idPrefix = "schema"
+
 // Rule is the rule to assign labels to a region.
 type Rule struct {
-	ID         string      `json:"id"`
-	Attribules []Attribute `json:"labels"`
-	RuleType   string      `json:"rule_type"`
-	Rule       interface{} `json:"rule"`
+	ID       string      `json:"id"`
+	Labels   Labels      `json:"labels"`
+	RuleType string      `json:"rule_type"`
+	Rule     interface{} `json:"rule"`
 }
 
+// NewRule ...
 func NewRule(id string) *Rule {
 	return &Rule{
 		ID: id,
 	}
 }
 
+// ApplyAttributesSpec ...
 func (r *Rule) ApplyAttributesSpec(spec *ast.AttributesSpec) error {
 	attrBytes := []byte("[" + spec.Attributes + "]")
 	attributes := []string{}
 	err := yaml.UnmarshalStrict(attrBytes, &attributes)
 	if err == nil {
-		attributes, err := NewAttributes(attributes)
+		labels, err := NewLabels(attributes)
 		if err != nil {
 			return err
 		}
-		r.Attribules = attributes
+		r.Labels = labels
 		return nil
 	}
 	return nil
@@ -62,24 +65,35 @@ func (r *Rule) String() string {
 	return string(t)
 }
 
-// Clone is used to duplicate a bundle.
+// Clone ...
 func (r *Rule) Clone() *Rule {
 	newRule := &Rule{}
 	*newRule = *r
 	return newRule
 }
 
-// Reset resets the bundle ID and keyrange of all rules.
-func (r *Rule) Reset(newID int64) *Rule {
-	r.ID = ID(newID)
+// Reset ...
+func (r *Rule) Reset(id int64, m map[string]string) *Rule {
+	r.ID = idPrefix
+	if v, ok := m["db"]; ok {
+		r.Labels = append(r.Labels, Label{Key: "db", Value: v})
+		r.ID = r.ID + "/" + v
+	}
+
+	if v, ok := m["table"]; ok {
+		r.Labels = append(r.Labels, Label{Key: "table", Value: v})
+		r.ID = r.ID + "/" + v
+	}
+
+	if v, ok := m["partition"]; ok {
+		r.Labels = append(r.Labels, Label{Key: "partition", Value: v})
+		r.ID = r.ID + "/" + v
+	}
+
 	r.RuleType = "key-range"
 	r.Rule = map[string]string{
-		"start_key": hex.EncodeToString(codec.EncodeBytes(nil, tablecodec.GenTableRecordPrefix(newID))),
-		"end_key":   hex.EncodeToString(codec.EncodeBytes(nil, tablecodec.GenTableRecordPrefix(newID+1))),
+		"start_key": hex.EncodeToString(codec.EncodeBytes(nil, tablecodec.GenTableRecordPrefix(id))),
+		"end_key":   hex.EncodeToString(codec.EncodeBytes(nil, tablecodec.GenTableRecordPrefix(id+1))),
 	}
 	return r
-}
-
-func ID(id int64) string {
-	return fmt.Sprintf("%d", id)
 }

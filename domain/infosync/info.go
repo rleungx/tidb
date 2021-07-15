@@ -433,7 +433,7 @@ func PutRuleBundles(ctx context.Context, bundles []*placement.Bundle) error {
 	return err
 }
 
-// PutLabelRule...
+// PutLabelRule ...
 func PutLabelRule(ctx context.Context, rule *attribute.Rule) error {
 	if rule == nil {
 		return nil
@@ -444,6 +444,7 @@ func PutLabelRule(ctx context.Context, rule *attribute.Rule) error {
 		return err
 	}
 
+	fmt.Println("xxxxxxx", rule)
 	if is.etcdCli == nil {
 		return nil
 	}
@@ -463,7 +464,7 @@ func PutLabelRule(ctx context.Context, rule *attribute.Rule) error {
 	return err
 }
 
-// GetAllLabelRules...
+// GetAllLabelRules ...
 func GetAllLabelRules(ctx context.Context) ([]*attribute.Rule, error) {
 	is, err := getGlobalInfoSyncer()
 	if err != nil {

@@ -24,22 +24,22 @@ func TestT(t *testing.T) {
 	TestingT(t)
 }
 
-var _ = Suite(&testAttributeSuite{})
+var _ = Suite(&testLabelSuite{})
 
-type testAttributeSuite struct{}
+type testLabelSuite struct{}
 
-func (t *testAttributeSuite) TestNew(c *C) {
+func (t *testLabelSuite) TestNew(c *C) {
 	type TestCase struct {
 		name  string
 		input string
-		label Attribute
+		label Label
 		err   error
 	}
 	tests := []TestCase{
 		{
 			name:  "normal",
 			input: "nomerge",
-			label: Attribute{
+			label: Label{
 				Key:   "attribute",
 				Value: "nomerge",
 			},
@@ -47,7 +47,7 @@ func (t *testAttributeSuite) TestNew(c *C) {
 		{
 			name:  "normal with space",
 			input: " nomerge ",
-			label: Attribute{
+			label: Label{
 				Key:   "attribute",
 				Value: "nomerge",
 			},
@@ -55,7 +55,7 @@ func (t *testAttributeSuite) TestNew(c *C) {
 	}
 
 	for _, t := range tests {
-		label, err := NewAttribute(t.input)
+		label, err := NewLabel(t.input)
 		comment := Commentf("%s: %v", t.name, err)
 		if t.err == nil {
 			c.Assert(err, IsNil, comment)
@@ -66,16 +66,16 @@ func (t *testAttributeSuite) TestNew(c *C) {
 	}
 }
 
-func (t *testAttributeSuite) TestRestore(c *C) {
+func (t *testLabelSuite) TestRestore(c *C) {
 	type TestCase struct {
 		name   string
-		input  Attribute
+		input  Label
 		output string
 		err    error
 	}
 	var tests []TestCase
 
-	input, err := NewAttribute("nomerge")
+	input, err := NewLabel("nomerge")
 	c.Assert(err, IsNil)
 	tests = append(tests, TestCase{
 		name:   "normal",
@@ -83,7 +83,7 @@ func (t *testAttributeSuite) TestRestore(c *C) {
 		output: "nomerge",
 	})
 
-	input, err = NewAttribute(" nomerge  ")
+	input, err = NewLabel(" nomerge  ")
 	c.Assert(err, IsNil)
 	tests = append(tests, TestCase{
 		name:   "normal with spaces",
@@ -103,46 +103,46 @@ func (t *testAttributeSuite) TestRestore(c *C) {
 	}
 }
 
-var _ = Suite(&testAttributesSuite{})
+var _ = Suite(&testLabelsSuite{})
 
-type testAttributesSuite struct{}
+type testLabelsSuite struct{}
 
-func (t *testAttributesSuite) TestNew(c *C) {
-	_, err := NewAttributes(nil)
+func (t *testLabelsSuite) TestNew(c *C) {
+	_, err := NewLabels(nil)
 	c.Assert(err, IsNil)
 
-	_, err = NewAttributes([]string{})
+	_, err = NewLabels([]string{})
 	c.Assert(err, IsNil)
 
-	attrs, err := NewAttributes([]string{"nomerge"})
+	labels, err := NewLabels([]string{"nomerge"})
 	c.Assert(err, IsNil)
-	c.Assert(attrs, HasLen, 1)
-	c.Assert(attrs[0].Value, Equals, "nomerge")
+	c.Assert(labels, HasLen, 1)
+	c.Assert(labels[0].Value, Equals, "nomerge")
 
-	attrs, err = NewAttributes([]string{"nomerge", "somethingelse"})
+	labels, err = NewLabels([]string{"nomerge", "somethingelse"})
 	c.Assert(err, IsNil)
-	c.Assert(attrs, HasLen, 2)
-	c.Assert(attrs[0].Value, Equals, "nomerge")
-	c.Assert(attrs[1].Value, Equals, "somethingelse")
+	c.Assert(labels, HasLen, 2)
+	c.Assert(labels[0].Value, Equals, "nomerge")
+	c.Assert(labels[1].Value, Equals, "somethingelse")
 
-	attrs, err = NewAttributes([]string{"nomerge", "nomerge"})
+	labels, err = NewLabels([]string{"nomerge", "nomerge"})
 	c.Assert(err, IsNil)
-	c.Assert(attrs, HasLen, 1)
-	c.Assert(attrs[0].Value, Equals, "nomerge")
+	c.Assert(labels, HasLen, 1)
+	c.Assert(labels[0].Value, Equals, "nomerge")
 }
 
-func (t *testAttributesSuite) TestAdd(c *C) {
+func (t *testLabelsSuite) TestAdd(c *C) {
 	type TestCase struct {
 		name   string
-		labels Attributes
-		label  Attribute
+		labels Labels
+		label  Label
 		err    error
 	}
 	var tests []TestCase
 
-	labels, err := NewAttributes([]string{"nomerge"})
+	labels, err := NewLabels([]string{"nomerge"})
 	c.Assert(err, IsNil)
-	label, err := NewAttribute("somethingelse")
+	label, err := NewLabel("somethingelse")
 	c.Assert(err, IsNil)
 	tests = append(tests, TestCase{
 		"normal",
@@ -150,9 +150,9 @@ func (t *testAttributesSuite) TestAdd(c *C) {
 		nil,
 	})
 
-	labels, err = NewAttributes([]string{"nomerge"})
+	labels, err = NewLabels([]string{"nomerge"})
 	c.Assert(err, IsNil)
-	label, err = NewAttribute("nomerge")
+	label, err = NewLabel("nomerge")
 	c.Assert(err, IsNil)
 	tests = append(tests, TestCase{
 		"duplicated attributes, skip",
@@ -162,7 +162,7 @@ func (t *testAttributesSuite) TestAdd(c *C) {
 
 	tests = append(tests, TestCase{
 		"duplicated attributes, skip",
-		append(labels, Attribute{
+		append(labels, Label{
 			Key:   "attribute",
 			Value: "nomerge",
 		}), label,
@@ -181,10 +181,10 @@ func (t *testAttributesSuite) TestAdd(c *C) {
 	}
 }
 
-func (t *testAttributesSuite) TestRestore(c *C) {
+func (t *testLabelsSuite) TestRestore(c *C) {
 	type TestCase struct {
 		name   string
-		input  Attributes
+		input  Labels
 		output string
 		err    error
 	}
@@ -192,18 +192,18 @@ func (t *testAttributesSuite) TestRestore(c *C) {
 
 	tests = append(tests, TestCase{
 		"normal1",
-		Attributes{},
+		Labels{},
 		"",
 		nil,
 	})
 
-	input1, err := NewAttribute("nomerge")
+	input1, err := NewLabel("nomerge")
 	c.Assert(err, IsNil)
-	input2, err := NewAttribute("somethingelse")
+	input2, err := NewLabel("somethingelse")
 	c.Assert(err, IsNil)
 	tests = append(tests, TestCase{
 		"normal2",
-		Attributes{input1, input2},
+		Labels{input1, input2},
 		`"nomerge","somethingelse"`,
 		nil,
 	})

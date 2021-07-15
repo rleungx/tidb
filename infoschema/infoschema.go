@@ -20,7 +20,6 @@ import (
 
 	"github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
-	"github.com/pingcap/tidb/ddl/attribute"
 	"github.com/pingcap/tidb/ddl/placement"
 	"github.com/pingcap/tidb/meta/autoid"
 	"github.com/pingcap/tidb/table"
@@ -56,8 +55,6 @@ type InfoSchema interface {
 	SetBundle(*placement.Bundle)
 	// RuleBundles will return a copy of all rule bundles.
 	RuleBundles() []*placement.Bundle
-
-	AttributesByName(name string) (*attribute.Rule, bool)
 }
 
 type sortedTables []table.Table
@@ -95,10 +92,6 @@ type infoSchema struct {
 	// ruleBundleMap stores all placement rules
 	ruleBundleMutex sync.RWMutex
 	ruleBundleMap   map[string]*placement.Bundle
-
-	// attributesMap stores all attributes.
-	attributesMutex sync.RWMutex
-	attributesMap   map[string]*attribute.Rule
 
 	schemaMap map[string]*schemaTables
 
@@ -409,24 +402,6 @@ func GetBundle(h InfoSchema, ids []int64) *placement.Bundle {
 		id = ids[0]
 	}
 	return &placement.Bundle{ID: placement.GroupID(id), Rules: newRules}
-}
-
-func (is *infoSchema) AttributesByName(name string) (*attribute.Rule, bool) {
-	is.attributesMutex.RLock()
-	defer is.attributesMutex.RUnlock()
-	attrs, exist := is.attributesMap[name]
-	return attrs, exist
-}
-
-func GetRule(h InfoSchema, ids []int64) *attribute.Rule {
-	for _, id := range ids {
-		b, ok := h.AttributesByName(attribute.ID(id))
-		if ok {
-			return b.Clone()
-		}
-	}
-
-	return &attribute.Rule{}
 }
 
 type schemaLocalTempSchemaTables struct {

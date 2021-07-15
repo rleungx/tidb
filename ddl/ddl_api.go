@@ -6009,8 +6009,7 @@ func (d *ddl) AlterTableAttributes(ctx sessionctx.Context, ident ast.Ident, spec
 	}
 	meta := tb.Meta()
 
-	rule := infoschema.GetRule(d.infoCache.GetLatest(), []int64{meta.ID, schema.ID})
-	rule.ID = attribute.ID(meta.ID)
+	rule := &attribute.Rule{}
 	err = rule.ApplyAttributesSpec(spec.AttributesSpec)
 	if err != nil {
 		var sb strings.Builder
@@ -6024,7 +6023,11 @@ func (d *ddl) AlterTableAttributes(ctx sessionctx.Context, ident ast.Ident, spec
 		return ErrInvalidAttributesSpec.GenWithStackByArgs(sb.String(), err)
 	}
 
-	rule.Reset(meta.ID)
+	m := map[string]string{
+		"db":    schema.Name.L,
+		"table": meta.Name.L,
+	}
+	rule.Reset(meta.ID, m)
 
 	job := &model.Job{
 		SchemaID:   schema.ID,
@@ -6060,8 +6063,7 @@ func (d *ddl) AlterTablePartitionAttributes(ctx sessionctx.Context, ident ast.Id
 		return errors.Trace(err)
 	}
 
-	rule := infoschema.GetRule(d.infoCache.GetLatest(), []int64{partitionID, meta.ID, schema.ID})
-	rule.ID = attribute.ID(partitionID)
+	rule := &attribute.Rule{}
 	err = rule.ApplyAttributesSpec(spec.AttributesSpec)
 	if err != nil {
 		var sb strings.Builder
@@ -6075,7 +6077,13 @@ func (d *ddl) AlterTablePartitionAttributes(ctx sessionctx.Context, ident ast.Id
 		return ErrInvalidAttributesSpec.GenWithStackByArgs(sb.String(), err)
 	}
 
-	rule.Reset(partitionID)
+	m := map[string]string{
+		"db":        schema.Name.L,
+		"table":     meta.Name.L,
+		"partition": spec.PartitionNames[0].L,
+	}
+
+	rule.Reset(partitionID, m)
 
 	job := &model.Job{
 		SchemaID:   schema.ID,
