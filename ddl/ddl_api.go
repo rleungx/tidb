@@ -2587,9 +2587,9 @@ func (d *ddl) AlterTable(ctx context.Context, sctx sessionctx.Context, ident ast
 		case ast.AlterTableDropStatistics:
 			err = d.AlterTableDropStatistics(sctx, ident, spec.Statistics, spec.IfExists)
 		case ast.AlterTableAttributes:
-			err = d.AlterTableAttributes(ctx, ident, spec)
+			err = d.AlterTableAttributes(sctx, ident, spec)
 		case ast.AlterTablePartitionAttributes:
-			err = d.AlterTablePartitionAttributes(ctx, ident, spec)
+			err = d.AlterTablePartitionAttributes(sctx, ident, spec)
 		default:
 			// Nothing to do now.
 		}

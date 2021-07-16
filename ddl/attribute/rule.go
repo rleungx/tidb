@@ -23,8 +23,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// IdPrefix ...
-const IdPrefix = "schema"
+// IDPrefix ...
+const IDPrefix = "schema"
 
 // Rule is the rule to assign labels to a region.
 type Rule struct {
@@ -36,7 +36,7 @@ type Rule struct {
 
 // NewRule ...
 func NewRule(m map[string]string) *Rule {
-	id := IdPrefix
+	id := IDPrefix
 	if v, ok := m["db"]; ok {
 		id = id + "/" + v
 	}
@@ -88,7 +88,7 @@ func (r *Rule) Clone() *Rule {
 
 // Reset ...
 func (r *Rule) Reset(id int64, m map[string]string) *Rule {
-	r.ID = IdPrefix
+	r.ID = IDPrefix
 	if v, ok := m["db"]; ok {
 		r.Labels = append(r.Labels, Label{Key: "db", Value: v})
 		r.ID = r.ID + "/" + v

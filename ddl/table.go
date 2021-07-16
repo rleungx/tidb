@@ -480,8 +480,10 @@ func onTruncateTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ erro
 	})
 
 	var oldPartitionIDs []int64
+	var oldNames []string
 	if tblInfo.GetPartitionInfo() != nil {
 		oldPartitionIDs = getPartitionIDs(tblInfo)
+		oldNames = getNames(job.SchemaName, tblInfo)
 		// We use the new partition ID because all the old data is encoded with the old partition ID, it can not be accessed anymore.
 		err = truncateTableByReassignPartitionIDs(t, tblInfo)
 		if err != nil {
@@ -517,6 +519,35 @@ func onTruncateTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ erro
 		return 0, errors.Wrapf(err, "failed to notify PD the placement rules")
 	}
 
+	r, err := infosync.GetLabelRule(context.TODO(), fmt.Sprintf("%s/%s/%s", attribute.IDPrefix, job.SchemaName, tblInfo.Name.L))
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return 0, errors.Wrapf(err, "failed to get PD the label rule")
+	}
+
+	var rules []*attribute.Rule
+	for _, def := range tblInfo.GetPartitionInfo().Definitions {
+		rule, err := infosync.GetLabelRule(context.TODO(), fmt.Sprintf("%s/%s/%s/%s", attribute.IDPrefix, job.SchemaName, tblInfo.Name.L, def.Name.L))
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return 0, errors.Wrapf(err, "failed to get PD the label rule")
+		}
+		rules = append(rules, rule.Clone().Reset(def.ID, map[string]string{
+			"db":        job.SchemaName,
+			"table":     tblInfo.Name.L,
+			"partition": def.Name.L,
+		}))
+	}
+	rules = append(rules, r.Clone().Reset(newTableID, map[string]string{
+		"db":    job.SchemaName,
+		"table": tblInfo.Name.L,
+	}))
+	err = infosync.PutLabelRules(context.TODO(), rules)
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return 0, errors.Wrapf(err, "failed to notify PD the placement rules")
+	}
+
 	// Clear the tiflash replica available status.
 	if tblInfo.TiFlashReplica != nil {
 		tblInfo.TiFlashReplica.AvailablePartitionIDs = nil
@@ -543,7 +574,7 @@ func onTruncateTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ erro
 	job.FinishTableJob(model.JobStateDone, model.StatePublic, ver, tblInfo)
 	asyncNotifyEvent(d, &util.Event{Tp: model.ActionTruncateTable, TableInfo: tblInfo})
 	startKey := tablecodec.EncodeTablePrefix(tableID)
-	job.Args = []interface{}{startKey, oldPartitionIDs}
+	job.Args = []interface{}{startKey, oldPartitionIDs, oldNames}
 	return ver, nil
 }
 

@@ -1120,7 +1120,6 @@ func onTruncateTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (int64, e
 	}
 
 	bundles := make([]*placement.Bundle, 0, len(oldIDs))
-
 	for i, oldID := range oldIDs {
 		oldBundle, ok := d.infoCache.GetLatest().BundleByName(placement.GroupID(oldID))
 		if ok && !oldBundle.IsEmpty() {
@@ -1133,6 +1132,26 @@ func onTruncateTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (int64, e
 	if err != nil {
 		job.State = model.JobStateCancelled
 		return ver, errors.Wrapf(err, "failed to notify PD the placement rules")
+	}
+
+	rules := make([]*attribute.Rule, 0, len(oldIDs))
+	for _, newPartition := range newPartitions {
+		r, err := infosync.GetLabelRule(context.TODO(), fmt.Sprintf("%s/%s/%s/%s", attribute.IDPrefix, job.SchemaName, tblInfo.Name.L, newPartition.Name.L))
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return ver, errors.Wrapf(err, "failed to get PD the label rules")
+		}
+		rules = append(rules, r.Clone().Reset(newPartition.ID, map[string]string{
+			"db":        job.SchemaName,
+			"table":     tblInfo.Name.L,
+			"partition": newPartition.Name.L,
+		}))
+	}
+
+	err = infosync.PutLabelRules(context.TODO(), rules)
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return ver, errors.Wrapf(err, "failed to notify PD the label rules")
 	}
 
 	newIDs := make([]int64, len(oldIDs))
@@ -1527,8 +1546,8 @@ func getNames(name string, table *model.TableInfo) []string {
 	}
 	partNames := make([]string, 0, len(table.Partition.Definitions))
 	for _, def := range table.Partition.Definitions {
-		name := fmt.Sprintf("%s/%s/%s/%s", attribute.IdPrefix, name, table.Name.L, def.Name.L)
-		partNames = append(partNames, name)
+		partName := fmt.Sprintf("%s/%s/%s/%s", attribute.IDPrefix, name, table.Name.L, def.Name.L)
+		partNames = append(partNames, partName)
 	}
 	return partNames
 }
