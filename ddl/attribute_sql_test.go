@@ -75,4 +75,5 @@ func (s *testDBSuite8) TestAlterTableAttributes(c *C) {
 	// truncate
 	_, err = tk.Exec(`truncate table t2;`)
 	c.Assert(err, IsNil)
+
 }

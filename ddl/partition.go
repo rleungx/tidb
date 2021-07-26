@@ -25,6 +25,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/kvproto/pkg/metapb"
+	"github.com/pingcap/log"
 	"github.com/pingcap/parser"
 	"github.com/pingcap/parser/ast"
 	"github.com/pingcap/parser/format"
@@ -931,6 +932,7 @@ func dropLabelRules(d *ddlCtx, schemaName, tableName string, partNames []string)
 	}
 	// delete batch rules
 	patch := label.NewRulePatch(nil, deleteRules)
+	log.Info("patch", zap.Any("XXXX", patch))
 	err := infosync.UpdateLabelRules(context.TODO(), patch)
 	return err
 }
@@ -955,7 +957,7 @@ func (w *worker) onDropTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (
 			job.State = model.JobStateCancelled
 			return ver, errors.Wrapf(err, "failed to notify PD the placement rules")
 		}
-		err = dropLabelRules(d, tblInfo.Name.L, job.SchemaName, partNames)
+		err = dropLabelRules(d, job.SchemaName, tblInfo.Name.L, partNames)
 		if err != nil {
 			job.State = model.JobStateCancelled
 			return ver, errors.Wrapf(err, "failed to notify PD the label rules")
@@ -989,7 +991,7 @@ func (w *worker) onDropTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (
 			job.State = model.JobStateCancelled
 			return ver, errors.Wrapf(err, "failed to notify PD the placement rules")
 		}
-		err = dropLabelRules(d, tblInfo.Name.L, job.SchemaName, partNames)
+		err = dropLabelRules(d, job.SchemaName, tblInfo.Name.L, partNames)
 		if err != nil {
 			job.State = model.JobStateCancelled
 			return ver, errors.Wrapf(err, "failed to notify PD the label rules")
