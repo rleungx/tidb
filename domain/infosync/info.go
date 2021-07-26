@@ -433,16 +433,6 @@ func PutRuleBundles(ctx context.Context, bundles []*placement.Bundle) error {
 	return err
 }
 
-// PutLabelRules ...
-func PutLabelRules(ctx context.Context, rules []*label.Rule) error {
-	for _, rule := range rules {
-		if err := PutLabelRule(ctx, rule); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // GetLabelRule ...
 func GetLabelRule(ctx context.Context, id string) (*label.Rule, error) {
 	is, err := getGlobalInfoSyncer()
@@ -467,32 +457,6 @@ func GetLabelRule(ctx context.Context, id string) (*label.Rule, error) {
 		err = json.Unmarshal(res, &rule)
 	}
 	return rule, err
-}
-
-// GetAllLabelRules ...
-func GetAllLabelRules(ctx context.Context) ([]*label.Rule, error) {
-	is, err := getGlobalInfoSyncer()
-	if err != nil {
-		return nil, err
-	}
-
-	if is.etcdCli == nil {
-		return nil, err
-	}
-
-	addrs := is.etcdCli.Endpoints()
-
-	if len(addrs) == 0 {
-		return nil, errors.Errorf("pd unavailable")
-	}
-
-	rules := []*label.Rule{}
-	res, err := doRequest(ctx, addrs, path.Join(pdapi.Config, "region-label", "rule"), "GET", nil)
-
-	if err == nil && res != nil {
-		err = json.Unmarshal(res, &rules)
-	}
-	return rules, err
 }
 
 func (is *InfoSyncer) getAllServerInfo(ctx context.Context) (map[string]*ServerInfo, error) {

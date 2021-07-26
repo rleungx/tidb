@@ -925,12 +925,13 @@ func dropRuleBundles(d *ddlCtx, physicalTableIDs []int64) error {
 }
 
 func dropLabelRules(d *ddlCtx, schemaName, tableName string, partNames []string) error {
-	rules := make([]*label.Rule, 0, len(partNames))
+	deleteRules := make([]string, 0, len(partNames))
 	for _, partName := range partNames {
-		rules = append(rules, label.NewPartitionRule(schemaName, tableName, partName))
+		deleteRules = append(deleteRules, fmt.Sprintf(label.PartitionIDFormat, label.IDPrefix, schemaName, tableName, partName))
 	}
 	// delete batch rules
-	err := infosync.PutLabelRules(context.TODO(), rules)
+	patch := label.NewRulePatch(nil, deleteRules)
+	err := infosync.UpdateLabelRules(context.TODO(), patch)
 	return err
 }
 
@@ -1140,7 +1141,8 @@ func onTruncateTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (int64, e
 		rules = append(rules, r.Clone().ResetPartition(newPartition.ID, job.SchemaName, tblInfo.Name.L, newPartition.Name.L))
 	}
 
-	err = infosync.PutLabelRules(context.TODO(), rules)
+	patch := label.NewRulePatch(rules, nil)
+	err = infosync.UpdateLabelRules(context.TODO(), patch)
 	if err != nil {
 		job.State = model.JobStateCancelled
 		return ver, errors.Wrapf(err, "failed to notify PD the label rules")
@@ -1365,19 +1367,23 @@ func (w *worker) onExchangeTablePartition(d *ddlCtx, t *meta.Meta, job *model.Jo
 		return 0, errors.Wrapf(err, "failed to get PD the label rule")
 	}
 
-	var rules []*label.Rule
+	var setRules []*label.Rule
+	var deleteRules []string
 	if ntr != nil && ptr != nil {
-		rules = append(rules, ntr.Clone().ResetPartition(partDef.ID, job.SchemaName, pt.Name.L, partDef.Name.L))
-		rules = append(rules, ptr.Clone().ResetTable(nt.ID, job.SchemaName, nt.Name.L))
+		setRules = append(setRules, ntr.Clone().ResetPartition(partDef.ID, job.SchemaName, pt.Name.L, partDef.Name.L))
+		setRules = append(setRules, ptr.Clone().ResetTable(nt.ID, job.SchemaName, nt.Name.L))
 	} else if ptr != nil {
-		rules = append(rules, ptr.Clone().ResetTable(nt.ID, job.SchemaName, nt.Name.L))
+		setRules = append(setRules, ptr.Clone().ResetTable(nt.ID, job.SchemaName, nt.Name.L))
 		// delete ptr
+		deleteRules = append(deleteRules, fmt.Sprintf(label.PartitionIDFormat, label.IDPrefix, job.SchemaName, pt.Name.L, partDef.Name.L))
 	} else if ntr != nil {
-		rules = append(rules, ntr.Clone().ResetPartition(partDef.ID, job.SchemaName, pt.Name.L, partDef.Name.L))
+		setRules = append(setRules, ntr.Clone().ResetPartition(partDef.ID, job.SchemaName, pt.Name.L, partDef.Name.L))
 		// delete ntr
+		deleteRules = append(deleteRules, fmt.Sprintf(label.TableIDFormat, label.IDPrefix, job.SchemaName, nt.Name.L))
 	}
 
-	err = infosync.PutLabelRules(context.TODO(), rules)
+	patch := label.NewRulePatch(setRules, deleteRules)
+	err = infosync.UpdateLabelRules(context.TODO(), patch)
 	if err != nil {
 		job.State = model.JobStateCancelled
 		return ver, errors.Wrapf(err, "failed to notify PD the label rules")

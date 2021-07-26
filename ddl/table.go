@@ -544,7 +544,8 @@ func onTruncateTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ erro
 		rules = append(rules, r.Clone().ResetTable(newTableID, job.SchemaName, tblInfo.Name.L))
 	}
 	// update the key range with same id.
-	err = infosync.PutLabelRules(context.TODO(), rules)
+	patch := label.NewRulePatch(rules, nil)
+	err = infosync.UpdateLabelRules(context.TODO(), patch)
 	if err != nil {
 		job.State = model.JobStateCancelled
 		return 0, errors.Wrapf(err, "failed to notify PD the placement rules")
