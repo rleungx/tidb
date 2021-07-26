@@ -480,8 +480,10 @@ func onTruncateTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ erro
 	})
 
 	var oldPartitionIDs []int64
+	var oldPartitionRuleIDs []string
 	if tblInfo.GetPartitionInfo() != nil {
 		oldPartitionIDs = getPartitionIDs(tblInfo)
+		oldPartitionRuleIDs = getPartitionRuleIDs(job.SchemaName, tblInfo)
 		// We use the new partition ID because all the old data is encoded with the old partition ID, it can not be accessed anymore.
 		err = truncateTableByReassignPartitionIDs(t, tblInfo)
 		if err != nil {
@@ -517,6 +519,37 @@ func onTruncateTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ erro
 		return 0, errors.Wrapf(err, "failed to notify PD the placement rules")
 	}
 
+	r, err := infosync.GetLabelRule(context.TODO(), fmt.Sprintf(label.TableIDFormat, label.IDPrefix, job.SchemaName, tblInfo.Name.L))
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return 0, errors.Wrapf(err, "failed to get PD the label rule")
+	}
+
+	// update partition label rule range.
+	var rules []*label.Rule
+	if tblInfo.GetPartitionInfo() != nil {
+		for _, def := range tblInfo.GetPartitionInfo().Definitions {
+			rule, err := infosync.GetLabelRule(context.TODO(), fmt.Sprintf(label.PartitionIDFormat, label.IDPrefix, job.SchemaName, tblInfo.Name.L, def.Name.L))
+			if err != nil {
+				job.State = model.JobStateCancelled
+				return 0, errors.Wrapf(err, "failed to get PD the label rule")
+			}
+			if rule != nil {
+				rules = append(rules, rule.Clone().ResetPartition(def.ID, job.SchemaName, tblInfo.Name.L, def.Name.L))
+			}
+		}
+	}
+	// update table label rule range.
+	if r != nil {
+		rules = append(rules, r.Clone().ResetTable(newTableID, job.SchemaName, tblInfo.Name.L))
+	}
+	// update the key range with same id.
+	err = infosync.PutLabelRules(context.TODO(), rules)
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return 0, errors.Wrapf(err, "failed to notify PD the placement rules")
+	}
+
 	// Clear the tiflash replica available status.
 	if tblInfo.TiFlashReplica != nil {
 		tblInfo.TiFlashReplica.AvailablePartitionIDs = nil
@@ -543,7 +576,7 @@ func onTruncateTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ erro
 	job.FinishTableJob(model.JobStateDone, model.StatePublic, ver, tblInfo)
 	asyncNotifyEvent(d, &util.Event{Tp: model.ActionTruncateTable, TableInfo: tblInfo})
 	startKey := tablecodec.EncodeTablePrefix(tableID)
-	job.Args = []interface{}{startKey, oldPartitionIDs}
+	job.Args = []interface{}{startKey, oldPartitionIDs, oldPartitionRuleIDs}
 	return ver, nil
 }
 
@@ -765,6 +798,13 @@ func checkAndRenameTables(t *meta.Meta, job *model.Job, oldSchemaID int64, newSc
 		tblInfo.OldSchemaID = 0
 	}
 
+	rule, err := infosync.GetLabelRule(context.TODO(), fmt.Sprintf(label.TableIDFormat, label.IDPrefix, job.SchemaName, tblInfo.Name.L))
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return ver, tblInfo, errors.Trace(err)
+	}
+	// delete the rule
+
 	err = t.DropTableOrView(oldSchemaID, tblInfo.ID, shouldDelAutoID)
 	if err != nil {
 		job.State = model.JobStateCancelled
@@ -794,6 +834,14 @@ func checkAndRenameTables(t *meta.Meta, job *model.Job, oldSchemaID int64, newSc
 			return ver, tblInfo, errors.Trace(err)
 		}
 		_, err = t.GenAutoRandomID(newSchemaID, tblInfo.ID, autoRandID)
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return ver, tblInfo, errors.Trace(err)
+		}
+	}
+
+	if rule != nil {
+		err = infosync.PutLabelRule(context.TODO(), rule.Clone().ResetTable(tblInfo.ID, job.SchemaName, tblInfo.Name.L))
 		if err != nil {
 			job.State = model.JobStateCancelled
 			return ver, tblInfo, errors.Trace(err)
@@ -1123,7 +1171,8 @@ func onRepairTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ error)
 
 func onAlterTableAttributes(t *meta.Meta, job *model.Job) (ver int64, err error) {
 	rule := label.NewRule()
-	err = job.DecodeArgs(&rule)
+	var def bool
+	err = job.DecodeArgs(&rule, &def)
 	if err != nil {
 		job.State = model.JobStateCancelled
 		return 0, errors.Trace(err)
@@ -1134,10 +1183,14 @@ func onAlterTableAttributes(t *meta.Meta, job *model.Job) (ver int64, err error)
 		return 0, err
 	}
 
-	err = infosync.PutLabelRule(context.TODO(), rule)
-	if err != nil {
-		job.State = model.JobStateCancelled
-		return 0, errors.Wrapf(err, "failed to notify PD label rule")
+	if def {
+		// delete the rule
+	} else {
+		err = infosync.PutLabelRule(context.TODO(), rule)
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return 0, errors.Wrapf(err, "failed to notify PD label label")
+		}
 	}
 	ver, err = updateVersionAndTableInfo(t, job, tblInfo, true)
 	if err != nil {

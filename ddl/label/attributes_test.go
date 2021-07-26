@@ -176,9 +176,10 @@ func (t *testLabelsSuite) TestRestore(c *C) {
 
 	input4 := NewLabel("db")
 	input5 := NewLabel("table")
+	input6 := NewLabel("partition")
 	tests = append(tests, TestCase{
 		"normal3",
-		Labels{input4, input5},
+		Labels{input4, input5, input6},
 		"",
 		nil,
 	})

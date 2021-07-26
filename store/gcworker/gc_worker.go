@@ -1887,9 +1887,10 @@ func (w *GCWorker) doGCPlacementRules(dr util.DelRangeTask) (pid int64, err erro
 	// Get the partition ID from the job and DelRangeTask.
 	switch historyJob.Type {
 	case model.ActionDropTable, model.ActionTruncateTable:
+		var ruleIDs []string
 		var physicalTableIDs []int64
 		var startKey kv.Key
-		if err = historyJob.DecodeArgs(&startKey, &physicalTableIDs); err != nil {
+		if err = historyJob.DecodeArgs(&startKey, &physicalTableIDs, &ruleIDs); err != nil {
 			return
 		}
 		// If it's a partitioned table, then the element ID is the partition ID.

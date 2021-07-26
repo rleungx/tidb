@@ -2588,6 +2588,8 @@ func (d *ddl) AlterTable(ctx context.Context, sctx sessionctx.Context, ident ast
 			err = d.AlterTableDropStatistics(sctx, ident, spec.Statistics, spec.IfExists)
 		case ast.AlterTableAttributes:
 			err = d.AlterTableAttributes(sctx, ident, spec)
+		case ast.AlterTablePartitionAttributes:
+			err = d.AlterTablePartitionAttributes(sctx, ident, spec)
 		default:
 			// Nothing to do now.
 		}
@@ -6034,7 +6036,7 @@ func (d *ddl) AlterTableAttributes(ctx sessionctx.Context, ident ast.Ident, spec
 		if e := spec.Restore(restoreCtx); e != nil {
 			return ErrInvalidAttributesSpec.GenWithStackByArgs(sb.String(), err)
 		}
-		return ErrInvalidAttributesSpec.GenWithStackByArgs("", err)
+		return ErrInvalidAttributesSpec.GenWithStackByArgs(sb.String(), err)
 	}
 
 	rule.ResetTable(meta.ID, schema.Name.L, meta.Name.L)
@@ -6045,7 +6047,56 @@ func (d *ddl) AlterTableAttributes(ctx sessionctx.Context, ident ast.Ident, spec
 		SchemaName: schema.Name.L,
 		Type:       model.ActionAlterTableAttributes,
 		BinlogInfo: &model.HistoryInfo{},
-		Args:       []interface{}{rule},
+		Args:       []interface{}{rule, spec.AttributesSpec.Default},
+	}
+
+	err = d.doDDLJob(ctx, job)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	err = d.callHookOnChanged(err)
+	return errors.Trace(err)
+}
+
+func (d *ddl) AlterTablePartitionAttributes(ctx sessionctx.Context, ident ast.Ident, spec *ast.AlterTableSpec) (err error) {
+	schema, tb, err := d.getSchemaAndTableByIdent(ctx, ident)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	meta := tb.Meta()
+	if meta.Partition == nil {
+		return errors.Trace(ErrPartitionMgmtOnNonpartitioned)
+	}
+
+	partitionID, err := tables.FindPartitionByName(meta, spec.PartitionNames[0].L)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	rule := &label.Rule{}
+	err = rule.ApplyAttributesSpec(spec.AttributesSpec)
+	if err != nil {
+		var sb strings.Builder
+
+		restoreCtx := format.NewRestoreCtx(format.RestoreStringSingleQuotes|format.RestoreKeyWordLowercase|format.RestoreNameBackQuotes, &sb)
+
+		if e := spec.Restore(restoreCtx); e != nil {
+			return ErrInvalidAttributesSpec.GenWithStackByArgs("", err)
+		}
+		return ErrInvalidAttributesSpec.GenWithStackByArgs(sb.String(), err)
+	}
+
+	rule.ResetPartition(partitionID, schema.Name.L, meta.Name.L, spec.PartitionNames[0].L)
+
+	job := &model.Job{
+		SchemaID:   schema.ID,
+		TableID:    meta.ID,
+		SchemaName: schema.Name.L,
+		Type:       model.ActionAlterTablePartitionAttributes,
+		BinlogInfo: &model.HistoryInfo{},
+		Args:       []interface{}{partitionID, rule, spec.AttributesSpec.Default},
 	}
 
 	err = d.doDDLJob(ctx, job)

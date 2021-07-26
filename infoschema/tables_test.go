@@ -1651,6 +1651,29 @@ func (s *testTableSuite) TestPlacementPolicy(c *C) {
 		"0", "0", "1", "1"))
 }
 
+func (s *testTableSuite) TestRegionLabel(c *C) {
+	// test the failpoint for testing
+	fpName := "github.com/pingcap/tidb/executor/mockOutputOfRegionLabel"
+	tk := s.newTestKitWithRoot(c)
+	tk.MustExec("use test")
+	tk.MustExec("create table test_label(id int primary key)")
+	tk.MustExec("create table test_label1(id int primary key) partition by hash(id) partitions 2")
+	tk.MustQuery("select * from information_schema.region_label").Check(testkit.Rows())
+
+	c.Assert(failpoint.Enable(fpName, "return"), IsNil)
+	defer func() { c.Assert(failpoint.Disable(fpName), IsNil) }()
+
+	tk.MustQuery(`select * from information_schema.region_label`).Check(testkit.Rows(
+		`schema/test/test_label key-range "nomerge" 7480000000000000ff395f720000000000fa 7480000000000000ff3a5f720000000000fa`,
+		`schema/test/test_label1/p0 key-range "somethingelse" 7480000000000000ff355f720000000000fa 7480000000000000ff365f720000000000fa`,
+	))
+
+	tk.MustQuery(`select rule_id, region_label from information_schema.region_label`).Check(testkit.Rows(
+		`schema/test/test_label "nomerge"`,
+		`schema/test/test_label1/p0 "somethingelse"`,
+	))
+}
+
 func (s *testTableSuite) TestInfoschemaClientErrors(c *C) {
 	tk := s.newTestKitWithRoot(c)
 

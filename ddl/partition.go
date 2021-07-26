@@ -924,6 +924,16 @@ func dropRuleBundles(d *ddlCtx, physicalTableIDs []int64) error {
 	return err
 }
 
+func dropLabelRules(d *ddlCtx, schemaName, tableName string, partNames []string) error {
+	rules := make([]*label.Rule, 0, len(partNames))
+	for _, partName := range partNames {
+		rules = append(rules, label.NewPartitionRule(schemaName, tableName, partName))
+	}
+	// delete batch rules
+	err := infosync.PutLabelRules(context.TODO(), rules)
+	return err
+}
+
 // onDropTablePartition deletes old partition meta.
 func (w *worker) onDropTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ error) {
 	var partNames []string
@@ -943,6 +953,11 @@ func (w *worker) onDropTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (
 		if err != nil {
 			job.State = model.JobStateCancelled
 			return ver, errors.Wrapf(err, "failed to notify PD the placement rules")
+		}
+		err = dropLabelRules(d, tblInfo.Name.L, job.SchemaName, partNames)
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return ver, errors.Wrapf(err, "failed to notify PD the label rules")
 		}
 		ver, err = updateVersionAndTableInfo(t, job, tblInfo, true)
 		if err != nil {
@@ -972,6 +987,11 @@ func (w *worker) onDropTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (
 		if err != nil {
 			job.State = model.JobStateCancelled
 			return ver, errors.Wrapf(err, "failed to notify PD the placement rules")
+		}
+		err = dropLabelRules(d, tblInfo.Name.L, job.SchemaName, partNames)
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return ver, errors.Wrapf(err, "failed to notify PD the label rules")
 		}
 		updateDroppingPartitionInfo(tblInfo, partNames)
 		job.SchemaState = model.StateDeleteOnly
@@ -1096,7 +1116,6 @@ func onTruncateTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (int64, e
 	}
 
 	bundles := make([]*placement.Bundle, 0, len(oldIDs))
-
 	for i, oldID := range oldIDs {
 		oldBundle, ok := d.infoCache.GetLatest().BundleByName(placement.GroupID(oldID))
 		if ok && !oldBundle.IsEmpty() {
@@ -1109,6 +1128,22 @@ func onTruncateTablePartition(d *ddlCtx, t *meta.Meta, job *model.Job) (int64, e
 	if err != nil {
 		job.State = model.JobStateCancelled
 		return ver, errors.Wrapf(err, "failed to notify PD the placement rules")
+	}
+
+	rules := make([]*label.Rule, 0, len(oldIDs))
+	for _, newPartition := range newPartitions {
+		r, err := infosync.GetLabelRule(context.TODO(), fmt.Sprintf(label.PartitionIDFormat, label.IDPrefix, job.SchemaName, tblInfo.Name.L, newPartition.Name.L))
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return ver, errors.Wrapf(err, "failed to get PD the label rules")
+		}
+		rules = append(rules, r.Clone().ResetPartition(newPartition.ID, job.SchemaName, tblInfo.Name.L, newPartition.Name.L))
+	}
+
+	err = infosync.PutLabelRules(context.TODO(), rules)
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return ver, errors.Wrapf(err, "failed to notify PD the label rules")
 	}
 
 	newIDs := make([]int64, len(oldIDs))
@@ -1318,6 +1353,36 @@ func (w *worker) onExchangeTablePartition(d *ddlCtx, t *meta.Meta, job *model.Jo
 		return ver, errors.Wrapf(err, "failed to notify PD the placement rules")
 	}
 
+	ntr, err := infosync.GetLabelRule(context.TODO(), fmt.Sprintf(label.TableIDFormat, label.IDPrefix, job.SchemaName, nt.Name.L))
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return 0, errors.Wrapf(err, "failed to get PD the label rule")
+	}
+
+	ptr, err := infosync.GetLabelRule(context.TODO(), fmt.Sprintf(label.PartitionIDFormat, label.IDPrefix, job.SchemaName, pt.Name.L, partDef.Name.L))
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return 0, errors.Wrapf(err, "failed to get PD the label rule")
+	}
+
+	var rules []*label.Rule
+	if ntr != nil && ptr != nil {
+		rules = append(rules, ntr.Clone().ResetPartition(partDef.ID, job.SchemaName, pt.Name.L, partDef.Name.L))
+		rules = append(rules, ptr.Clone().ResetTable(nt.ID, job.SchemaName, nt.Name.L))
+	} else if ptr != nil {
+		rules = append(rules, ptr.Clone().ResetTable(nt.ID, job.SchemaName, nt.Name.L))
+		// delete ptr
+	} else if ntr != nil {
+		rules = append(rules, ntr.Clone().ResetPartition(partDef.ID, job.SchemaName, pt.Name.L, partDef.Name.L))
+		// delete ntr
+	}
+
+	err = infosync.PutLabelRules(context.TODO(), rules)
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return ver, errors.Wrapf(err, "failed to notify PD the label rules")
+	}
+
 	ver, err = updateSchemaVersion(t, job)
 	if err != nil {
 		return ver, errors.Trace(err)
@@ -1497,6 +1562,7 @@ func getPartitionIDs(table *model.TableInfo) []int64 {
 	return physicalTableIDs
 }
 
+// oldPartitionRuleIDs get the label rule ID.
 func getPartitionRuleIDs(dbName string, table *model.TableInfo) []string {
 	if table.GetPartitionInfo() == nil {
 		return []string{}
@@ -1757,6 +1823,44 @@ func onAlterTableAlterPartition(t *meta.Meta, job *model.Job) (ver int64, err er
 		}
 		job.FinishTableJob(model.JobStateDone, model.StatePublic, ver, tblInfo)
 	}
+	return ver, nil
+}
+
+func onAlterTablePartitionAttributes(t *meta.Meta, job *model.Job) (ver int64, err error) {
+	var partitionID int64
+	var def bool
+	rule := &label.Rule{}
+	err = job.DecodeArgs(&partitionID, rule, &def)
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return 0, errors.Trace(err)
+	}
+	tblInfo, err := getTableInfoAndCancelFaultJob(t, job, job.SchemaID)
+	if err != nil {
+		return 0, err
+	}
+
+	if def {
+		// delete the rule
+	} else {
+		ptInfo := tblInfo.GetPartitionInfo()
+		if ptInfo.GetNameByID(partitionID) == "" {
+			job.State = model.JobStateCancelled
+			return 0, errors.Trace(table.ErrUnknownPartition.GenWithStackByArgs("drop?", tblInfo.Name.O))
+		}
+
+		err = infosync.PutLabelRule(context.TODO(), rule)
+		if err != nil {
+			job.State = model.JobStateCancelled
+			return 0, errors.Wrapf(err, "failed to notify PD region label")
+		}
+	}
+	ver, err = updateVersionAndTableInfo(t, job, tblInfo, true)
+	if err != nil {
+		return ver, errors.Trace(err)
+	}
+	job.FinishTableJob(model.JobStateDone, model.StatePublic, ver, tblInfo)
+
 	return ver, nil
 }
 

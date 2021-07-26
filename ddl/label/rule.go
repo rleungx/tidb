@@ -53,6 +53,13 @@ func NewRule() *Rule {
 	return &Rule{}
 }
 
+// NewPartitionRule ...
+func NewPartitionRule(dbName, tableName, partName string) *Rule {
+	return &Rule{
+		ID: fmt.Sprintf(PartitionIDFormat, IDPrefix, dbName, tableName, partName),
+	}
+}
+
 // ApplyAttributesSpec will transfer attributes defined in AttributesSpec to the labels.
 func (r *Rule) ApplyAttributesSpec(spec *ast.AttributesSpec) error {
 	// construct a string list
@@ -91,6 +98,23 @@ func (r *Rule) ResetTable(id int64, dbName, tableName string) *Rule {
 	}...)
 
 	r.RuleType = ruleType
+	r.Rule = map[string]string{
+		"start_key": hex.EncodeToString(codec.EncodeBytes(nil, tablecodec.GenTableRecordPrefix(id))),
+		"end_key":   hex.EncodeToString(codec.EncodeBytes(nil, tablecodec.GenTableRecordPrefix(id+1))),
+	}
+	return r
+}
+
+// ResetPartition ...
+func (r *Rule) ResetPartition(id int64, dbName, tableName, partName string) *Rule {
+	r.ID = fmt.Sprintf(PartitionIDFormat, IDPrefix, dbName, tableName, partName)
+	r.Labels = append(r.Labels, []Label{
+		{Key: "db", Value: dbName},
+		{Key: "table", Value: tableName},
+		{Key: "partition", Value: partName},
+	}...)
+
+	r.RuleType = "key-range"
 	r.Rule = map[string]string{
 		"start_key": hex.EncodeToString(codec.EncodeBytes(nil, tablecodec.GenTableRecordPrefix(id))),
 		"end_key":   hex.EncodeToString(codec.EncodeBytes(nil, tablecodec.GenTableRecordPrefix(id+1))),
