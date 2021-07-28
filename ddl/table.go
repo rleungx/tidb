@@ -480,10 +480,8 @@ func onTruncateTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ erro
 	})
 
 	var oldPartitionIDs []int64
-	var oldPartitionRuleIDs []string
 	if tblInfo.GetPartitionInfo() != nil {
 		oldPartitionIDs = getPartitionIDs(tblInfo)
-		oldPartitionRuleIDs = getPartitionRuleIDs(job.SchemaName, tblInfo)
 		// We use the new partition ID because all the old data is encoded with the old partition ID, it can not be accessed anymore.
 		err = truncateTableByReassignPartitionIDs(t, tblInfo)
 		if err != nil {
@@ -1171,8 +1169,8 @@ func onRepairTable(d *ddlCtx, t *meta.Meta, job *model.Job) (ver int64, _ error)
 }
 
 func onAlterTableAttributes(t *meta.Meta, job *model.Job) (ver int64, err error) {
-	rule := label.NewRule()
 	var def bool
+	rule := label.NewRule()
 	err = job.DecodeArgs(&rule, &def)
 	if err != nil {
 		job.State = model.JobStateCancelled
@@ -1185,13 +1183,13 @@ func onAlterTableAttributes(t *meta.Meta, job *model.Job) (ver int64, err error)
 	}
 
 	if def {
-		// delete the rule
+		err = infosync.UpdateLabelRules(context.TODO(), label.NewRulePatch(nil, []string{rule.ID}))
 	} else {
 		err = infosync.PutLabelRule(context.TODO(), rule)
-		if err != nil {
-			job.State = model.JobStateCancelled
-			return 0, errors.Wrapf(err, "failed to notify PD label label")
-		}
+	}
+	if err != nil {
+		job.State = model.JobStateCancelled
+		return 0, errors.Wrapf(err, "failed to notify PD label label")
 	}
 	ver, err = updateVersionAndTableInfo(t, job, tblInfo, true)
 	if err != nil {
