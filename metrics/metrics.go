@@ -27,7 +27,7 @@ import (
 
 var (
 	// EnvRegisterMetricsAtInit flags that register metrics on init
-	EnvRegisterMetricsAtInit = "true"
+	EnvRegisterMetricsAtInit = "false"
 
 	// PanicCounter measures the count of panics.
 	PanicCounter = prometheus.NewCounterVec(
