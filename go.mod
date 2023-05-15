@@ -71,7 +71,7 @@ require (
 	github.com/pingcap/errors v0.11.5-0.20221009092201-b66cddb77c32
 	github.com/pingcap/failpoint v0.0.0-20220801062533-2eaa32854a6c
 	github.com/pingcap/fn v0.0.0-20200306044125-d5540d389059
-	github.com/pingcap/kvproto v0.0.0-20230427080837-2475f5bed8c3
+	github.com/pingcap/kvproto v0.0.0-20230511011722-6e0e8a7deaa1
 	github.com/pingcap/log v1.1.1-0.20221116035753-734d527bc87c
 	github.com/pingcap/sysutil v1.0.1-0.20230407040306-fb007c5aff21
 	github.com/pingcap/tidb/parser v0.0.0-20211011031125-9b13dc409c5e
@@ -93,7 +93,7 @@ require (
 	github.com/tdakkota/asciicheck v0.1.1
 	github.com/tiancaiamao/appdash v0.0.0-20181126055449-889f96f722a2
 	github.com/tikv/client-go/v2 v2.0.8-0.20230426074936-f53c17d6fb47
-	github.com/tikv/pd/client v0.0.0-20230509061057-4ad5c4805aa9
+	github.com/tikv/pd/client v0.0.0-20230515041116-e42ffbe5395b
 	github.com/timakin/bodyclose v0.0.0-20221125081123-e39cf3fc478e
 	github.com/twmb/murmur3 v1.1.3
 	github.com/uber/jaeger-client-go v2.22.1+incompatible
@@ -144,7 +144,7 @@ require (
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/apache/thrift v0.13.1-0.20201008052519-daf620915714 // indirect
-	github.com/benbjohnson/clock v1.3.3 // indirect
+	github.com/benbjohnson/clock v1.3.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bmatcuk/doublestar/v2 v2.0.4 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect

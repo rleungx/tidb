@@ -391,8 +391,8 @@ def go_deps():
         name = "com_github_benbjohnson_clock",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/benbjohnson/clock",
-        sum = "h1:g+rSsSaAzhHJYcIQE78hJ3AhyjjtQvleKDjlhdBnIhc=",
-        version = "v1.3.3",
+        sum = "h1:wj3BFPrTw8yYgA1OlMqvUk95nc8OMv3cvBSF5erT2W4=",
+        version = "v1.3.4",
     )
     go_repository(
         name = "com_github_beorn7_perks",
@@ -3496,8 +3496,8 @@ def go_deps():
         name = "com_github_pingcap_kvproto",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/pingcap/kvproto",
-        sum = "h1:pW93ZFqGDpdKS0Rsszsbk65cyyQrVLb3RPLL4oEhruM=",
-        version = "v0.0.0-20230427080837-2475f5bed8c3",
+        sum = "h1:VXQ6Du/nKZ9IQnI9NWMzKbftWu8NV5pQkSLKIRzzGN4=",
+        version = "v0.0.0-20230511011722-6e0e8a7deaa1",
     )
     go_repository(
         name = "com_github_pingcap_log",
@@ -4279,8 +4279,8 @@ def go_deps():
         name = "com_github_tikv_pd_client",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/tikv/pd/client",
-        sum = "h1:S/DNMR7C17fyDcJ7iDP/JMQ8mQ/ZLJUZNuxynkj8M2w=",
-        version = "v0.0.0-20230509061057-4ad5c4805aa9",
+        sum = "h1:Ke7Vk/0tM5xaK2gx2jURakEmE5WClt9K3Q0SwdhSdZY=",
+        version = "v0.0.0-20230515041116-e42ffbe5395b",
     )
     go_repository(
         name = "com_github_timakin_bodyclose",
