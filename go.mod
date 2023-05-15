@@ -115,12 +115,12 @@ require (
 	golang.org/x/exp v0.0.0-20230108222341-4b8118a2686a
 	golang.org/x/net v0.10.0
 	golang.org/x/oauth2 v0.7.0
-	golang.org/x/sync v0.1.0
+	golang.org/x/sync v0.2.0
 	golang.org/x/sys v0.8.0
 	golang.org/x/term v0.8.0
 	golang.org/x/text v0.9.0
 	golang.org/x/time v0.3.0
-	golang.org/x/tools v0.8.0
+	golang.org/x/tools v0.9.1
 	google.golang.org/api v0.114.0
 	google.golang.org/grpc v1.55.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -282,7 +282,7 @@ replace (
 	// fix potential security issue(CVE-2020-26160) introduced by indirect dependency.
 	github.com/dgrijalva/jwt-go => github.com/form3tech-oss/jwt-go v3.2.6-0.20210809144907-32ab6a8243d7+incompatible
 	github.com/pingcap/tidb/parser => ./parser
-	github.com/tikv/client-go/v2 => github.com/tikv/client-go/v2 v2.0.8-0.20230512121923-4d2f9430d4cc
+	github.com/tikv/client-go/v2 => github.com/rleungx/client-go/v2 v2.0.0-20230515071228-e07df7fd6508
 	go.opencensus.io => go.opencensus.io v0.23.1-0.20220331163232-052120675fac
 	google.golang.org/grpc => google.golang.org/grpc v1.54.0
 )

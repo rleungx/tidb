@@ -4263,9 +4263,9 @@ def go_deps():
         name = "com_github_tikv_client_go_v2",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/tikv/client-go/v2",
-        replace = "github.com/tikv/client-go/v2",
-        sum = "h1:tnwfXsXMSKV9eNZH6jCshkJaaSSQ+/Y3V3yvjBnL/eM=",
-        version = "v2.0.8-0.20230512121923-4d2f9430d4cc",
+        replace = "github.com/rleungx/client-go/v2",
+        sum = "h1:RK+lbkT4Y7D+EEeHGKHhOE6YRAOj+k+ryrCc68GsHTg=",
+        version = "v2.0.0-20230515071228-e07df7fd6508",
     )
     go_repository(
         name = "com_github_tikv_pd",
@@ -6139,8 +6139,8 @@ def go_deps():
         name = "org_golang_x_sync",
         build_file_proto_mode = "disable_global",
         importpath = "golang.org/x/sync",
-        sum = "h1:wsuoTGHzEhffawBOhz5CYhcrV4IdKZbEyZjBMuTp12o=",
-        version = "v0.1.0",
+        sum = "h1:PUR+T4wwASmuSTYdKjYHI5TD22Wy5ogLU5qZCOLxBrI=",
+        version = "v0.2.0",
     )
     go_repository(
         name = "org_golang_x_sys",
@@ -6174,8 +6174,8 @@ def go_deps():
         name = "org_golang_x_tools",
         build_file_proto_mode = "disable_global",
         importpath = "golang.org/x/tools",
-        sum = "h1:vSDcovVPld282ceKgDimkRSC8kpaH1dgyc9UMzlt84Y=",
-        version = "v0.8.0",
+        sum = "h1:8WMNJAz3zrtPmnYC7ISf5dEn3MT0gY7jBJfw27yrrLo=",
+        version = "v0.9.1",
     )
     go_repository(
         name = "org_golang_x_xerrors",
