@@ -71,6 +71,27 @@ ifeq ($(shell if [ -d extension/enterprise/.git ]; then echo "true"; fi),true)
 	EXTENSION_FLAG += -X "github.com/pingcap/tidb/util/versioninfo.TiDBEnterpriseExtensionGitHash=$(shell cd extension/enterprise && git rev-parse HEAD)"
 endif
 
+# Overwrites the variable TIDB_VERSION and TIDB_GIT_BRANCH, it can change the info when use select version() and select tidb_version()
+ifneq "$(TIDB_VERSION)" ""
+    LDFLAGS += -X "github.com/pingcap/tidb/parser/mysql.ServerlessTiDBReleaseVersionFixed=$(TIDB_VERSION)"
+endif
+
+ifneq "$(TIDB_GIT_BRANCH)" ""
+    LDFLAGS += -X "github.com/pingcap/tidb/util/versioninfo.ServerlessTiDBGitBranch=$(TIDB_GIT_BRANCH)"
+endif
+
+# Overwrites the minimum required TiKV version if MIN_TIKV_VERSION is explicitly set.
+ifneq "$(MIN_TIKV_VERSION)" ""
+    LDFLAGS += -X "github.com/pingcap/tidb/util/versioninfo.TiKVMinVersion=$(MIN_TIKV_VERSION)"
+endif
+
+# Overwrites the variable REGISTER_METRICS_INIT is not set or is true, means we will register metrics when run metrics.go func init(),
+# if REGISTER_METRICS_INIT is false means it is tidb-server, it will not register metrics when run metrics.go func init().
+# if REGISTER_METRICS_INIT is explicitly set.
+ifneq "$(REGISTER_METRICS_INIT)" ""
+	LDFLAGS += -X "github.com/pingcap/tidb/metrics.EnvRegisterMetricsAtInit=$(REGISTER_METRICS_INIT)"
+endif
+
 TEST_LDFLAGS =  -X "github.com/pingcap/tidb/config.checkBeforeDropLDFlag=1"
 COVERAGE_SERVER_LDFLAGS =  -X "github.com/pingcap/tidb/tidb-server.isCoverageServer=1"
 
@@ -119,7 +140,7 @@ DUMPLING_GOTEST  := CGO_ENABLED=1 GO111MODULE=on go test -ldflags '$(DUMPLING_LD
 
 TEST_COVERAGE_DIR := "test_coverage"
 
-ifneq ("$(CI)", "0")
-	BAZEL_GLOBAL_CONFIG := --output_user_root=/home/jenkins/.tidb/tmp
-	BAZEL_CMD_CONFIG := --config=ci --repository_cache=/home/jenkins/.tidb/tmp
-endif
+# ifneq ("$(CI)", "0")
+# 	BAZEL_GLOBAL_CONFIG := --output_user_root=/home/jenkins/.tidb/tmp
+# 	BAZEL_CMD_CONFIG := --config=ci --repository_cache=/home/jenkins/.tidb/tmp
+# endif
