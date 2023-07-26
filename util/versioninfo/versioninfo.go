@@ -28,4 +28,5 @@ var (
 	// TiKVMinVersion is the minimum version of TiKV that can be compatible with the current TiDB.
 	TiKVMinVersion                 = "6.2.0-alpha"
 	TiDBEnterpriseExtensionGitHash = ""
+	ServerlessTiDBGitBranch        = "None"
 )

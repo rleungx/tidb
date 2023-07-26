@@ -32,7 +32,7 @@ import (
 // PrintTiDBInfo prints the TiDB version information.
 func PrintTiDBInfo() {
 	fields := []zap.Field{
-		zap.String("Release Version", mysql.TiDBReleaseVersion),
+		zap.String("Release Version", mysql.TiDBReleaseVersionFixed),
 		zap.String("Edition", versioninfo.TiDBEdition),
 		zap.String("Git Commit Hash", versioninfo.TiDBGitHash),
 		zap.String("Git Branch", versioninfo.TiDBGitBranch),
@@ -70,7 +70,7 @@ func GetTiDBInfo() string {
 		"Check Table Before Drop: %v\n"+
 		"Store: %s"+
 		"%s",
-		mysql.TiDBReleaseVersion,
+		"v7.1.0-serverless",
 		versioninfo.TiDBEdition,
 		versioninfo.TiDBGitHash,
 		versioninfo.TiDBGitBranch,
@@ -81,6 +81,31 @@ func GetTiDBInfo() string {
 		config.CheckTableBeforeDrop,
 		config.GetGlobalConfig().Store,
 		enterpriseVersion,
+	)
+}
+
+// GetTiDBInfoInSQL returns the git hash and build time of this tidb-server binary. when use execute "select tidb_version()"
+func GetTiDBInfoInSQL() string {
+	return fmt.Sprintf("Release Version: %s\n"+
+		"Edition: %s\n"+
+		"Git Commit Hash: %s\n"+
+		"Git Branch: %s\n"+
+		"UTC Build Time: %s\n"+
+		"GoVersion: %s\n"+
+		"Race Enabled: %v\n"+
+		"TiKV Min Version: %s\n"+
+		"Check Table Before Drop: %v\n"+
+		"Store: %s",
+		mysql.ServerlessTiDBReleaseVersionFixed,
+		versioninfo.TiDBEdition,
+		versioninfo.TiDBGitHash,
+		versioninfo.ServerlessTiDBGitBranch,
+		versioninfo.TiDBBuildTS,
+		buildVersion,
+		israce.RaceEnabled,
+		versioninfo.TiKVMinVersion,
+		config.CheckTableBeforeDrop,
+		config.GetGlobalConfig().Store,
 	)
 }
 
