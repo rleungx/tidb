@@ -304,6 +304,8 @@ type Config struct {
 	TiDBMaxReuseColumn uint32 `toml:"tidb-max-reuse-column" json:"tidb-max-reuse-column"`
 	// TiDBEnableExitCheck indicates whether exit-checking in domain for background process
 	TiDBEnableExitCheck bool `toml:"tidb-enable-exit-check" json:"tidb-enable-exit-check"`
+	// SkipGCWorker is used to control whether to skip run gc worker.
+	SkipGCWorker bool `toml:"skip-gc-worker" json:"skip-gc-worker"`
 }
 
 // UpdateTempStoragePath is to update the `TempStoragePath` if port/statusPort was changed
@@ -1044,6 +1046,7 @@ var defaultConf = Config{
 	StoresRefreshInterval:                defTiKVCfg.StoresRefreshInterval,
 	EnableForwarding:                     defTiKVCfg.EnableForwarding,
 	NewCollationsEnabledOnFirstBootstrap: true,
+	SkipGCWorker:                         false,
 	EnableAlterUserPessimistic:           false,
 	EnableGlobalKill:                     true,
 	TrxSummary:                           DefaultTrxSummary(),

@@ -27,6 +27,7 @@ import (
 	"github.com/pingcap/errors"
 	deadlockpb "github.com/pingcap/kvproto/pkg/deadlock"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
+	tidb_config "github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/executor"
 	"github.com/pingcap/tidb/executor/importer"
 	"github.com/pingcap/tidb/kv"
@@ -225,6 +226,13 @@ func (d TiKVDriver) OpenWithOptions(path string, options ...Option) (resStore kv
 		pdClient, err = tikv.NewCodecPDClientWithKeyspace(tikv.ModeTxn, pdCli, keyspaceName)
 		if err != nil {
 			return nil, errors.Trace(err)
+		}
+
+		globalCfg := tidb_config.GetGlobalConfig()
+		disableGCInPath := disableGC
+		disableGC = disableGCInPath || globalCfg.SkipGCWorker
+		if disableGC {
+			logutil.BgLogger().Info("[gc worker] skip run gc worker.", zap.Bool("disableGCInPath", disableGCInPath), zap.Bool("globalCfg.SkipGCWorker", globalCfg.SkipGCWorker))
 		}
 	}
 
