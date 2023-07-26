@@ -321,8 +321,8 @@ def go_deps():
         name = "com_github_benbjohnson_clock",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/benbjohnson/clock",
-        sum = "h1:ip6w0uFQkncKQ979AypyG0ER7mqUSBdKLOgAle/AT8A=",
-        version = "v1.3.0",
+        sum = "h1:VvXlSJBzZpA/zum6Sj74hxwYI2DIxRWuNIoXAzHZz5o=",
+        version = "v1.3.5",
     )
     go_repository(
         name = "com_github_beorn7_perks",
@@ -968,8 +968,8 @@ def go_deps():
         name = "com_github_elastic_gosigar",
         build_file_proto_mode = "disable",
         importpath = "github.com/elastic/gosigar",
-        sum = "h1:Dg80n8cr90OZ7x+bAax/QjoW/XqTI11RmA79ZwIm9/4=",
-        version = "v0.14.2",
+        sum = "h1:ehdJWCzrtTHhYDmUAO6Zpu+uez4UB/dhH0oJSQ/o1Pk=",
+        version = "v0.9.0",
     )
     go_repository(
         name = "com_github_elazarl_go_bindata_assetfs",
@@ -1577,8 +1577,8 @@ def go_deps():
         name = "com_github_golang_glog",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/golang/glog",
-        sum = "h1:nfP3RFugxnNRyKgeWd4oI1nYvXpxrx8ck8ZrcizshdQ=",
-        version = "v1.0.0",
+        sum = "h1:/d3pCKDPWNnvIWe0vVUpNP32qc8U3PDVxySP/y360qE=",
+        version = "v1.1.0",
     )
     go_repository(
         name = "com_github_golang_groupcache",
@@ -3420,8 +3420,8 @@ def go_deps():
         name = "com_github_pingcap_kvproto",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/pingcap/kvproto",
-        sum = "h1:iAIjJVgrPuXjpAiMDcJvz4Y4Qf4KypiCsqy3UVzU6FQ=",
-        version = "v0.0.0-20230523065550-8b641fa69bf3",
+        sum = "h1:sC3XRNNBQNjFJGRtSzJRvqi2aDLFOsQoCHItr9rbbY8=",
+        version = "v0.0.0-20230713060620-89756bd21be1",
     )
     go_repository(
         name = "com_github_pingcap_log",
@@ -3529,8 +3529,8 @@ def go_deps():
         name = "com_github_prometheus_client_model",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/prometheus/client_model",
-        sum = "h1:UBgGFHqYdG/TPFD1B1ogZywDqEkwp3fBMvqdiQ7Xew4=",
-        version = "v0.3.0",
+        sum = "h1:5lQXD3cAg1OXBf4Wq03gTrXHeaV0TQvGfUooCfx1yqY=",
+        version = "v0.4.0",
     )
     go_repository(
         name = "com_github_prometheus_common",
@@ -4171,8 +4171,8 @@ def go_deps():
         name = "com_github_tikv_client_go_v2",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/tikv/client-go/v2",
-        sum = "h1:Ldvdc89v7GE6N7KpsgLEwKhWkE25pXM+hEI9ikZ914c=",
-        version = "v2.0.8-0.20230713054852-a3875bcbc94f",
+        sum = "h1:lXR2U2ElJrPAanb6PCq+WrhJZO9YuO1f1QK8dn3xlSM=",
+        version = "v2.0.8-0.20230721075326-b27cb07173a2",
     )
     go_repository(
         name = "com_github_tikv_pd",
@@ -4186,8 +4186,8 @@ def go_deps():
         name = "com_github_tikv_pd_client",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/tikv/pd/client",
-        sum = "h1:dO0YtekJ9IKiO9dXMZz0rNHPBiGCo+c37RUsnshoLwo=",
-        version = "v0.0.0-20230519121736-d15a686a670e",
+        sum = "h1:xRt5fyR2/XgExjAOFMvTTS20DHbw664wTBSeop/ianQ=",
+        version = "v0.0.0-20230717063645-40eaa35f26e8",
     )
     go_repository(
         name = "com_github_timakin_bodyclose",
