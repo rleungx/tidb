@@ -304,6 +304,8 @@ type Config struct {
 	TiDBMaxReuseColumn uint32 `toml:"tidb-max-reuse-column" json:"tidb-max-reuse-column"`
 	// TiDBEnableExitCheck indicates whether exit-checking in domain for background process
 	TiDBEnableExitCheck bool `toml:"tidb-enable-exit-check" json:"tidb-enable-exit-check"`
+	// ExtendedErrorMsgs is used to store the extended error message for some error.
+	ExtendedErrorMsgs map[string]string `toml:"extended-error-msgs" json:"extended-error-msgs"`
 	// SkipGCWorker is used to control whether to skip run gc worker.
 	SkipGCWorker bool `toml:"skip-gc-worker" json:"skip-gc-worker"`
 }
@@ -1059,6 +1061,7 @@ var defaultConf = Config{
 	TiDBMaxReuseChunk:                    64,
 	TiDBMaxReuseColumn:                   256,
 	TiDBEnableExitCheck:                  false,
+	ExtendedErrorMsgs:                    make(map[string]string),
 }
 
 var (

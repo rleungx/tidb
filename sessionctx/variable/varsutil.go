@@ -96,6 +96,11 @@ func SetMaxDeltaSchemaCount(cnt int64) {
 	atomic.StoreInt64(&maxDeltaSchemaCount, cnt)
 }
 
+// AlwaysOn returns "ON"
+func AlwaysOn() string {
+	return On
+}
+
 // GetMaxDeltaSchemaCount gets maxDeltaSchemaCount size.
 func GetMaxDeltaSchemaCount() int64 {
 	return atomic.LoadInt64(&maxDeltaSchemaCount)
