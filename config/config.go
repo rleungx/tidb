@@ -271,6 +271,7 @@ type Config struct {
 	// It can be used to set GLOBAL system variable values
 	InitializeSQLFile string `toml:"initialize-sql-file" json:"initialize-sql-file"`
 
+	EnableAlterUserPessimistic bool `toml:"enable-alter-user-pessimistic" json:"enable-alter-user-pessimistic"`
 	// The following items are deprecated. We need to keep them here temporarily
 	// to support the upgrade process. They can be removed in future.
 
@@ -1043,6 +1044,7 @@ var defaultConf = Config{
 	StoresRefreshInterval:                defTiKVCfg.StoresRefreshInterval,
 	EnableForwarding:                     defTiKVCfg.EnableForwarding,
 	NewCollationsEnabledOnFirstBootstrap: true,
+	EnableAlterUserPessimistic:           false,
 	EnableGlobalKill:                     true,
 	TrxSummary:                           DefaultTrxSummary(),
 	DisaggregatedTiFlash:                 false,
