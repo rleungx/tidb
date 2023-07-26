@@ -62,6 +62,25 @@ const (
 	tidbGCLeaderDesc      = "tidb_gc_leader_desc"
 	restrictedPriv        = "RESTRICTED_"
 	tidbAuditRetractLog   = "tidb_audit_redact_log" // sysvar installed by a plugin
+
+	placementAdmin = "PLACEMENT_ADMIN"
+
+	// Additional tables for serverless tier.
+	clusterInfo      = "cluster_info"
+	tikvRegionStatus = "tikv_region_status"
+	tikvStoreStatus  = "tikv_store_status"
+	tiflashSegments  = "tiflash_segments"
+	tiflashTables    = "tiflash_tables"
+
+	// Serverless tier slow query related tables.
+	slowQuery                       = "slow_query"
+	clusterSlowQuery                = "cluster_slow_query"
+	statementsSummary               = "statements_summary"
+	statementsSummaryEvicted        = "statements_summary_evicted"
+	statementsSummaryHistory        = "statements_summary_history"
+	clusterStatementsSummary        = "cluster_statements_summary"
+	clusterStatementsSummaryEvicted = "cluster_statements_summary_evicted"
+	clusterStatementsSummaryHistory = "cluster_statements_summary_history"
 )
 
 var (
@@ -167,6 +186,10 @@ func IsInvisibleSysVar(varNameInLower string) bool {
 // IsRestrictedPrivilege returns true if the privilege shuld not be satisfied by SUPER
 // As most dynamic privileges are.
 func IsRestrictedPrivilege(privNameInUpper string) bool {
+	if privNameInUpper == placementAdmin {
+		return true
+	}
+
 	if len(privNameInUpper) < 12 {
 		return false
 	}

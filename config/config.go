@@ -308,6 +308,8 @@ type Config struct {
 	ExtendedErrorMsgs map[string]string `toml:"extended-error-msgs" json:"extended-error-msgs"`
 	// SkipGCWorker is used to control whether to skip run gc worker.
 	SkipGCWorker bool `toml:"skip-gc-worker" json:"skip-gc-worker"`
+	// BootstrapControl is used to control serverless bootstrap procedure.
+	BootstrapControl BootstrapControl `toml:"bootstrap-control" json:"bootstrap-control"`
 }
 
 // UpdateTempStoragePath is to update the `TempStoragePath` if port/statusPort was changed
@@ -1061,6 +1063,7 @@ var defaultConf = Config{
 	TiDBMaxReuseChunk:                    64,
 	TiDBMaxReuseColumn:                   256,
 	TiDBEnableExitCheck:                  false,
+	BootstrapControl:                     defaultBootstrapControl(),
 	ExtendedErrorMsgs:                    make(map[string]string),
 }
 
