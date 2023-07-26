@@ -66,6 +66,7 @@ import (
 	"github.com/pingcap/tidb/session"
 	"github.com/pingcap/tidb/session/txninfo"
 	"github.com/pingcap/tidb/sessionctx/variable"
+	"github.com/pingcap/tidb/standby"
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/dbterror"
 	"github.com/pingcap/tidb/util/fastrand"
@@ -310,6 +311,10 @@ func NewServer(cfg *config.Config, driver IDriver) (*Server, error) {
 			s.socket = ppListener
 			logutil.BgLogger().Info("server is running MySQL protocol (through PROXY protocol)", zap.String("socket", s.cfg.Socket))
 		}
+	}
+
+	if s.cfg.StandByMode {
+		standby.EndStandby(nil)
 	}
 
 	if s.cfg.Status.ReportStatus {
@@ -771,7 +776,7 @@ func (s *Server) checkConnectionCount() error {
 // ShowProcessList implements the SessionManager interface.
 func (s *Server) ShowProcessList() map[uint64]*util.ProcessInfo {
 	rs := make(map[uint64]*util.ProcessInfo)
-	for connID, pi := range s.getUserProcessList() {
+	for connID, pi := range s.GetUserProcessList() {
 		rs[connID] = pi
 	}
 	if s.dom != nil {
@@ -782,7 +787,8 @@ func (s *Server) ShowProcessList() map[uint64]*util.ProcessInfo {
 	return rs
 }
 
-func (s *Server) getUserProcessList() map[uint64]*util.ProcessInfo {
+// GetUserProcessList returns all process info that are created by user.
+func (s *Server) GetUserProcessList() map[uint64]*util.ProcessInfo {
 	s.rwlock.RLock()
 	defer s.rwlock.RUnlock()
 	rs := make(map[uint64]*util.ProcessInfo)

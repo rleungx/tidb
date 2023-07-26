@@ -62,6 +62,7 @@ go_library(
         "//sessionctx/stmtctx",
         "//sessionctx/variable",
         "//sessiontxn",
+        "//standby",
         "//statistics/handle",
         "//store",
         "//store/driver/error",
