@@ -317,6 +317,8 @@ type Config struct {
 	ExtendedErrorMsgs map[string]string `toml:"extended-error-msgs" json:"extended-error-msgs"`
 	// SkipGCWorker is used to control whether to skip run gc worker.
 	SkipGCWorker bool `toml:"skip-gc-worker" json:"skip-gc-worker"`
+	// EnableSafePointV2 is used to control whether to use safe point v2 interface.
+	EnableSafePointV2 bool `toml:"enable-safe-point-v2" json:"enable-safe-point-v2"`
 	// ResolveLocksByKeyspace is used to control whether to do resolve locks by keyspace.
 	ResolveLocksByKeyspace bool `toml:"resolve-locks-by-keyspace" json:"resolve-locks-by-keyspace"`
 	// GCV1BlackList keyspace in black list will not resolve by gc worker.
@@ -1064,6 +1066,7 @@ var defaultConf = Config{
 	EnableForwarding:                     defTiKVCfg.EnableForwarding,
 	NewCollationsEnabledOnFirstBootstrap: true,
 	SkipGCWorker:                         false,
+	EnableSafePointV2:                    false,
 	GCV1BlackList:                        []uint32{},
 	ResolveLocksByKeyspace:               true,
 	EnableAlterUserPessimistic:           false,
