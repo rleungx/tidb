@@ -2891,6 +2891,12 @@ const (
 	SlowLogKeyspaceName = "Keyspace_name"
 	// SlowLogKeyspaceID is slow log field name.
 	SlowLogKeyspaceID = "Keyspace_ID"
+	// SlowLogServerlessTenantID is slow log field name.
+	SlowLogServerlessTenantID = "Serverless_tenant_ID"
+	// SlowLogServerlessProjectID is slow log field name.
+	SlowLogServerlessProjectID = "Serverless_project_ID"
+	// SlowLogServerlessClusterID is slow log field name.
+	SlowLogServerlessClusterID = "Serverless_cluster_ID"
 	// SlowLogUserAndHostStr is the user and host field name, which is compatible with MySQL.
 	SlowLogUserAndHostStr = "User@Host"
 	// SlowLogUserStr is slow log field name.
@@ -3020,43 +3026,46 @@ type JSONSQLWarnForSlowLog struct {
 // SlowQueryLogItems is a collection of items that should be included in the
 // slow query log.
 type SlowQueryLogItems struct {
-	TxnTS             uint64
-	KeyspaceName      string
-	KeyspaceID        uint32
-	SQL               string
-	Digest            string
-	TimeTotal         time.Duration
-	TimeParse         time.Duration
-	TimeCompile       time.Duration
-	TimeOptimize      time.Duration
-	TimeWaitTS        time.Duration
-	IndexNames        string
-	CopTasks          *stmtctx.CopTasksDetails
-	ExecDetail        execdetails.ExecDetails
-	MemMax            int64
-	DiskMax           int64
-	Succ              bool
-	Prepared          bool
-	PlanFromCache     bool
-	PlanFromBinding   bool
-	HasMoreResults    bool
-	PrevStmt          string
-	Plan              string
-	PlanDigest        string
-	BinaryPlan        string
-	RewriteInfo       RewritePhaseInfo
-	KVTotal           time.Duration
-	PDTotal           time.Duration
-	BackoffTotal      time.Duration
-	WriteSQLRespTotal time.Duration
-	ExecRetryCount    uint
-	ExecRetryTime     time.Duration
-	ResultRows        int64
-	IsExplicitTxn     bool
-	IsWriteCacheTable bool
-	UsedStats         map[int64]*stmtctx.UsedStatsInfoForTable
-	IsSyncStatsFailed bool
-	Warnings          []JSONSQLWarnForSlowLog
+	TxnTS               uint64
+	KeyspaceName        string
+	KeyspaceID          uint32
+	ServerlessTenantID  string
+	ServerlessProjectID string
+	ServerlessClusterID string
+	SQL                 string
+	Digest              string
+	TimeTotal           time.Duration
+	TimeParse           time.Duration
+	TimeCompile         time.Duration
+	TimeOptimize        time.Duration
+	TimeWaitTS          time.Duration
+	IndexNames          string
+	CopTasks            *stmtctx.CopTasksDetails
+	ExecDetail          execdetails.ExecDetails
+	MemMax              int64
+	DiskMax             int64
+	Succ                bool
+	Prepared            bool
+	PlanFromCache       bool
+	PlanFromBinding     bool
+	HasMoreResults      bool
+	PrevStmt            string
+	Plan                string
+	PlanDigest          string
+	BinaryPlan          string
+	RewriteInfo         RewritePhaseInfo
+	KVTotal             time.Duration
+	PDTotal             time.Duration
+	BackoffTotal        time.Duration
+	WriteSQLRespTotal   time.Duration
+	ExecRetryCount      uint
+	ExecRetryTime       time.Duration
+	ResultRows          int64
+	IsExplicitTxn       bool
+	IsWriteCacheTable   bool
+	UsedStats           map[int64]*stmtctx.UsedStatsInfoForTable
+	IsSyncStatsFailed   bool
+	Warnings            []JSONSQLWarnForSlowLog
 }
 
 // SlowLogFormat uses for formatting slow log.
@@ -3065,6 +3074,9 @@ type SlowQueryLogItems struct {
 // # Txn_start_ts: 406315658548871171
 // # Keyspace_name: keyspace_a
 // # Keyspace_ID: 1
+// # Serverless_tenant_ID: 1
+// # Serverless_project_ID: 1
+// # Serverless_cluster_ID: 1
 // # User@Host: root[root] @ localhost [127.0.0.1]
 // # Conn_ID: 6
 // # Query_time: 4.895492
@@ -3089,6 +3101,9 @@ func (s *SessionVars) SlowLogFormat(logItems *SlowQueryLogItems) string {
 	if logItems.KeyspaceName != "" {
 		writeSlowLogItem(&buf, SlowLogKeyspaceName, logItems.KeyspaceName)
 		writeSlowLogItem(&buf, SlowLogKeyspaceID, fmt.Sprintf("%d", logItems.KeyspaceID))
+		writeSlowLogItem(&buf, SlowLogServerlessTenantID, logItems.ServerlessTenantID)
+		writeSlowLogItem(&buf, SlowLogServerlessProjectID, logItems.ServerlessProjectID)
+		writeSlowLogItem(&buf, SlowLogServerlessClusterID, logItems.ServerlessClusterID)
 	}
 
 	if s.User != nil {

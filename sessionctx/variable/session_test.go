@@ -221,6 +221,9 @@ func TestSlowLogFormat(t *testing.T) {
 	resultFields := `# Txn_start_ts: 406649736972468225
 # Keyspace_name: keyspace_a
 # Keyspace_ID: 1
+# Serverless_tenant_ID: 1
+# Serverless_project_ID: 1
+# Serverless_cluster_ID: 1
 # User@Host: root[root] @ 192.168.0.1 [192.168.0.1]
 # Conn_ID: 1
 # Exec_retry_time: 5.1 Exec_retry_count: 3
@@ -260,31 +263,34 @@ func TestSlowLogFormat(t *testing.T) {
 	sql := "select * from t;"
 	_, digest := parser.NormalizeDigest(sql)
 	logItems := &variable.SlowQueryLogItems{
-		TxnTS:             txnTS,
-		KeyspaceName:      "keyspace_a",
-		KeyspaceID:        1,
-		SQL:               sql,
-		Digest:            digest.String(),
-		TimeTotal:         costTime,
-		TimeParse:         time.Duration(10),
-		TimeCompile:       time.Duration(10),
-		TimeOptimize:      time.Duration(10),
-		TimeWaitTS:        time.Duration(3),
-		IndexNames:        "[t1:a,t2:b]",
-		CopTasks:          copTasks,
-		ExecDetail:        execDetail,
-		MemMax:            memMax,
-		DiskMax:           diskMax,
-		Prepared:          true,
-		PlanFromCache:     true,
-		PlanFromBinding:   true,
-		HasMoreResults:    true,
-		KVTotal:           10 * time.Second,
-		PDTotal:           11 * time.Second,
-		BackoffTotal:      12 * time.Second,
-		WriteSQLRespTotal: 1 * time.Second,
-		ResultRows:        12345,
-		Succ:              true,
+		TxnTS:               txnTS,
+		KeyspaceName:        "keyspace_a",
+		KeyspaceID:          1,
+		ServerlessTenantID:  "1",
+		ServerlessProjectID: "1",
+		ServerlessClusterID: "1",
+		SQL:                 sql,
+		Digest:              digest.String(),
+		TimeTotal:           costTime,
+		TimeParse:           time.Duration(10),
+		TimeCompile:         time.Duration(10),
+		TimeOptimize:        time.Duration(10),
+		TimeWaitTS:          time.Duration(3),
+		IndexNames:          "[t1:a,t2:b]",
+		CopTasks:            copTasks,
+		ExecDetail:          execDetail,
+		MemMax:              memMax,
+		DiskMax:             diskMax,
+		Prepared:            true,
+		PlanFromCache:       true,
+		PlanFromBinding:     true,
+		HasMoreResults:      true,
+		KVTotal:             10 * time.Second,
+		PDTotal:             11 * time.Second,
+		BackoffTotal:        12 * time.Second,
+		WriteSQLRespTotal:   1 * time.Second,
+		ResultRows:          12345,
+		Succ:                true,
 		RewriteInfo: variable.RewritePhaseInfo{
 			DurationRewrite:            3,
 			DurationPreprocessSubQuery: 2,
