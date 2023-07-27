@@ -147,6 +147,10 @@ type StmtRecord struct {
 
 	KeyspaceName string `json:"keyspace_name,omitempty"`
 	KeyspaceID   uint32 `json:"keyspace_id,omitempty"`
+	// serverless related fields
+	ServerlessTenantID  string `json:"serverless_tenant_id"`
+	ServerlessProjectID string `json:"serverless_project_id"`
+	ServerlessClusterID string `json:"serverless_cluster_id"`
 }
 
 // NewStmtRecord creates a new StmtRecord from StmtExecInfo.
@@ -214,6 +218,10 @@ func NewStmtRecord(info *stmtsummary.StmtExecInfo) *StmtRecord {
 		LastSeen:         info.StartTime,
 		KeyspaceName:     info.KeyspaceName,
 		KeyspaceID:       info.KeyspaceID,
+
+		ServerlessTenantID:  info.ServerlessTenantID,
+		ServerlessProjectID: info.ServerlessProjectID,
+		ServerlessClusterID: info.ServerlessClusterID,
 	}
 }
 

@@ -248,6 +248,11 @@ type StmtExecInfo struct {
 	Prepared        bool
 	KeyspaceName    string
 	KeyspaceID      uint32
+
+	// serverless related fields
+	ServerlessTenantID  string
+	ServerlessProjectID string
+	ServerlessClusterID string
 }
 
 // newStmtSummaryByDigestMap creates an empty stmtSummaryByDigestMap.

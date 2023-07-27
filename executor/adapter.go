@@ -1860,7 +1860,6 @@ func (a *ExecStmt) SummaryStmt(succ bool) {
 	}
 
 	resultRows := GetResultRowsCount(stmtCtx, a.Plan)
-
 	var (
 		keyspaceName string
 		keyspaceID   uint32
@@ -1904,6 +1903,9 @@ func (a *ExecStmt) SummaryStmt(succ bool) {
 		Prepared:            a.isPreparedStmt,
 		KeyspaceName:        keyspaceName,
 		KeyspaceID:          keyspaceID,
+		ServerlessTenantID:  metrics.ServerlessTenantID,
+		ServerlessClusterID: metrics.ServerlessClusterID,
+		ServerlessProjectID: metrics.ServerlessProjectID,
 	}
 	if a.retryCount > 0 {
 		stmtExecInfo.ExecRetryTime = costTime - sessVars.DurationParse - sessVars.DurationCompile - time.Since(a.retryStartTime)
