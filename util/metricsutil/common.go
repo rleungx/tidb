@@ -47,7 +47,7 @@ import (
 func RegisterMetrics() error {
 	cfg := config.GetGlobalConfig()
 	if keyspace.IsKeyspaceNameEmpty(cfg.KeyspaceName) || strings.ToLower(cfg.Store) != "tikv" {
-		return registerMetrics(nil) // register metrics without label 'keyspace_id'.
+		return RegisterMetricsWithKeyspaceMeta(nil) // register metrics without label 'keyspace_id'.
 	}
 
 	pdAddrs, _, _, err := tikvconfig.ParsePath("tikv://" + cfg.Path)
@@ -71,13 +71,13 @@ func RegisterMetrics() error {
 		return err
 	}
 
-	return registerMetrics(keyspaceMeta)
+	return RegisterMetricsWithKeyspaceMeta(keyspaceMeta)
 }
 
 // RegisterMetricsForBR register metrics with const label keyspace_id for BR.
 func RegisterMetricsForBR(pdAddrs []string, keyspaceName string) error {
 	if keyspace.IsKeyspaceNameEmpty(keyspaceName) {
-		return registerMetrics(nil) // register metrics without label 'keyspace_id'.
+		return RegisterMetricsWithKeyspaceMeta(nil) // register metrics without label 'keyspace_id'.
 	}
 
 	timeoutSec := 10 * time.Second
@@ -93,10 +93,11 @@ func RegisterMetricsForBR(pdAddrs []string, keyspaceName string) error {
 		return err
 	}
 
-	return registerMetrics(keyspaceMeta)
+	return RegisterMetricsWithKeyspaceMeta(keyspaceMeta)
 }
 
-func registerMetrics(keyspaceMeta *keyspacepb.KeyspaceMeta) error {
+// RegisterMetricsWithKeyspaceMeta register metrics with const label if keyspaceMeta set.
+func RegisterMetricsWithKeyspaceMeta(keyspaceMeta *keyspacepb.KeyspaceMeta) error {
 	if keyspaceMeta != nil {
 		metrics.SetConstLabels("keyspace_id", fmt.Sprint(keyspaceMeta.GetId()))
 	}

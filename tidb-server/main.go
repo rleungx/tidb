@@ -30,6 +30,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/kvproto/pkg/keyspacepb"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/bindinfo"
 	"github.com/pingcap/tidb/config"
@@ -212,6 +213,7 @@ func main() {
 
 	mainErrHandler := func(err error) { terror.MustNil(err) }
 
+	var keyspaceMeta *keyspacepb.KeyspaceMeta
 	if config.GetGlobalConfig().StandByMode {
 		activateRequest := standby.StartStandby(
 			config.GetGlobalConfig().Status.StatusHost,
@@ -240,7 +242,7 @@ func main() {
 				pd.WithCustomTimeoutOption(time.Duration(cfg.PDClient.PDServerTimeout)*time.Second),
 			)
 			mainErrHandler(err)
-			keyspaceMeta, err := pdCli.LoadKeyspace(context.TODO(), activateRequest.KeyspaceName)
+			keyspaceMeta, err = pdCli.LoadKeyspace(context.TODO(), activateRequest.KeyspaceName)
 			mainErrHandler(err)
 			metrics.ServerlessTenantID = keyspaceMeta.Config["serverless_tenant_id"]
 			metrics.ServerlessProjectID = keyspaceMeta.Config["serverless_project_id"]
@@ -256,8 +258,8 @@ func main() {
 
 	err := registerStores()
 	mainErrHandler(err)
-	// TODO: we request pd twice to get the keyspace meta, metric's pr should fix it.
-	err = metricsutil.RegisterMetrics()
+
+	err = metricsutil.RegisterMetricsWithKeyspaceMeta(keyspaceMeta)
 	mainErrHandler(err)
 	if variable.EnableTmpStorageOnOOM.Load() {
 		config.GetGlobalConfig().UpdateTempStoragePath()
