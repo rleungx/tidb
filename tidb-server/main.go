@@ -74,6 +74,7 @@ import (
 	"github.com/pingcap/tidb/util/metricsutil"
 	"github.com/pingcap/tidb/util/printer"
 	"github.com/pingcap/tidb/util/sem"
+	"github.com/pingcap/tidb/util/serverless"
 	"github.com/pingcap/tidb/util/signal"
 	stmtsummaryv2 "github.com/pingcap/tidb/util/stmtsummary/v2"
 	"github.com/pingcap/tidb/util/sys/linux"
@@ -212,6 +213,10 @@ func main() {
 	}
 
 	mainErrHandler := func(err error) { terror.MustNil(err) }
+
+	quit := make(chan struct{})
+	defer close(quit)
+	serverless.StartMemoryScaler(quit)
 
 	var keyspaceMeta *keyspacepb.KeyspaceMeta
 	if config.GetGlobalConfig().StandByMode {
