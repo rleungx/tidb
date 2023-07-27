@@ -31,6 +31,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/kvproto/pkg/errorpb"
+	"github.com/pingcap/kvproto/pkg/keyspacepb"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/tidb/br/pkg/utils"
@@ -40,6 +41,7 @@ import (
 	"github.com/pingcap/tidb/ddl/placement"
 	"github.com/pingcap/tidb/ddl/util"
 	"github.com/pingcap/tidb/domain/infosync"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/metrics"
 	"github.com/pingcap/tidb/parser/model"
@@ -83,7 +85,8 @@ type GCWorker struct {
 		batchResolveLocks func(locks []*txnlock.Lock, regionID tikv.RegionVerID, safepoint uint64) (ok bool, err error)
 		resolveLocks      func(locks []*txnlock.Lock, lowResolutionTS uint64) (int64, error)
 	}
-	logBackupEnabled bool // check log-backup task existed.
+	logBackupEnabled   bool // check log-backup task existed.
+	blacklistKeyspaces map[uint32]uint32
 }
 
 // NewGCWorker creates a GCWorker instance.
@@ -184,6 +187,8 @@ const (
 	tidbGCLeaderLease = "tidb_gc_leader_lease"
 	tidbGCLeaderUUID  = "tidb_gc_leader_uuid"
 	tidbGCSafePoint   = "tidb_gc_safe_point"
+
+	getAllKeyspaceLimit = 50
 )
 
 var gcSafePointCacheInterval = tikv.GcSafePointCacheInterval
@@ -213,6 +218,7 @@ func (w *GCWorker) start(ctx context.Context, wg *sync.WaitGroup) {
 	logutil.Logger(ctx).Info("[gc worker] start",
 		zap.String("uuid", w.uuid))
 
+	w.initBlackList()
 	w.tick(ctx) // Immediately tick once to initialize configs.
 	wg.Done()
 
@@ -241,6 +247,15 @@ func (w *GCWorker) start(ctx context.Context, wg *sync.WaitGroup) {
 			logutil.Logger(ctx).Info("[gc worker] quit", zap.String("uuid", w.uuid))
 			return
 		}
+	}
+}
+
+func (w *GCWorker) initBlackList() {
+	// Init black list keyspaces.
+	w.blacklistKeyspaces = make(map[uint32]uint32)
+	for _, blackKeyspace := range config.GetGlobalConfig().GCV1BlackList {
+		logutil.BgLogger().Info("blacklistKeyspaces put", zap.Uint32("blackKeyspace", blackKeyspace))
+		w.blacklistKeyspaces[blackKeyspace] = blackKeyspace
 	}
 }
 
@@ -1283,6 +1298,106 @@ func (w *GCWorker) legacyResolveLocks(
 		zap.Int("regions", runner.CompletedRegions()))
 	metrics.GCHistogram.WithLabelValues("resolve_locks").Observe(time.Since(startTime).Seconds())
 	return nil
+}
+
+// Do resolve locks by keyspace.
+func (w *GCWorker) resolveKeyspacesLocks(ctx context.Context, runner *rangetask.Runner, safePoint uint64) error {
+	keyspaces, err := w.getAllKeyspace(ctx)
+	if err != nil {
+		logutil.Logger(ctx).Warn("[gc worker] get all keyspace err.", zap.Error(errors.Trace(err)))
+		return err
+	}
+	logutil.Logger(ctx).Info("[gc worker] start keyspaces resolve locks.")
+
+	// Start api v1 resolve locks, the range is [ unbounded, keyspace 0 left bound )
+	txnLeftBound := []byte("")
+	txnRightBound := keyspace.GetKeyspaceTxnPrefix(0)
+	err = w.legacyResolveKeyspaceLocks(ctx, txnLeftBound, txnRightBound, runner, safePoint)
+	if err != nil {
+		logutil.Logger(ctx).Warn("[gc worker] api v1 legacyResolveKeyspaceLocks err.", zap.Error(errors.Trace(err)))
+		return err
+	}
+
+	// maxRightBound is the max right bound of all keyspaces,
+	// is used to find the range right of the last keyspace's range.
+	var maxRightBound []byte
+	// Start keyspaces resolve locks
+	for i := range keyspaces {
+		keyspaceMeta := keyspaces[i]
+		_, isBlackKespace := w.blacklistKeyspaces[keyspaceMeta.Id]
+		if keyspaceMeta.State != keyspacepb.KeyspaceState_ENABLED || isBlackKespace {
+			logutil.BgLogger().Debug("keyspace status check", zap.Bool("is-not-enabled", keyspaceMeta.State != keyspacepb.KeyspaceState_ENABLED), zap.Bool("isBlackKespace", isBlackKespace))
+			continue
+		}
+
+		logutil.Logger(ctx).Info("[gc worker] start keyspace resolve locks", zap.Uint32("KeyspaceID", keyspaceMeta.Id))
+		txnLeftBound, txnRightBound = keyspace.GetKeyspaceTxnRange(keyspaceMeta.Id)
+		// Update maxRightBound if needed.
+		if bytes.Compare(txnRightBound, maxRightBound) > 0 {
+			maxRightBound = txnRightBound
+		}
+		err := w.legacyResolveKeyspaceLocks(ctx, txnLeftBound, txnRightBound, runner, safePoint)
+		if err != nil {
+			logutil.Logger(ctx).Warn("[gc worker] legacyResolveKeyspaceLocks err.", zap.Uint32("ErrKeyspaceID", keyspaceMeta.Id), zap.Error(errors.Trace(err)))
+			continue
+		}
+	}
+
+	// Do range:[ last keyspace right bound, unbounded ) resolve locks.
+	endKey := []byte("")
+	err = w.legacyResolveKeyspaceLocks(ctx, maxRightBound, endKey, runner, safePoint)
+	if err != nil {
+		logutil.Logger(ctx).Warn("[gc worker] legacyResolveKeyspaceLocks err.", zap.String("txnLeftBound", hex.EncodeToString(maxRightBound)), zap.String("txnRightBound", hex.EncodeToString(endKey)), zap.Error(errors.Trace(err)))
+		return err
+	}
+
+	return nil
+}
+
+func (w *GCWorker) getAllKeyspace(ctx context.Context) ([]*keyspacepb.KeyspaceMeta, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var allkeyspaces []*keyspacepb.KeyspaceMeta
+	startID := uint32(0)
+	for {
+		keyspacesList, err := w.pdClient.GetAllKeyspaces(ctx, startID, getAllKeyspaceLimit)
+		if err != nil {
+			logutil.Logger(ctx).Error("get all keyspaces error", zap.Error(err))
+			return nil, err
+		}
+
+		if len(keyspacesList) == 0 {
+			break
+		}
+
+		allkeyspaces = append(allkeyspaces, keyspacesList...)
+		latestKeyspace := keyspacesList[len(keyspacesList)-1]
+		startID = latestKeyspace.Id + 1
+		logutil.Logger(ctx).Info("get all keyspace startID", zap.Uint32("startID", startID))
+	}
+	return allkeyspaces, nil
+}
+
+func (w *GCWorker) legacyResolveKeyspaceLocks(ctx context.Context, txnLeftBound []byte, txnRightBound []byte, runner *rangetask.Runner, safePoint uint64) error {
+	logutil.Logger(ctx).Debug("[gc worker] resolve locks by keyspace range",
+		zap.String("uuid", w.uuid),
+		zap.Uint64("safePoint", safePoint),
+		zap.String("txnLeftBound", hex.EncodeToString(txnLeftBound)),
+		zap.String("txnRightBound", hex.EncodeToString(txnRightBound)),
+	)
+	err := runner.RunOnRange(ctx, txnLeftBound, txnRightBound)
+	if err != nil {
+		logutil.Logger(ctx).Error("[gc worker] resolve locks by keyspace range failed",
+			zap.String("uuid", w.uuid),
+			zap.Uint64("safePoint", safePoint),
+			zap.String("txnLeftBound", hex.EncodeToString(txnLeftBound)),
+			zap.String("txnRightBound", hex.EncodeToString(txnRightBound)),
+			zap.Error(err))
+		return errors.Trace(err)
+	}
+	return nil
+
 }
 
 // getTryResolveLocksTS gets the TryResolveLocksTS

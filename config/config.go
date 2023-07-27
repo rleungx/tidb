@@ -317,6 +317,10 @@ type Config struct {
 	ExtendedErrorMsgs map[string]string `toml:"extended-error-msgs" json:"extended-error-msgs"`
 	// SkipGCWorker is used to control whether to skip run gc worker.
 	SkipGCWorker bool `toml:"skip-gc-worker" json:"skip-gc-worker"`
+	// ResolveLocksByKeyspace is used to control whether to do resolve locks by keyspace.
+	ResolveLocksByKeyspace bool `toml:"resolve-locks-by-keyspace" json:"resolve-locks-by-keyspace"`
+	// GCV1BlackList keyspace in black list will not resolve by gc worker.
+	GCV1BlackList []uint32 `toml:"gc-v1-black-list" json:"gc-v1-black-list"`
 	// BootstrapControl is used to control serverless bootstrap procedure.
 	BootstrapControl BootstrapControl `toml:"bootstrap-control" json:"bootstrap-control"`
 }
@@ -1060,6 +1064,8 @@ var defaultConf = Config{
 	EnableForwarding:                     defTiKVCfg.EnableForwarding,
 	NewCollationsEnabledOnFirstBootstrap: true,
 	SkipGCWorker:                         false,
+	GCV1BlackList:                        []uint32{},
+	ResolveLocksByKeyspace:               true,
 	EnableAlterUserPessimistic:           false,
 	EnableGlobalKill:                     true,
 	TrxSummary:                           DefaultTrxSummary(),
