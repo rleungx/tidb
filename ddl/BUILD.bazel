@@ -124,6 +124,7 @@ go_library(
         "//util/resourcegrouptag",
         "//util/rowDecoder",
         "//util/rowcodec",
+        "//util/sem",
         "//util/set",
         "//util/slice",
         "//util/sqlexec",

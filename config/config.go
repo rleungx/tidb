@@ -189,6 +189,7 @@ type Config struct {
 	TiDBEdition                string                  `toml:"tidb-edition" json:"tidb-edition"`
 	TiDBReleaseVersion         string                  `toml:"tidb-release-version" json:"tidb-release-version"`
 	KeyspaceName               string                  `toml:"keyspace-name" json:"keyspace-name"`
+	IsBranch                   bool                    `toml:"is-branch" json:"is-branch"`
 	Log                        Log                     `toml:"log" json:"log"`
 	Instance                   Instance                `toml:"instance" json:"instance"`
 	Security                   Security                `toml:"security" json:"security"`
@@ -591,6 +592,14 @@ const (
 	SpilledFileEncryptionMethodAES128CTR = "aes128-ctr"
 )
 
+// The following constants represent the valid level of security enhanced mode (SEM).
+const (
+	// SEMLevelBasic represent that SEM is enabled with basic security features.
+	SEMLevelBasic = "basic"
+	// SEMLevelStrict represent that SEM is enabled with enhanced security features.
+	SEMLevelStrict = "strict"
+)
+
 // Security is the security section of the config.
 type Security struct {
 	SkipGrantTable  bool     `toml:"skip-grant-table" json:"skip-grant-table"`
@@ -608,6 +617,10 @@ type Security struct {
 	SpilledFileEncryptionMethod string `toml:"spilled-file-encryption-method" json:"spilled-file-encryption-method"`
 	// EnableSEM prevents SUPER users from having full access.
 	EnableSEM bool `toml:"enable-sem" json:"enable-sem"`
+	// SEMLevel sets the security level for SEM, the value can be disabled, normal or enhanced.
+	SEMLevel string `toml:"sem-level" json:"sem-level"`
+	// RemoteDataWhiteList is the white list of remote data sources.
+	RemoteDataWhiteList []string `toml:"remote-data-white-list" json:"remote-data-white-list"`
 	// Allow automatic TLS certificate generation
 	AutoTLS         bool   `toml:"auto-tls" json:"auto-tls"`
 	MinTLSVersion   string `toml:"tls-version" json:"tls-version"`
@@ -1054,7 +1067,8 @@ var defaultConf = Config{
 	EnableGlobalIndex:          false,
 	Security: Security{
 		SpilledFileEncryptionMethod: SpilledFileEncryptionMethodPlaintext,
-		EnableSEM:                   false,
+		EnableSEM:                   true,
+		SEMLevel:                    SEMLevelStrict,
 		AutoTLS:                     false,
 		RSAKeySize:                  4096,
 		AuthTokenJWKS:               "",
@@ -1388,6 +1402,14 @@ func (c *Config) Valid() error {
 	default:
 		return fmt.Errorf("unsupported [security]spilled-file-encryption-method %v, TiDB only supports [%v, %v]",
 			c.Security.SpilledFileEncryptionMethod, SpilledFileEncryptionMethodPlaintext, SpilledFileEncryptionMethodAES128CTR)
+	}
+
+	c.Security.SEMLevel = strings.ToLower(c.Security.SEMLevel)
+	switch c.Security.SEMLevel {
+	case SEMLevelBasic, SEMLevelStrict:
+	default:
+		return fmt.Errorf("unsupported [security]sem-level %v, TiDB only supports [%v, %v]",
+			c.Security.SEMLevel, SEMLevelBasic, SEMLevelStrict)
 	}
 
 	// check stats load config

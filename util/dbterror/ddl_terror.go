@@ -442,6 +442,9 @@ var (
 
 	// ErrNotSupportedYet returns when tidb does not support this feature.
 	ErrNotSupportedYet = ClassDDL.NewStd(mysql.ErrNotSupportedYet)
+
+	// ErrNotSupportedOnServerless returns when user requested a serverless unsupported feature.
+	ErrNotSupportedOnServerless = ClassDDL.NewStd(mysql.ErrNotSupportedOnServerless)
 )
 
 // ReorgRetryableErrCodes is the error codes that are retryable for reorganization.

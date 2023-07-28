@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/parser/terror"
@@ -50,6 +52,18 @@ const (
 	serverlessVersion9 = 9
 	// serverlessVersion10 disable 1pc.
 	serverlessVersion10 = 10
+	// serverlessVersion11 grants `cloud_admin` with the privilege that `grant 'role_admin' to <user>`
+	serverlessVersion11 = 11
+	// serverlessVersion12 creates missing 'role_admin' user.
+	serverlessVersion12 = 12
+	// serverlessVersion13 is marked as a no-op.
+	serverlessVersion13 = 13
+	// serverlessVersion14 reverts the change of serverlessVersion11.
+	serverlessVersion14 = 14
+	// serverlessVersion15 rename user cloud_admin to prefix.cloud_admin`.
+	serverlessVersion15 = 15
+	// serverlessVersion16 is noop.
+	serverlessVersion16 = 16
 )
 
 const (
@@ -57,9 +71,13 @@ const (
 	defaultMaxExecutionTime = int(30 * time.Minute / time.Millisecond)
 )
 
+const (
+	branchBootstrapStateVar = "branch_bootstrap_state"
+)
+
 // currentServerlessVersion is defined as a variable, so we can modify its value for testing.
 // please make sure this is the largest version
-var currentServerlessVersion int64 = serverlessVersion10
+var currentServerlessVersion int64 = serverlessVersion16
 
 var bootstrapServerlessVersion = []func(Session, int64){
 	upgradeToServerlessVer2,
@@ -71,6 +89,11 @@ var bootstrapServerlessVersion = []func(Session, int64){
 	upgradeToServerlessVer8,
 	upgradeToServerlessVer9,
 	upgradeToServerlessVer10,
+	upgradeToServerlessVer11,
+	upgradeToServerlessVer12,
+	upgradeToServerlessVer13,
+	upgradeToServerlessVer14,
+	upgradeToServerlessVer15,
 }
 
 // updateServerlessVersion updates serverless version variable in mysql.TiDB table.
@@ -286,7 +309,104 @@ func upgradeToServerlessVer10(s Session, ver int64) {
 	if ver >= serverlessVersion10 {
 		return
 	}
+
 	mustExecute(s, "set @@global.tidb_enable_1pc=OFF")
+}
+
+func upgradeToServerlessVer11(s Session, ver int64) {
+	if ver >= serverlessVersion11 {
+		return
+	}
+	insertGlobalGrants(s, "cloud_admin", "ROLE_ADMIN", "Y")
+}
+
+func upgradeToServerlessVer12(s Session, ver int64) {
+	if ver >= serverlessVersion12 {
+		return
+	}
+
+	mustExecute(s, `REPLACE HIGH_PRIORITY INTO mysql.user SET `+
+		`Host = "%", `+
+		`User = "role_admin", `+
+		`authentication_string = "", `+
+		`plugin = "mysql_native_password", `+
+		`Select_priv = "Y", `+
+		`Insert_priv = "Y", `+
+		`Update_priv = "Y", `+
+		`Delete_priv = "Y", `+
+		`Create_priv = "Y", `+
+		`Drop_priv = "Y", `+
+		`Process_priv = "Y", `+
+		`Grant_priv = "Y", `+
+		`References_priv = "Y", `+
+		`Alter_priv = "Y", `+
+		`Show_db_priv = "Y", `+
+		`Super_priv = "Y", `+
+		`Create_tmp_table_priv = "Y", `+
+		`Lock_tables_priv = "Y", `+
+		`Execute_priv = "Y", `+
+		`Create_view_priv = "Y", `+
+		`Show_view_priv = "Y", `+
+		`Create_routine_priv = "Y", `+
+		`Alter_routine_priv = "Y", `+
+		`Index_priv = "Y", `+
+		`Create_user_priv = "Y", `+
+		`Event_priv = "Y", `+
+		`Repl_slave_priv = "Y", `+
+		`Repl_client_priv = "Y", `+
+		`Trigger_priv = "Y", `+
+		`Create_role_priv = "Y", `+
+		`Drop_role_priv = "Y", `+
+		`Account_locked = "Y", `+
+		`Shutdown_priv = "N", `+
+		`Reload_priv = "Y", `+
+		`FILE_priv = "Y", `+
+		`Config_priv = "N", `+
+		`Create_Tablespace_Priv = "Y", `+
+		`User_attributes = NULL, `+
+		`Token_issuer = "";`,
+	)
+
+	// GRANT ROLE_ADMIN ON *.* to 'role_admin';
+	insertGlobalGrants(s, "role_admin", "ROLE_ADMIN", "N")
+
+	mustExecute(s, `REPLACE HIGH_PRIORITY INTO mysql.global_priv SET `+
+		`Host = "%", `+
+		`User = "role_admin", `+
+		`Priv = "{}";`,
+	)
+}
+
+func upgradeToServerlessVer13(s Session, ver int64) {
+	if ver >= serverlessVersion13 {
+		return
+	}
+	// no-op
+}
+
+func upgradeToServerlessVer14(s Session, ver int64) {
+	if ver >= serverlessVersion14 {
+		return
+	}
+	mustExecute(s, `DELETE FROM mysql.global_grants where `+
+		`User = %? `+
+		`AND Host = "%" `+
+		`AND Priv = %?`,
+		"cloud_admin",
+		"ROLE_ADMIN",
+	)
+}
+
+func upgradeToServerlessVer15(s Session, ver int64) {
+	if ver >= serverlessVersion15 {
+		return
+	}
+	if prefix := keyspace.GetKeyspaceNameBySettings(); prefix != "" {
+		cloudAdminName := prefix + ".cloud_admin"
+		mustExecute(s, "UPDATE HIGH_PRIORITY mysql.user SET User=%? WHERE User='cloud_admin' AND Host='%'", cloudAdminName)
+		mustExecute(s, "UPDATE HIGH_PRIORITY mysql.global_priv SET User=%? WHERE User='cloud_admin' AND Host='%'", cloudAdminName)
+		mustExecute(s, "UPDATE HIGH_PRIORITY mysql.global_grants SET User=%? WHERE User='cloud_admin' AND Host='%'", cloudAdminName)
+	}
 }
 
 // Serverless bootstrap procedures.
@@ -382,10 +502,10 @@ func bootstrapServerlessRoot(s Session, userName string) {
 }
 
 // bootstrapCloudAdmin creates user cloud_admin and configure its privilege into mysql.user.
-func bootstrapCloudAdmin(s Session) {
+func bootstrapCloudAdmin(s Session, userName string) {
 	mustExecute(s, `REPLACE HIGH_PRIORITY INTO mysql.user SET `+
 		`Host = "%", `+
-		`User = "cloud_admin", `+
+		`User = %?, `+
 		`authentication_string = "", `+
 		`plugin = "mysql_native_password", `+
 		`Select_priv = "Y", `+
@@ -423,25 +543,27 @@ func bootstrapCloudAdmin(s Session) {
 		`Create_Tablespace_Priv = "N", `+
 		`User_attributes = NULL, `+
 		`Token_issuer = "" `,
+		userName,
 	)
 
-	insertGlobalGrants(s, "cloud_admin", "DASHBOARD_CLIENT", "N")
-	insertGlobalGrants(s, "cloud_admin", "SYSTEM_VARIABLES_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "CONNECTION_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "RESTRICTED_VARIABLES_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "RESTRICTED_STATUS_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "RESTRICTED_CONNECTION_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "RESTRICTED_USER_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "RESTRICTED_TABLES_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "RESTRICTED_REPLICA_WRITER_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "BACKUP_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "RESTORE_ADMIN", "N")
-	insertGlobalGrants(s, "cloud_admin", "SYSTEM_USER", "Y")
+	insertGlobalGrants(s, userName, "DASHBOARD_CLIENT", "N")
+	insertGlobalGrants(s, userName, "SYSTEM_VARIABLES_ADMIN", "N")
+	insertGlobalGrants(s, userName, "CONNECTION_ADMIN", "N")
+	insertGlobalGrants(s, userName, "RESTRICTED_VARIABLES_ADMIN", "N")
+	insertGlobalGrants(s, userName, "RESTRICTED_STATUS_ADMIN", "N")
+	insertGlobalGrants(s, userName, "RESTRICTED_CONNECTION_ADMIN", "N")
+	insertGlobalGrants(s, userName, "RESTRICTED_USER_ADMIN", "N")
+	insertGlobalGrants(s, userName, "RESTRICTED_TABLES_ADMIN", "N")
+	insertGlobalGrants(s, userName, "RESTRICTED_REPLICA_WRITER_ADMIN", "N")
+	insertGlobalGrants(s, userName, "BACKUP_ADMIN", "N")
+	insertGlobalGrants(s, userName, "RESTORE_ADMIN", "N")
+	insertGlobalGrants(s, userName, "SYSTEM_USER", "Y")
 
 	mustExecute(s, `INSERT HIGH_PRIORITY INTO mysql.global_priv SET `+
 		`Host = "%", `+
-		`User = "cloud_admin", `+
+		`User = %?, `+
 		`Priv = "{}"`,
+		userName,
 	)
 }
 
@@ -501,7 +623,7 @@ func bootstrapRoleAdmin(s Session) {
 
 // insertGlobalGrants inserts user's privilege into mysql.global_grants.
 func insertGlobalGrants(s Session, userName, priv, grant string) {
-	mustExecute(s, `INSERT HIGH_PRIORITY INTO mysql.global_grants SET `+
+	mustExecute(s, `REPLACE HIGH_PRIORITY INTO mysql.global_grants SET `+
 		`USER = %?, `+
 		`HOST = "%", `+
 		`PRIV = %?, `+
@@ -510,4 +632,88 @@ func insertGlobalGrants(s Session, userName, priv, grant string) {
 		priv,
 		grant,
 	)
+}
+
+func setBranchBootstrapState(s Session) {
+	mustExecute(s, `INSERT HIGH_PRIORITY INTO %n.%n VALUES (%?, %?, "Branch bootstrap state. Do not delete.") ON DUPLICATE KEY UPDATE VARIABLE_VALUE=%?`,
+		mysql.SystemDB, mysql.TiDBTable, branchBootstrapStateVar, "True", "True",
+	)
+}
+
+func isBranchBootstraped(s Session) (bool, error) {
+	sVal, isNull, err := getTiDBVar(s, branchBootstrapStateVar)
+	if err != nil {
+		return false, errors.Trace(err)
+	}
+	if isNull {
+		return false, nil
+	}
+	return sVal == "True", nil
+}
+
+func runBranchDBUsersAmendment(store kv.Storage) {
+	if !config.GetGlobalConfig().IsBranch {
+		return
+	}
+
+	logutil.BgLogger().Info("runBranchDBUsersAmendment")
+
+	s, err := createSession(store)
+	if err != nil {
+		logutil.BgLogger().Fatal("createSession error", zap.Error(err))
+	}
+
+	s.sessionVars.EnableClusteredIndex = variable.ClusteredIndexDefModeIntOnly
+	defer s.ClearValue(sessionctx.Initing)
+
+	bootstraped, err := isBranchBootstraped(s)
+	if err != nil {
+		logutil.BgLogger().Fatal("isBranchBootstraped error", zap.Error(err))
+	}
+	if bootstraped {
+		logutil.BgLogger().Info("already executed runBranchDBUsersAmendment")
+		return
+	}
+
+	amendBranchDBUsers(s)
+}
+
+func amendBranchDBUsers(s Session) {
+	// clear all user and priv tables
+	mustExecute(s, "DELETE FROM mysql.db")
+	mustExecute(s, "DELETE FROM mysql.default_roles")
+	mustExecute(s, "DELETE FROM mysql.global_grants")
+	mustExecute(s, "DELETE FROM mysql.global_priv")
+	mustExecute(s, "DELETE FROM mysql.role_edges")
+	mustExecute(s, "DELETE FROM mysql.user")
+
+	// reinit root/role_admin/cloud_admin
+	rootUserName, cloudAdminName := "root", "cloud_admin"
+	if prefix := keyspace.GetKeyspaceNameBySettings(); prefix != "" {
+		rootUserName = prefix + "." + rootUserName
+		cloudAdminName = prefix + "." + cloudAdminName
+	}
+
+	bootstrapServerlessRoot(s, rootUserName)
+	bootstrapRoleAdmin(s)
+	bootstrapCloudAdmin(s, cloudAdminName)
+	setBranchBootstrapState(s)
+
+	ctx := kv.WithInternalSourceType(context.Background(), kv.InternalTxnBootstrap)
+	_, err := s.ExecuteInternal(ctx, "COMMIT")
+	if err != nil {
+		sleepTime := 1 * time.Second
+		logutil.BgLogger().Info("amend branch db users failed",
+			zap.Error(err), zap.Duration("sleeping time", sleepTime))
+		time.Sleep(sleepTime)
+		// Check if branch state is already set.
+		bootstraped, err1 := isBranchBootstraped(s)
+		if err1 != nil {
+			logutil.BgLogger().Fatal("amend branch db users failed", zap.Error(err1))
+		}
+		if bootstraped {
+			return
+		}
+		logutil.BgLogger().Fatal("amend branch db users failed", zap.Error(err))
+	}
 }
