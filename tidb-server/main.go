@@ -265,8 +265,19 @@ func main() {
 	err := registerStores()
 	mainErrHandler(err)
 
+	var keyspaceID uint32
+	if keyspaceMeta != nil {
+		keyspaceID = keyspaceMeta.GetId()
+		if config.GetGlobalConfig().EnableRULimit {
+			log.Info("setting up serverless resource control", zap.Uint32("keyspaceID", keyspaceID))
+			config.DefaultResourceGroup = strconv.FormatUint(uint64(keyspaceID), 10)
+			tikv.EnableResourceControl()
+		}
+	}
+
 	err = metricsutil.RegisterMetricsWithKeyspaceMeta(keyspaceMeta)
 	mainErrHandler(err)
+
 	if variable.EnableTmpStorageOnOOM.Load() {
 		config.GetGlobalConfig().UpdateTempStoragePath()
 		err = disk.InitializeTempDir()
