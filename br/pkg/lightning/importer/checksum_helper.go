@@ -47,7 +47,7 @@ func NewChecksumManager(ctx context.Context, rc *Controller, store kv.Storage) (
 	var manager local.ChecksumManager
 	if pdVersion.Major >= 4 && !rc.cfg.PostRestore.ChecksumViaSQL {
 		tlsOpt := rc.tls.ToPDSecurityOption()
-		pdCli, err := pd.NewClientWithContext(ctx, []string{pdAddr}, tlsOpt)
+		pdCli, err := pd.NewClientWithAPIContext(ctx, rc.apiContext, []string{pdAddr}, tlsOpt)
 		if err != nil {
 			return nil, errors.Trace(err)
 		}

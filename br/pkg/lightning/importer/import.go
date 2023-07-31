@@ -54,6 +54,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/version/build"
 	tidbconfig "github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/errno"
+	"github.com/pingcap/tidb/keyspace"
 	tidbkv "github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta/autoid"
 	"github.com/pingcap/tidb/parser"
@@ -235,6 +236,7 @@ type Controller struct {
 	encBuilder          encode.EncodingBuilder
 
 	keyspaceName string
+	apiContext   pd.APIContext
 }
 
 // LightningStatus provides the finished bytes and total bytes of the current task.
@@ -366,7 +368,7 @@ func NewImportControllerWithPauser(
 			DB: db,
 		}
 		backendConfig := local.NewBackendConfig(cfg, maxOpenFiles, p.KeyspaceName)
-		backendObj, err = local.NewBackend(ctx, tls, backendConfig, regionSizeGetter)
+		backendObj, err = local.NewBackend(ctx, tls, backendConfig, regionSizeGetter, p.KeyspaceName)
 		if err != nil {
 			return nil, common.NormalizeOrWrapErr(common.ErrUnknown, err)
 		}
@@ -464,6 +466,7 @@ func NewImportControllerWithPauser(
 		encBuilder:          encodingBuilder,
 
 		keyspaceName: p.KeyspaceName,
+		apiContext:   keyspace.BuildAPIContext(p.KeyspaceName),
 	}
 
 	return rc, nil
@@ -1384,7 +1387,7 @@ const (
 
 func (rc *Controller) keepPauseGCForDupeRes(ctx context.Context) (<-chan struct{}, error) {
 	tlsOpt := rc.tls.ToPDSecurityOption()
-	pdCli, err := pd.NewClientWithContext(ctx, []string{rc.cfg.TiDB.PdAddr}, tlsOpt)
+	pdCli, err := pd.NewClientWithAPIContext(ctx, rc.apiContext, []string{rc.cfg.TiDB.PdAddr}, tlsOpt)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -2170,7 +2173,7 @@ func (rc *Controller) preCheckRequirements(ctx context.Context) error {
 		rc.status.TotalFileSize.Store(estimatedSizeResult.SizeWithoutIndex)
 	}
 	if isLocalBackend(rc.cfg) {
-		pdController, err := pdutil.NewPdController(ctx, rc.cfg.TiDB.PdAddr,
+		pdController, err := pdutil.NewPdController(ctx, rc.keyspaceName, rc.cfg.TiDB.PdAddr,
 			rc.tls.TLSConfig(), rc.tls.ToPDSecurityOption())
 		if err != nil {
 			return common.NormalizeOrWrapErr(common.ErrCreatePDClient, err)

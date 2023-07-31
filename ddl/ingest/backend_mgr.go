@@ -122,7 +122,7 @@ func createLocalBackend(ctx context.Context, cfg *Config) (*local.Backend, error
 		DB: nil,
 	}
 	backendConfig := local.NewBackendConfig(cfg.Lightning, int(LitRLimit), cfg.KeyspaceName)
-	return local.NewBackend(ctx, tls, backendConfig, regionSizeGetter)
+	return local.NewBackend(ctx, tls, backendConfig, regionSizeGetter, cfg.KeyspaceName)
 }
 
 const checkpointUpdateInterval = 10 * time.Minute

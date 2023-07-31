@@ -9,6 +9,7 @@ go_library(
         "//config",
         "//executor",
         "//executor/importer",
+        "//keyspace",
         "//kv",
         "//sessionctx/variable",
         "//store/copr",

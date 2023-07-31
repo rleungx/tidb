@@ -30,6 +30,7 @@ import (
 	tidb_config "github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/executor"
 	"github.com/pingcap/tidb/executor/importer"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/store/copr"
@@ -185,11 +186,12 @@ func (d TiKVDriver) OpenWithOptions(path string, options ...Option) (resStore kv
 		}
 	}()
 
-	pdCli, err = pd.NewClient(etcdAddrs, pd.SecurityOption{
-		CAPath:   d.security.ClusterSSLCA,
-		CertPath: d.security.ClusterSSLCert,
-		KeyPath:  d.security.ClusterSSLKey,
-	},
+	pdCli, err = pd.NewClientWithAPIContext(context.Background(), keyspace.BuildAPIContext(keyspaceName), etcdAddrs,
+		pd.SecurityOption{
+			CAPath:   d.security.ClusterSSLCA,
+			CertPath: d.security.ClusterSSLCert,
+			KeyPath:  d.security.ClusterSSLKey,
+		},
 		pd.WithGRPCDialOptions(
 			grpc.WithKeepaliveParams(keepalive.ClientParameters{
 				Time:    time.Duration(d.tikvConfig.GrpcKeepAliveTime) * time.Second,
@@ -421,7 +423,7 @@ func (s *tikvStore) CurrentVersion(txnScope string) (kv.Version, error) {
 // CurrentMinTimestamp returns current minimum timestamp across all keyspace groups.
 func (s *tikvStore) CurrentMinTimestamp() (uint64, error) {
 	ts, err := s.KVStore.CurrentMinTimestamp()
-	if strings.Contains(err.Error(), "Unimplemented") {
+	if err != nil && strings.Contains(err.Error(), "Unimplemented") {
 		ts, err = s.KVStore.CurrentTimestamp(kv.GlobalTxnScope)
 	}
 	return ts, derr.ToTiDBErr(err)

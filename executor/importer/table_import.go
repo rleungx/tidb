@@ -154,7 +154,7 @@ func NewTableImporter(param *JobImportParam, e *LoadDataController) (ti *TableIm
 
 	// todo: use a real region size getter
 	regionSizeGetter := &local.TableRegionSizeGetterImpl{}
-	localBackend, err := local.NewBackend(param.GroupCtx, tls, backendConfig, regionSizeGetter)
+	localBackend, err := local.NewBackend(param.GroupCtx, tls, backendConfig, regionSizeGetter, keySpaceName)
 	if err != nil {
 		return nil, err
 	}

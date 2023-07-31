@@ -239,7 +239,7 @@ func main() {
 		if strings.ToLower(cfg.Store) == "tikv" {
 			etcdAddrs, _, _, err := tikvconfig.ParsePath("tikv://" + cfg.Path)
 			mainErrHandler(err)
-			pdCli, err := pd.NewClient(etcdAddrs, pd.SecurityOption{
+			pdCli, err := pd.NewClientWithAPIContext(context.Background(), keyspace.BuildAPIContext(cfg.KeyspaceName), etcdAddrs, pd.SecurityOption{
 				CAPath:   cfg.Security.ClusterSSLCA,
 				CertPath: cfg.Security.ClusterSSLCert,
 				KeyPath:  cfg.Security.ClusterSSLKey,

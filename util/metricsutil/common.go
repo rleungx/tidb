@@ -55,12 +55,12 @@ func RegisterMetrics() error {
 		return err
 	}
 
-	timeoutSec := time.Duration(cfg.PDClient.PDServerTimeout) * time.Second
-	pdCli, err := pd.NewClient(pdAddrs, pd.SecurityOption{
+	timeout := time.Duration(cfg.PDClient.PDServerTimeout) * time.Second
+	pdCli, err := pd.NewClientWithAPIContext(context.Background(), keyspace.BuildAPIContext(cfg.KeyspaceName), pdAddrs, pd.SecurityOption{
 		CAPath:   cfg.Security.ClusterSSLCA,
 		CertPath: cfg.Security.ClusterSSLCert,
 		KeyPath:  cfg.Security.ClusterSSLKey,
-	}, pd.WithCustomTimeoutOption(timeoutSec))
+	}, pd.WithCustomTimeoutOption(timeout))
 	if err != nil {
 		return err
 	}
@@ -80,9 +80,9 @@ func RegisterMetricsForBR(pdAddrs []string, keyspaceName string) error {
 		return RegisterMetricsWithKeyspaceMeta(nil) // register metrics without label 'keyspace_id'.
 	}
 
-	timeoutSec := 10 * time.Second
-	pdCli, err := pd.NewClient(pdAddrs, pd.SecurityOption{},
-		pd.WithCustomTimeoutOption(timeoutSec))
+	timeout := 10 * time.Second
+	pdCli, err := pd.NewClientWithAPIContext(context.Background(), keyspace.BuildAPIContext(keyspaceName), pdAddrs, pd.SecurityOption{},
+		pd.WithCustomTimeoutOption(timeout))
 	if err != nil {
 		return err
 	}
