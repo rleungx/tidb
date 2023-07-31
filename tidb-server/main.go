@@ -273,6 +273,19 @@ func main() {
 			config.DefaultResourceGroup = strconv.FormatUint(uint64(keyspaceID), 10)
 			tikv.EnableResourceControl()
 		}
+		if keyspaceMeta.Config != nil {
+			if clusterID, ok := keyspaceMeta.Config["serverless_cluster_id"]; ok {
+				// Rewrite the AutoScalerCluster with keyspace meta.
+				config.UpdateGlobal(func(c *config.Config) {
+					c.AutoScalerClusterID = clusterID
+				})
+			}
+			if isBranch, ok := keyspaceMeta.Config["serverless_is_branch"]; ok {
+				config.UpdateGlobal(func(c *config.Config) {
+					c.IsBranch, _ = strconv.ParseBool(isBranch)
+				})
+			}
+		}
 	}
 
 	err = metricsutil.RegisterMetricsWithKeyspaceMeta(keyspaceMeta)
