@@ -177,6 +177,7 @@ go_library(
         "//util/dbterror/exeerrors",
         "//util/deadlockhistory",
         "//util/disk",
+        "//util/errmsg",
         "//util/etcd",
         "//util/execdetails",
         "//util/format",

@@ -35,6 +35,7 @@ import (
 	executor_metrics "github.com/pingcap/tidb/executor/metrics"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/infoschema"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/ast"
 	"github.com/pingcap/tidb/parser/auth"
@@ -52,6 +53,7 @@ import (
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/collate"
 	"github.com/pingcap/tidb/util/dbterror/exeerrors"
+	"github.com/pingcap/tidb/util/errmsg"
 	"github.com/pingcap/tidb/util/hack"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/mathutil"
@@ -697,11 +699,11 @@ func (e *SimpleExec) setCurrentUser(users []*auth.UserIdentity) {
 func (e *SimpleExec) executeRevokeRole(ctx context.Context, s *ast.RevokeRoleStmt) error {
 	internalCtx := kv.WithInternalSourceType(context.Background(), kv.InternalTxnPrivilege)
 
-	//Fix revoke role from current_user results error.
+	// Fix revoke role from current_user results error.
 	e.setCurrentUser(s.Users)
 
 	for _, role := range s.Roles {
-		exists, err := userExists(ctx, e.ctx, role.Username, role.Hostname)
+		exists, err := userExistsWithRetryUserPrefix(ctx, e.ctx, &role.Username, role.Hostname)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -1060,6 +1062,8 @@ func (e *SimpleExec) executeCreateUser(ctx context.Context, s *ast.CreateUserStm
 		return err
 	}
 
+	userPrefix := keyspace.GetKeyspaceNameBySettings()
+
 	plOptions := &passwordOrLockOptionsInfo{
 		lockAccount:                 "N",
 		passwordExpired:             "N",
@@ -1136,6 +1140,9 @@ func (e *SimpleExec) executeCreateUser(ctx context.Context, s *ast.CreateUserStm
 
 	users := make([]*auth.UserIdentity, 0, len(s.Specs))
 	for _, spec := range s.Specs {
+		if userPrefix != "" && !s.IsCreateRole && !strings.HasPrefix(spec.User.Username, userPrefix+".") {
+			return errmsg.WithUserPrefixErrTag(exeerrors.ErrUserNameNeedPrefix.GenWithStackByArgs(userPrefix, userPrefix, spec.User.Username))
+		}
 		if len(spec.User.Username) > auth.UserNameMaxLength {
 			return exeerrors.ErrWrongStringLength.GenWithStackByArgs(spec.User.Username, "user name", auth.UserNameMaxLength)
 		}
@@ -1350,7 +1357,7 @@ func getValidTime(sctx sessionctx.Context, passwordReuse *passwordReuseInfo) str
 // 1. Exceeded the maximum number of saves.
 // 2. The password has exceeded the prohibition time.
 func deleteHistoricalData(ctx context.Context, sqlExecutor sqlexec.SQLExecutor, userDetail *userInfo, maxDelRows int64, passwordReuse *passwordReuseInfo, sctx sessionctx.Context) error {
-	//never times out or no row need delete.
+	// never times out or no row need delete.
 	if (passwordReuse.passwordReuseInterval > math.MaxInt32) || maxDelRows == 0 {
 		return nil
 	}
@@ -1771,7 +1778,7 @@ func (e *SimpleExec) executeAlterUser(ctx context.Context, s *ast.AlterUserStmt)
 			}
 		}
 
-		exists, err := userExistsInternal(ctx, sqlExecutor, spec.User.Username, spec.User.Hostname)
+		exists, err := userExistsInternalWithRetryUserPrefix(ctx, sqlExecutor, &spec.User.Username, spec.User.Hostname)
 		if err != nil {
 			return err
 		}
@@ -2039,7 +2046,7 @@ func (e *SimpleExec) executeGrantRole(ctx context.Context, s *ast.GrantRoleStmt)
 	e.setCurrentUser(s.Users)
 
 	for _, role := range s.Roles {
-		exists, err := userExists(ctx, e.ctx, role.Username, role.Hostname)
+		exists, err := userExistsWithRetryUserPrefix(ctx, e.ctx, &role.Username, role.Hostname)
 		if err != nil {
 			return err
 		}
@@ -2048,7 +2055,7 @@ func (e *SimpleExec) executeGrantRole(ctx context.Context, s *ast.GrantRoleStmt)
 		}
 	}
 	for _, user := range s.Users {
-		exists, err := userExists(ctx, e.ctx, user.Username, user.Hostname)
+		exists, err := userExistsWithRetryUserPrefix(ctx, e.ctx, &user.Username, user.Hostname)
 		if err != nil {
 			return err
 		}
@@ -2100,11 +2107,16 @@ func (e *SimpleExec) executeRenameUser(s *ast.RenameUserStmt) error {
 	}
 	sqlExecutor := sysSession.(sqlexec.SQLExecutor)
 
+	userPrefix := keyspace.GetKeyspaceNameBySettings()
+
 	if _, err := sqlExecutor.ExecuteInternal(ctx, "BEGIN PESSIMISTIC"); err != nil {
 		return err
 	}
 	for _, userToUser := range s.UserToUsers {
 		oldUser, newUser := userToUser.OldUser, userToUser.NewUser
+		if userPrefix != "" && !strings.HasPrefix(newUser.Username, userPrefix+".") {
+			return errmsg.WithUserPrefixErrTag(exeerrors.ErrUserNameNeedPrefix.GenWithStackByArgs(userPrefix, userPrefix, newUser.Username))
+		}
 		if len(newUser.Username) > auth.UserNameMaxLength {
 			return exeerrors.ErrWrongStringLength.GenWithStackByArgs(newUser.Username, "user name", auth.UserNameMaxLength)
 		}
@@ -2408,6 +2420,51 @@ func userExists(ctx context.Context, sctx sessionctx.Context, name string, host 
 		return false, err
 	}
 	return len(rows) > 0, nil
+}
+
+func userExistsWithRetryUserPrefix(ctx context.Context, sctx sessionctx.Context, name *string, host string) (bool, error) {
+	exists, err := userExists(ctx, sctx, *name, host)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return true, nil
+	}
+	// Check if user exists with user prefix.
+	prefix := keyspace.GetKeyspaceNameBySettings()
+	if prefix == "" {
+		return false, nil
+	}
+	name2 := prefix + "." + *name
+	exists, err = userExists(ctx, sctx, name2, host)
+	if err != nil || !exists {
+		return false, err
+	}
+	*name = name2
+	return true, nil
+}
+
+// TODO: Most of the code is duplicated with userExistsWithRetryUserPrefix
+func userExistsInternalWithRetryUserPrefix(ctx context.Context, sqlExecutor sqlexec.SQLExecutor, name *string, host string) (bool, error) {
+	exists, err := userExistsInternal(ctx, sqlExecutor, *name, host)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return true, nil
+	}
+	// Check if user exists with user prefix.
+	prefix := keyspace.GetKeyspaceNameBySettings()
+	if prefix == "" {
+		return false, nil
+	}
+	name2 := prefix + "." + *name
+	exists, err = userExistsInternal(ctx, sqlExecutor, name2, host)
+	if err != nil || !exists {
+		return false, err
+	}
+	*name = name2
+	return true, nil
 }
 
 // use the same internal executor to read within the same transaction, otherwise same as userExists

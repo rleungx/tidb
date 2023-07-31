@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/parser/ast"
 	"github.com/pingcap/tidb/util/dbterror"
 )
@@ -175,6 +176,10 @@ func verifySimple(stmt ast.Node) error {
 		return nil
 	// Renaming "cloud_admin@%" is not allowed.
 	case *ast.RenameUserStmt:
+		cloudAdminName := "cloud_admin"
+		if userPrefix := keyspace.GetKeyspaceNameBySettings(); userPrefix != "" {
+			cloudAdminName = userPrefix + "." + cloudAdminName
+		}
 		for _, userToUser := range s.UserToUsers {
 			if userToUser.OldUser.Username == cloudAdminName && userToUser.OldUser.Hostname == "%" {
 				return dbterror.ErrNotSupportedOnServerless.GenWithStackByCause(fmt.Sprintf("RENAME USER %s", userToUser.OldUser))

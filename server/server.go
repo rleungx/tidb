@@ -37,6 +37,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http" //nolint:goimports
+
 	// For pprof
 	_ "net/http/pprof" // #nosec G108
 	"os"
@@ -721,7 +722,7 @@ func (cc *clientConn) connectInfo() *variable.ConnectionInfo {
 		connType = variable.ConnTypeUnixSocket
 	} else if cc.tlsConn != nil {
 		connType = variable.ConnTypeTLS
-		sslVersionNum := cc.tlsConn.ConnectionState().Version
+		sslVersionNum := cc.tlsConn.Version
 		switch sslVersionNum {
 		case tls.VersionTLS10:
 			sslVersion = "TLSv1.0"

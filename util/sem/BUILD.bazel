@@ -11,6 +11,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//config",
+        "//keyspace",
         "//parser/ast",
         "//parser/mysql",
         "//sessionctx/variable",
