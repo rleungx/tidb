@@ -356,8 +356,17 @@ type Config struct {
 	GCV1BlackList []uint32 `toml:"gc-v1-black-list" json:"gc-v1-black-list"`
 	// BootstrapControl is used to control serverless bootstrap procedure.
 	BootstrapControl BootstrapControl `toml:"bootstrap-control" json:"bootstrap-control"`
+
+	// CSE is the config collection for the cloud storage engine.
+	CSE CSE `toml:"cse" json:"cse"`
+
 	// TiFlashReplicas is used to control the format of TiFlash placement rules committed to PD.
 	TiFlashReplicas TiFlashReplicas `toml:"tiflash-replicas" json:"tiflash-replicas"`
+}
+
+// CSE is the config collection for the cloud storage engine.
+type CSE struct {
+	EnableRegionClient bool `toml:"enable-region-client" json:"enable-region-client"`
 }
 
 // TiFlashReplicas is used to control the format of TiFlash placement rules committed to PD.

@@ -24,6 +24,7 @@ import (
 	"sync"
 	"time"
 
+	cse "github.com/iosmanthus/cse-region-client"
 	"github.com/pingcap/errors"
 	deadlockpb "github.com/pingcap/kvproto/pkg/deadlock"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
@@ -134,6 +135,7 @@ type TiKVDriver struct {
 	pdConfig        config.PDClient
 	security        config.Security
 	tikvConfig      config.TiKVClient
+	cseConfig       tidb_config.CSE
 	txnLocalLatches config.TxnLocalLatches
 }
 
@@ -144,11 +146,12 @@ func (d TiKVDriver) Open(path string) (kv.Storage, error) {
 }
 
 func (d *TiKVDriver) setDefaultAndOptions(options ...Option) {
-	tidbCfg := config.GetGlobalConfig()
+	tidbCfg := tidb_config.GetGlobalConfig()
 	d.pdConfig = tidbCfg.PDClient
-	d.security = tidbCfg.Security
+	d.security = tidbCfg.GetTiKVConfig().Security
 	d.tikvConfig = tidbCfg.TiKVClient
-	d.txnLocalLatches = tidbCfg.TxnLocalLatches
+	d.txnLocalLatches = tidbCfg.GetTiKVConfig().TxnLocalLatches
+	d.cseConfig = tidbCfg.CSE
 	for _, f := range options {
 		f(d)
 	}
@@ -203,6 +206,18 @@ func (d TiKVDriver) OpenWithOptions(path string, options ...Option) (resStore kv
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+
+	if d.cseConfig.EnableRegionClient {
+		logutil.BgLogger().Warn("enable cse region client")
+		pdCli, err = cse.NewClient(pdCli, nil)
+	} else {
+		// If `cse.enable-region-client` is not enabled, we use CSEClient as fallback for PDClient.
+		pdCli, err = cse.NewClientWithFallback(pdCli, nil)
+	}
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
 	pdCli = util.InterceptedPDClient{Client: pdCli}
 
 	// FIXME: uuid will be a very long and ugly string, simplify it.
