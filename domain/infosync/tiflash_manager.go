@@ -58,6 +58,8 @@ type TiFlashReplicaManager interface {
 	SetPlacementRule(ctx context.Context, rule placement.TiFlashRule) error
 	// SetPlacementRuleBatch is a helper function to set a batch of placement rules.
 	SetPlacementRuleBatch(ctx context.Context, rules []placement.TiFlashRule) error
+	// GetPlacementRule is a helper function to get placement rule.
+	GetPlacementRule(ctx context.Context, tableID int64) (*placement.TiFlashRule, error)
 	// DeletePlacementRule is to delete placement rule for certain group.
 	DeletePlacementRule(ctx context.Context, group string, ruleID string) error
 	// GetGroupRules to get all placement rule in a certain group.
@@ -90,6 +92,29 @@ type TiFlashReplicaManagerCtx struct {
 	sync.RWMutex         // protect tiflashProgressCache
 	tiflashProgressCache map[int64]float64
 	codec                tikv.Codec
+}
+
+// GetPlacementRule is a helper function to get placement rule by table id.
+func (m *TiFlashReplicaManagerCtx) GetPlacementRule(ctx context.Context, tableID int64) (*placement.TiFlashRule, error) {
+	ruleID := MakeRuleID(tableID)
+	ruleID = encodeRuleID(m.codec, ruleID)
+	resp, err := doRequest(ctx,
+		"GetPlacementRule",
+		m.etcdCli.Endpoints(),
+		path.Join(pdapi.Config, "rule", placement.TiFlashRuleGroupID, ruleID),
+		http.MethodGet, nil)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil && err == nil {
+		return nil, nil
+	}
+	rule := &placement.TiFlashRule{}
+	err = json.Unmarshal(resp, rule)
+	if err != nil {
+		return nil, err
+	}
+	return rule, nil
 }
 
 // Close is called to close TiFlashReplicaManagerCtx.
@@ -570,21 +595,19 @@ type mockTiFlashReplicaManagerCtx struct {
 	tiflashProgressCache map[int64]float64
 }
 
+func (m *mockTiFlashReplicaManagerCtx) GetPlacementRule(ctx context.Context, tableID int64) (*placement.TiFlashRule, error) {
+	return nil, errors.New("not implemented")
+}
+
 func makeBaseRule() placement.TiFlashRule {
 	return placement.TiFlashRule{
-		GroupID:  placement.TiFlashRuleGroupID,
-		ID:       "",
-		Index:    placement.RuleIndexTiFlash,
-		Override: false,
-		Role:     placement.Learner,
-		Count:    2,
-		Constraints: []placement.Constraint{
-			{
-				Key:    "engine",
-				Op:     placement.In,
-				Values: []string{"tiflash"},
-			},
-		},
+		GroupID:     placement.TiFlashRuleGroupID,
+		ID:          "",
+		Index:       placement.RuleIndexTiFlash,
+		Override:    false,
+		Role:        placement.Learner,
+		Count:       2,
+		Constraints: placement.GetTiFlashConstraintsFromConfig(),
 	}
 }
 
