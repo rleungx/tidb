@@ -102,6 +102,7 @@ const (
 	engineLabelTiFlash              = "tiflash"
 	engineRoleLabelKey              = "engine_role"
 	engineRoleLabelTiFlashWriteNode = "write"
+	defTiFlashRuleGroupID           = "tiflash"
 )
 
 var (
@@ -373,6 +374,7 @@ type CSE struct {
 type TiFlashReplicas struct {
 	Constraints []Constraint `toml:"constraints" json:"constraints"`
 	MinCount    uint64       `toml:"min-count" json:"min-count"`
+	GroupID     string       `toml:"group-id" json:"group-id"`
 }
 
 // Constraint is used to store the constraints for tiflash.
@@ -1156,6 +1158,7 @@ var defaultConf = Config{
 	TiFlashReplicas: TiFlashReplicas{
 		Constraints: defaultTiFlashConstraints,
 		MinCount:    1,
+		GroupID:     defTiFlashRuleGroupID,
 	},
 }
 
