@@ -1287,10 +1287,19 @@ func ConfigureTiFlashPDForTable(id int64, count uint64, locationLabels *[]string
 		return errors.Trace(err)
 	}
 	ctx := context.Background()
-	logutil.BgLogger().Info("ConfigureTiFlashPDForTable", zap.Int64("tableID", id), zap.Uint64("count", count))
+	logutil.BgLogger().Info("ConfigureTiFlashPDForTable", zap.Int64("tableID", id), zap.Uint64("count", count),
+		zap.Bool("with extra s3 rule", placement.NeedExtraS3TiFlashRule()))
+
 	ruleNew := MakeNewRule(id, count, *locationLabels)
 	if e := is.tiflashReplicaManager.SetPlacementRule(ctx, ruleNew); e != nil {
 		return errors.Trace(e)
+	}
+
+	if placement.NeedExtraS3TiFlashRule() {
+		s3WNRule := MakeExtraS3TiFlashRule(id, count, *locationLabels)
+		if e := is.tiflashReplicaManager.SetPlacementRule(ctx, s3WNRule); e != nil {
+			return errors.Trace(e)
+		}
 	}
 	return nil
 }
@@ -1303,15 +1312,27 @@ func ConfigureTiFlashPDForPartitions(accel bool, definitions *[]model.PartitionD
 	}
 	ctx := context.Background()
 	rules := make([]placement.TiFlashRule, 0, len(*definitions))
+	extraS3Rules := make([]placement.TiFlashRule, 0, len(*definitions))
 	pids := make([]int64, 0, len(*definitions))
 	for _, p := range *definitions {
-		logutil.BgLogger().Info("ConfigureTiFlashPDForPartitions", zap.Int64("tableID", tableID), zap.Int64("partID", p.ID), zap.Bool("accel", accel), zap.Uint64("count", count))
+		logutil.BgLogger().Info("ConfigureTiFlashPDForPartitions", zap.Int64("tableID", tableID), zap.Int64("partID", p.ID), zap.Bool("accel", accel), zap.Uint64("count", count),
+		    zap.Bool("with extra s3 rule", placement.NeedExtraS3TiFlashRule()))
 		ruleNew := MakeNewRule(p.ID, count, *locationLabels)
 		rules = append(rules, ruleNew)
 		pids = append(pids, p.ID)
+
+		if placement.NeedExtraS3TiFlashRule() {
+			s3WNRule := MakeExtraS3TiFlashRule(p.ID, count, *locationLabels)
+			extraS3Rules = append(extraS3Rules, s3WNRule)
+		}
 	}
 	if e := is.tiflashReplicaManager.SetPlacementRuleBatch(ctx, rules); e != nil {
 		return errors.Trace(e)
+	}
+	if placement.NeedExtraS3TiFlashRule() {
+		if e := is.tiflashReplicaManager.SetPlacementRuleBatch(ctx, extraS3Rules); e != nil {
+			return errors.Trace(e)
+		}
 	}
 	if accel {
 		if e := is.tiflashReplicaManager.PostAccelerateScheduleBatch(ctx, pids); e != nil {

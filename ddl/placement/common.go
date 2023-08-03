@@ -23,6 +23,9 @@ const (
 	BundleIDPrefix = "TiDB_DDL_"
 	// PDBundleID is the bundle name of pd, the default bundle for all regions.
 	PDBundleID = "pd"
+
+	// S3TiFlashRuleGroupID is the rule group id of S3 WN tiflash.
+	S3TiFlashRuleGroupID = "enable_s3_wn_region"
 )
 
 // GroupID accepts a tableID or whatever integer, and encode the integer into a valid GroupID for PD.

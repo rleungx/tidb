@@ -375,6 +375,11 @@ type TiFlashReplicas struct {
 	Constraints []Constraint `toml:"constraints" json:"constraints"`
 	MinCount    uint64       `toml:"min-count" json:"min-count"`
 	GroupID     string       `toml:"group-id" json:"group-id"`
+
+	// ExtraS3Rule indicates whether add extra TiFlash s3 replica.
+	// You should not change this config if you really known what you are doing.
+	// Because this only for upgrade process of S3 TiFlash. Default is false.
+	ExtraS3Rule bool 		 `toml:"extra-s3-rule" json:"extra-s3-rule"`
 }
 
 // Constraint is used to store the constraints for tiflash.
@@ -1159,6 +1164,7 @@ var defaultConf = Config{
 		Constraints: defaultTiFlashConstraints,
 		MinCount:    1,
 		GroupID:     defTiFlashRuleGroupID,
+		ExtraS3Rule: false,
 	},
 }
 
