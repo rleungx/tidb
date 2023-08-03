@@ -343,7 +343,6 @@ func updateTiFlashStores(pollTiFlashContext *TiFlashManagementContext) error {
 	}
 	pollTiFlashContext.TiFlashStores = make(map[int64]helper.StoreStat)
 	for _, store := range tikvStats.Stores {
-		// todo: remove check s3-wn after s3 is stable.
 		if placement.MatchConstraints(store.Store, placement.GetTiFlashConstraintsFromConfig()) {
 			pollTiFlashContext.TiFlashStores[store.Store.ID] = store
 			logutil.BgLogger().Debug("Found tiflash store", zap.Int64("id", store.Store.ID), zap.String("Address", store.Store.Address), zap.String("StatusAddress", store.Store.StatusAddress))

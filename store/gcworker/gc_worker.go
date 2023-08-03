@@ -2345,10 +2345,20 @@ func (w *GCWorker) doGCPlacementRules(se session.Session, safePoint uint64, dr u
 		failpoint.Inject("gcDeletePlacementRuleCounter", func() {})
 		logutil.BgLogger().Info("try delete TiFlash pd rule",
 			zap.Int64("tableID", id), zap.String("endKey", string(dr.EndKey)), zap.Uint64("safePoint", safePoint))
+		groupID := placement.GetTiFlashRuleGroupIDByConfig()
 		ruleID := infosync.MakeRuleID(id)
-		if err := infosync.DeleteTiFlashPlacementRule(context.Background(), "tiflash", ruleID); err != nil {
-			logutil.BgLogger().Error("delete TiFlash pd rule failed when gc",
-				zap.Error(err), zap.String("ruleID", ruleID), zap.Uint64("safePoint", safePoint))
+		if err := infosync.DeleteTiFlashPlacementRule(context.Background(), groupID, ruleID); err != nil {
+			logutil.BgLogger().Error("delete TiFlash pd rule failed when gc", zap.Error(err),
+				zap.String("ruleID", ruleID), zap.String("groupID", groupID), zap.Uint64("safePoint", safePoint))
+		}
+
+		if config.GetGlobalConfig().TiFlashReplicas.ExtraS3Rule {
+			// Also delete S3 tiflash rule. This only happens when upgrade S3 tiflash process.
+			s3TiFlashGroupID := placement.S3TiFlashRuleGroupID
+			if err := infosync.DeleteTiFlashPlacementRule(context.Background(), s3TiFlashGroupID, ruleID); err != nil {
+				logutil.BgLogger().Error("delete S3 TiFlash pd rule failed when gc",
+					zap.Error(err), zap.String("groupID", s3TiFlashGroupID), zap.String("ruleID", ruleID), zap.Uint64("safePoint", safePoint))
+			}
 		}
 	}
 	bundles := make([]*placement.Bundle, 0, len(physicalTableIDs))
