@@ -716,7 +716,7 @@ func TestRestoreFailed(t *testing.T) {
 	r := &fakeRestorer{
 		tableIDIsInsequence: true,
 	}
-	sender, err := restore.NewTiKVSender(context.TODO(), r, nil, 1)
+	sender, err := restore.NewTiKVSender(context.TODO(), r, nil, 1, false)
 	require.NoError(t, err)
 	dctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -739,7 +739,7 @@ func TestSplitFailed(t *testing.T) {
 		fakeRanges("bcy", "cad", "xxy"),
 	}
 	r := &fakeRestorer{errorInSplit: true, tableIDIsInsequence: true}
-	sender, err := restore.NewTiKVSender(context.TODO(), r, nil, 1)
+	sender, err := restore.NewTiKVSender(context.TODO(), r, nil, 1, false)
 	require.NoError(t, err)
 	dctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

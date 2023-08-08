@@ -29,6 +29,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/utils"
 	"github.com/pingcap/tidb/br/pkg/version"
 	"github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/mathutil"
 	"github.com/spf13/cobra"
@@ -58,6 +59,10 @@ const (
 	FlagWithPlacementPolicy = "with-tidb-placement-mode"
 	// FlagKeyspaceName corresponds to tidb config keyspace-name
 	FlagKeyspaceName = "keyspace-name"
+	// FlagLeaderDownload corresponds to tidb config leader-download
+	FlagLeaderDownload = "leader-download"
+	// FlagSkipSplit is the flag name of skip split region
+	FlagSkipSplit = "skip-split"
 
 	// FlagWaitTiFlashReady represents whether wait tiflash replica ready after table restored and checksumed.
 	FlagWaitTiFlashReady = "wait-tiflash-ready"
@@ -218,6 +223,10 @@ type RestoreConfig struct {
 	VolumeThroughput    int64                 `json:"volume-throughput" toml:"volume-throughput"`
 	ProgressFile        string                `json:"progress-file" toml:"progress-file"`
 	TargetAZ            string                `json:"target-az" toml:"target-az"`
+	// SkipSplit is used to skip split region when restoring data.
+	SkipSplit bool `json:"skip-split" toml:"skip-split"`
+	// LeaderDownload is used to only download sst file to leader
+	LeaderDownload bool `json:"leader-download" toml:"leader-download"`
 }
 
 // DefineRestoreFlags defines common flags for the restore tidb command.
@@ -227,6 +236,8 @@ func DefineRestoreFlags(flags *pflag.FlagSet) {
 	_ = flags.MarkHidden(flagNoSchema)
 	flags.String(FlagWithPlacementPolicy, "STRICT", "correspond to tidb global/session variable with-tidb-placement-mode")
 	flags.String(FlagKeyspaceName, "", "correspond to tidb config keyspace-name")
+	flags.Bool(FlagLeaderDownload, false, "correspond to tidb config leader-download")
+	flags.Bool(FlagSkipSplit, false, "skip split region when restoring data")
 
 	flags.Bool(flagUseCheckpoint, true, "use checkpoint mode")
 	_ = flags.MarkHidden(flagUseCheckpoint)
@@ -338,6 +349,16 @@ func (cfg *RestoreConfig) ParseFromFlags(flags *pflag.FlagSet) error {
 	cfg.WaitTiflashReady, err = flags.GetBool(FlagWaitTiFlashReady)
 	if err != nil {
 		return errors.Annotatef(err, "failed to get flag %s", FlagWaitTiFlashReady)
+	}
+
+	cfg.SkipSplit, err = flags.GetBool(FlagSkipSplit)
+	if err != nil {
+		return errors.Annotatef(err, "failed to get flag %s", FlagSkipSplit)
+	}
+
+	cfg.LeaderDownload, err = flags.GetBool(FlagLeaderDownload)
+	if err != nil {
+		return errors.Annotatef(err, "failed to get flag %s", FlagLeaderDownload)
 	}
 
 	if flags.Lookup(flagFullBackupType) != nil {
@@ -469,6 +490,10 @@ func configureRestoreClient(ctx context.Context, client *restore.Client, cfg *Re
 	if cfg.NoSchema {
 		client.EnableSkipCreateSQL()
 	}
+
+	client.SetLeaderDownload(cfg.LeaderDownload)
+	client.SetKeyspaceName(cfg.KeyspaceName)
+
 	client.SetSwitchModeInterval(cfg.SwitchModeInterval)
 	client.SetBatchDdlSize(cfg.DdlBatchSize)
 	client.SetPlacementPolicyMode(cfg.WithPlacementPolicy)
@@ -586,6 +611,7 @@ func RunRestore(c context.Context, g glue.Glue, cmdName string, cfg *RestoreConf
 
 	config.UpdateGlobal(func(conf *config.Config) {
 		conf.KeyspaceName = cfg.KeyspaceName
+		conf.SplitTable = !cfg.SkipSplit
 	})
 
 	var restoreError error
@@ -914,7 +940,9 @@ func runRestore(c context.Context, g glue.Glue, cmdName string, cfg *RestoreConf
 
 	// Do not reset timestamp if we are doing incremental restore, because
 	// we are not allowed to decrease timestamp.
-	if !client.IsIncremental() {
+	// It's also skipped if a specific keyspace to restore is given, to minimize the impact
+	// of other keyspaces.
+	if !client.IsIncremental() && keyspace.IsKeyspaceNameEmpty(cfg.KeyspaceName) {
 		if err = client.ResetTS(ctx, mgr.PdController); err != nil {
 			log.Error("reset pd TS failed", zap.Error(err))
 			return errors.Trace(err)
@@ -943,7 +971,7 @@ func runRestore(c context.Context, g glue.Glue, cmdName string, cfg *RestoreConf
 		progressLen,
 		!cfg.LogProgress)
 	defer updateCh.Close()
-	sender, err := restore.NewTiKVSender(ctx, client, updateCh, cfg.PDConcurrency)
+	sender, err := restore.NewTiKVSender(ctx, client, updateCh, cfg.PDConcurrency, cfg.SkipSplit)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -1069,7 +1097,9 @@ func filterRestoreFiles(
 // restorePreWork executes some prepare work before restore.
 // TODO make this function returns a restore post work.
 func restorePreWork(ctx context.Context, client *restore.Client, mgr *conn.Mgr, switchToImport bool) (pdutil.UndoFunc, *pdutil.ClusterConfig, error) {
-	if client.IsOnline() {
+	// Do not remove scheduler or switch TiKV to import mode
+	// if using online restore or if keyspace is set.
+	if client.IsOnline() || client.IsKeyspaceMode() {
 		return pdutil.Nop, nil, nil
 	}
 
@@ -1090,7 +1120,7 @@ func restorePostWork(
 		log.Warn("context canceled, try shutdown")
 		ctx = context.Background()
 	}
-	if client.IsOnline() {
+	if client.IsOnline() || client.IsKeyspaceMode() {
 		return
 	}
 	if err := client.SwitchToNormalMode(ctx); err != nil {

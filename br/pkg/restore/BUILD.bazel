@@ -51,6 +51,7 @@ go_library(
         "//ddl/util",
         "//domain",
         "//domain/infosync",
+        "//keyspace",
         "//kv",
         "//meta",
         "//parser/model",
