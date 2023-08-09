@@ -449,7 +449,13 @@ func (l *Lightning) run(taskCtx context.Context, taskCfg *config.Config, o *opti
 	l.cancelLock.Unlock()
 	web.BroadcastStartTask()
 
+	if gatherer, ok := o.promRegistry.(prometheus.Gatherer); ok {
+		prometheus.DefaultGatherer = gatherer
+	}
+	pushFn := metric.PushMetrics(ctx, taskCfg.Metrics.Addrs, taskCfg.Metrics.Interval.Duration, taskCfg.Metrics.Labels)
+
 	defer func() {
+		pushFn()
 		cancel()
 		l.cancelLock.Lock()
 		l.cancel = nil
@@ -556,7 +562,7 @@ func (l *Lightning) run(taskCtx context.Context, taskCfg *config.Config, o *opti
 	}
 
 	var keyspaceName string
-	if taskCfg.TikvImporter.Backend == config.BackendLocal {
+	if taskCfg.TikvImporter.Backend == config.BackendLocal || taskCfg.TikvImporter.Backend == config.BackendRemote {
 		keyspaceName = taskCfg.TikvImporter.KeyspaceName
 		if keyspaceName == "" {
 			keyspaceName, err = getKeyspaceName(db)

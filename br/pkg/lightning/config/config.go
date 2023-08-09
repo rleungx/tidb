@@ -41,6 +41,7 @@ import (
 	"github.com/pingcap/tidb/util"
 	filter "github.com/pingcap/tidb/util/table-filter"
 	router "github.com/pingcap/tidb/util/table-router"
+	rm "github.com/tikv/pd/client/resource_group/controller"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
@@ -57,6 +58,9 @@ const (
 	// BackendLocal is a constant for choosing the "Local" backup in the configuration.
 	// In this mode, we write & sort kv pairs with local storage and directly write them to tikv.
 	BackendLocal = "local"
+	// BackendRemote is a constant for choosing the "Remote" backend in the configuration.
+	// In this mode, we write kv pairs to the remote worker.
+	BackendRemote = "remote"
 
 	// CheckpointDriverMySQL is a constant for choosing the "MySQL" checkpoint driver in the configuration.
 	CheckpointDriverMySQL = "mysql"
@@ -100,6 +104,8 @@ const (
 
 	defaultCSVDataCharacterSet       = "binary"
 	defaultCSVDataInvalidCharReplace = utf8.RuneError
+
+	defaultMaxSourceDataSize = 25 * 1024 * 1024 * 1024 // 25GB
 )
 
 var (
@@ -162,6 +168,8 @@ type Config struct {
 	Cron         Cron                `toml:"cron" json:"cron"`
 	Routes       []*router.TableRule `toml:"routes" json:"routes"`
 	Security     Security            `toml:"security" json:"security"`
+	RUConfig     RUConfig            `toml:"ru-config" json:"ru-config"`
+	Metrics      Metrics             `toml:"metrics" json:"metrics"`
 
 	BWList filter.MySQLReplicationRules `toml:"black-white-list" json:"black-white-list"`
 }
@@ -678,6 +686,8 @@ type MydumperRuntime struct {
 	// DataInvalidCharReplace is the replacement characters for non-compatible characters, which shouldn't duplicate with the separators or line breaks.
 	// Changing the default value will result in increased parsing time. Non-compatible characters do not cause an increase in error.
 	DataInvalidCharReplace string `toml:"data-invalid-char-replace" json:"data-invalid-char-replace"`
+	// MaxSourceDataSize is the maximum size of the source data to be processed, in bytes.
+	MaxSourceDataSize int64 `toml:"max-source-data-size" json:"max-source-data-size"`
 }
 
 // AllIgnoreColumns is a slice of IgnoreColumns.
@@ -765,6 +775,21 @@ type TikvImporter struct {
 	StoreWriteBWLimit       ByteSize `toml:"store-write-bwlimit" json:"store-write-bwlimit"`
 	// default is PausePDSchedulerScopeTable to compatible with previous version(>= 6.1)
 	PausePDSchedulerScope PausePDSchedulerScope `toml:"pause-pd-scheduler-scope" json:"pause-pd-scheduler-scope"`
+}
+
+// RUConfig is the config for remote backend.
+type RUConfig struct {
+	ReportWRU             bool    `toml:"report-wru" json:"report-wru"`
+	WriteBaseCost         float64 `toml:"write-base-cost" json:"write-base-cost"`
+	WritePerBatchBaseCost float64 `toml:"write-per-batch-base-cost" json:"write-per-batch-base-cost"`
+	WriteCostPerByte      float64 `toml:"write-cost-per-byte" json:"write-cost-per-byte"`
+}
+
+// Metrics is the config for prometheus pushgateway.
+type Metrics struct {
+	Addrs    []string          `toml:"addrs" json:"addrs"`
+	Interval Duration          `toml:"interval" json:"interval"`
+	Labels   map[string]string `toml:"labels" json:"labels"`
 }
 
 // Checkpoint is the config for checkpoint.
@@ -898,6 +923,7 @@ func ParseCharset(dataCharacterSet string) (Charset, error) {
 
 // NewConfig creates a new Config.
 func NewConfig() *Config {
+	defaultRUConfig := rm.DefaultRequestUnitConfig()
 	return &Config{
 		App: Lightning{
 			RegionConcurrency: runtime.NumCPU(),
@@ -948,6 +974,7 @@ func NewConfig() *Config {
 			Filter:                 GetDefaultFilter(),
 			DataCharacterSet:       defaultCSVDataCharacterSet,
 			DataInvalidCharReplace: string(defaultCSVDataInvalidCharReplace),
+			MaxSourceDataSize:      defaultMaxSourceDataSize,
 		},
 		TikvImporter: TikvImporter{
 			Backend:                 "",
@@ -961,6 +988,16 @@ func NewConfig() *Config {
 			DiskQuota:               ByteSize(math.MaxInt64),
 			DuplicateResolution:     DupeResAlgNone,
 			PausePDSchedulerScope:   PausePDSchedulerScopeTable,
+		},
+		RUConfig: RUConfig{
+			ReportWRU:             true,
+			WriteBaseCost:         float64(defaultRUConfig.WriteBaseCost),
+			WritePerBatchBaseCost: float64(defaultRUConfig.WritePerBatchBaseCost),
+			WriteCostPerByte:      float64(defaultRUConfig.WriteCostPerByte),
+		},
+		Metrics: Metrics{
+			Addrs:    nil,
+			Interval: Duration{Duration: 15 * time.Second},
 		},
 		PostRestore: PostRestore{
 			Checksum:          OpLevelRequired,
@@ -987,6 +1024,7 @@ func (cfg *Config) LoadFromGlobal(global *GlobalConfig) error {
 	cfg.Mydumper.SourceDir = global.Mydumper.SourceDir
 	cfg.Mydumper.Filter = global.Mydumper.Filter
 	cfg.TikvImporter.Backend = global.TikvImporter.Backend
+	cfg.TikvImporter.Addr = global.TikvImporter.RemoteAddr
 	cfg.TikvImporter.SortedKVDir = global.TikvImporter.SortedKVDir
 	cfg.Checkpoint.Enable = global.Checkpoint.Enable
 	cfg.PostRestore.Checksum = global.PostRestore.Checksum
@@ -1204,6 +1242,8 @@ func (cfg *Config) AdjustCommon() (bool, error) {
 			cfg.App.RegionConcurrency = cpuCount
 		}
 		cfg.DefaultVarsForImporterAndLocalBackend()
+	case BackendRemote:
+		cfg.DefaultVarsForImporterAndLocalBackend()
 	default:
 		return mustHaveInternalConnections, common.ErrInvalidConfig.GenWithStack("unsupported `tikv-importer.backend` (%s)", cfg.TikvImporter.Backend)
 	}
@@ -1321,7 +1361,7 @@ func (cfg *Config) CheckAndAdjustTiDBPort(ctx context.Context, mustHaveInternalC
 		}
 
 		var settings tidbcfg.Config
-		err = tls.GetJSON(ctx, "/settings", &settings)
+		err = tls.GetJSON(ctx, "/settings", nil, &settings)
 		if err != nil {
 			return common.ErrInvalidConfig.Wrap(err).GenWithStack("cannot fetch settings from TiDB, please manually fill in `tidb.port` and `tidb.pd-addr`")
 		}

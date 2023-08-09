@@ -45,6 +45,7 @@ import (
 	"github.com/pingcap/tidb/util/engine"
 	"github.com/pingcap/tidb/util/mathutil"
 	"github.com/pingcap/tidb/util/set"
+	"github.com/pingcap/tidb/util/size"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"golang.org/x/exp/slices"
@@ -596,6 +597,47 @@ func (ci *localTempKVDirCheckItem) Check(ctx context.Context) (*precheck.CheckRe
 			units.BytesSize(float64(localAvailable)), units.BytesSize(float64(ci.cfg.TikvImporter.DiskQuota)))
 		theResult.Passed = true
 		log.FromContext(ctx).Warn(theResult.Message)
+	}
+	return theResult, nil
+}
+
+type soureceDataSizeCheckItem struct {
+	cfg           *config.Config
+	preInfoGetter PreImportInfoGetter
+}
+
+// NewSourceDataSizeCheckItem creates a new soureceDataSizeCheckItem.
+func NewSourceDataSizeCheckItem(cfg *config.Config, preInfoGetter PreImportInfoGetter) precheck.Checker {
+	return &soureceDataSizeCheckItem{
+		cfg:           cfg,
+		preInfoGetter: preInfoGetter,
+	}
+}
+
+// GetCheckItemID implements Checker.GetCheckItemID.
+func (ci *soureceDataSizeCheckItem) GetCheckItemID() precheck.CheckItemID {
+	return precheck.CheckSourceDataSize
+}
+
+// Check implements Checker.Check.
+func (ci *soureceDataSizeCheckItem) Check(ctx context.Context) (*precheck.CheckResult, error) {
+	estimatedDataSizeResult, err := ci.preInfoGetter.EstimateSourceDataSize(ctx)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	estimatedDataSize := estimatedDataSizeResult.SizeWithoutIndex
+	theResult := &precheck.CheckResult{
+		Item:     ci.GetCheckItemID(),
+		Severity: precheck.Critical,
+		Passed:   true,
+		Message:  "the source file size is valid",
+	}
+
+	if estimatedDataSize > ci.cfg.Mydumper.MaxSourceDataSize {
+		theResult.Passed = false
+		theResult.Message = fmt.Sprintf("source data size %s is too large, limit is %s",
+			size.HumanReadable(estimatedDataSize),
+			size.HumanReadable(ci.cfg.Mydumper.MaxSourceDataSize))
 	}
 	return theResult, nil
 }

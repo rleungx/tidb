@@ -17,6 +17,7 @@ package tikv
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -121,7 +122,7 @@ func ForAllStores(
 			Store Store
 		}
 	}
-	err := tls.GetJSON(ctx, "/pd/api/v1/stores", &stores)
+	err := tls.GetJSON(ctx, "/pd/api/v1/stores", nil, &stores)
 	if err != nil {
 		return err
 	}
@@ -205,20 +206,36 @@ func FetchModeFromMetrics(metrics string) (import_sstpb.SwitchMode, error) {
 }
 
 // FetchRemoteDBModelsFromTLS obtains the remote DB models from the given TLS.
-func FetchRemoteDBModelsFromTLS(ctx context.Context, tls *common.TLS) ([]*model.DBInfo, error) {
-	var dbs []*model.DBInfo
-	err := tls.GetJSON(ctx, "/schema", &dbs)
+func FetchRemoteDBModelsFromTLS(ctx context.Context, keyspace string, tls *common.TLS) ([]*model.DBInfo, error) {
+	var (
+		dbs    []*model.DBInfo
+		params *url.Values
+	)
+	if keyspace != "" {
+		params = &url.Values{}
+		params.Add("keyspace", keyspace)
+	}
+	err := tls.GetJSON(ctx, "/schema", params, &dbs)
 	if err != nil {
+		err = checkGetJSONError(err)
 		return nil, errors.Annotatef(err, "cannot read db schemas from remote")
 	}
 	return dbs, nil
 }
 
 // FetchRemoteTableModelsFromTLS obtains the remote table models from the given TLS.
-func FetchRemoteTableModelsFromTLS(ctx context.Context, tls *common.TLS, schema string) ([]*model.TableInfo, error) {
-	var tables []*model.TableInfo
-	err := tls.GetJSON(ctx, "/schema/"+schema, &tables)
+func FetchRemoteTableModelsFromTLS(ctx context.Context, tls *common.TLS, keyspace, schema string) ([]*model.TableInfo, error) {
+	var (
+		tables []*model.TableInfo
+		params *url.Values
+	)
+	if keyspace != "" {
+		params = &url.Values{}
+		params.Add("keyspace", keyspace)
+	}
+	err := tls.GetJSON(ctx, "/schema/"+schema, params, &tables)
 	if err != nil {
+		err = checkGetJSONError(err)
 		return nil, errors.Annotatef(err, "cannot read schema '%s' from remote", schema)
 	}
 	return tables, nil
@@ -251,4 +268,13 @@ func CheckTiKVVersion(ctx context.Context, tls *common.TLS, pdAddr string,
 			return version.CheckVersion(component, *ver, requiredMinVersion, requiredMaxVersion)
 		},
 	)
+}
+
+func checkGetJSONError(err error) error {
+	matched, _ := regexp.MatchString("get (.*?) http status code != 200, message keyspace name: (.*?) is not equal setting: (.*?)", err.Error())
+	if matched {
+		reserved := strings.Split(err.Error(), "message")[0]
+		return errors.Errorf("%s message access denied", reserved)
+	}
+	return err
 }

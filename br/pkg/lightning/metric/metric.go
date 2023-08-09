@@ -65,6 +65,7 @@ type Metrics struct {
 	ChunkCounter                         *prometheus.CounterVec
 	BytesCounter                         *prometheus.CounterVec
 	RowsCounter                          *prometheus.CounterVec
+	WRUCostCounter                       *prometheus.CounterVec
 	ImportSecondsHistogram               prometheus.Histogram
 	ChunkParserReadBlockSecondsHistogram prometheus.Histogram
 	ApplyWorkerSecondsHistogram          *prometheus.HistogramVec
@@ -132,7 +133,15 @@ func NewMetrics(factory promutil.Factory) *Metrics {
 				Name:      "bytes",
 				Help:      "count of total bytes",
 			}, []string{"state"}),
-		// state can be one of:
+
+		// Use CounterVec instance of Histogram to consistency with pd.
+		// https://github.com/tikv/pd/pull/6332
+		WRUCostCounter: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: "lightning",
+				Name:      "resource_unit_write_request_unit_sum",
+				Help:      "Counter of the write request unit cost for all resource groups.",
+			}, []string{"keyspace_id"}),
 		//  - estimated (an estimation derived from the file size)
 		//  - pending
 		//  - running
@@ -264,6 +273,7 @@ func (m *Metrics) RegisterTo(r promutil.Registry) {
 		m.ChunkCounter,
 		m.BytesCounter,
 		m.RowsCounter,
+		m.WRUCostCounter,
 		m.ImportSecondsHistogram,
 		m.ChunkParserReadBlockSecondsHistogram,
 		m.ApplyWorkerSecondsHistogram,
@@ -291,6 +301,7 @@ func (m *Metrics) UnregisterFrom(r promutil.Registry) {
 	r.Unregister(m.ChunkCounter)
 	r.Unregister(m.BytesCounter)
 	r.Unregister(m.RowsCounter)
+	r.Unregister(m.WRUCostCounter)
 	r.Unregister(m.ImportSecondsHistogram)
 	r.Unregister(m.ChunkParserReadBlockSecondsHistogram)
 	r.Unregister(m.ApplyWorkerSecondsHistogram)

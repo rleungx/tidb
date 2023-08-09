@@ -36,11 +36,13 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/encode"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend/remote"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/tidb"
 	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/errormanager"
+	"github.com/pingcap/tidb/br/pkg/lightning/importer/opts"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/metric"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
@@ -376,13 +378,19 @@ func NewImportControllerWithPauser(
 		if err != nil {
 			return nil, err
 		}
+	case config.BackendRemote:
+		encodingBuilder = local.NewEncodingBuilder(ctx)
+		backendObj, err = remote.NewRemoteBackend(ctx, tls, cfg, p.DB, p.KeyspaceName)
+		if err != nil {
+			return nil, common.NormalizeOrWrapErr(common.ErrUnknown, err)
+		}
 	default:
 		return nil, common.ErrUnknownBackend.GenWithStackByArgs(cfg.TikvImporter.Backend)
 	}
 	p.Status.backend = cfg.TikvImporter.Backend
 
 	var metaBuilder metaMgrBuilder
-	isSSTImport := cfg.TikvImporter.Backend == config.BackendLocal
+	isSSTImport := isPhysicalBackend(cfg)
 	switch {
 	case isSSTImport && cfg.TikvImporter.IncrementalImport:
 		metaBuilder = &dbMetaMgrBuilder{
@@ -400,8 +408,8 @@ func NewImportControllerWithPauser(
 	}
 
 	var wrapper backend.TargetInfoGetter
-	if cfg.TikvImporter.Backend == config.BackendLocal {
-		wrapper = local.NewTargetInfoGetter(tls, db, cfg.TiDB.PdAddr)
+	if isPhysicalBackend(cfg) {
+		wrapper = local.NewTargetInfoGetter(tls, db, cfg.TiDB.PdAddr, p.KeyspaceName)
 	} else {
 		wrapper = tidb.NewTargetInfoGetter(db)
 	}
@@ -820,13 +828,13 @@ func (rc *Controller) restoreSchema(ctx context.Context) error {
 		return err
 	}
 
-	dbInfos, err := rc.preInfoGetter.GetAllTableStructures(ctx)
+	dbInfos, err := rc.preInfoGetter.GetAllTableStructures(ctx, opts.ForceReloadCache(true))
 	if err != nil {
 		return errors.Trace(err)
 	}
 	// For local backend, we need DBInfo.ID to operate the global autoid allocator.
-	if isLocalBackend(rc.cfg) {
-		dbs, err := tikv.FetchRemoteDBModelsFromTLS(ctx, rc.tls)
+	if isPhysicalBackend(rc.cfg) {
+		dbs, err := tikv.FetchRemoteDBModelsFromTLS(ctx, rc.keyspaceName, rc.tls)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -1508,7 +1516,7 @@ func (rc *Controller) importTables(ctx context.Context) (finalErr error) {
 	postProgress := func() error { return nil }
 	var kvStore tidbkv.Storage
 
-	if isLocalBackend(rc.cfg) {
+	if isPhysicalBackend(rc.cfg) {
 		var (
 			restoreFn pdutil.UndoFunc
 			err       error
@@ -2122,6 +2130,14 @@ func isLocalBackend(cfg *config.Config) bool {
 	return cfg.TikvImporter.Backend == config.BackendLocal
 }
 
+func isRemoteBackend(cfg *config.Config) bool {
+	return cfg.TikvImporter.Backend == config.BackendRemote
+}
+
+func isPhysicalBackend(cfg *config.Config) bool {
+	return cfg.TikvImporter.Backend == config.BackendLocal || cfg.TikvImporter.Backend == config.BackendRemote
+}
+
 func isTiDBBackend(cfg *config.Config) bool {
 	return cfg.TikvImporter.Backend == config.BackendTiDB
 }
@@ -2172,7 +2188,7 @@ func (rc *Controller) preCheckRequirements(ctx context.Context) error {
 	if rc.status != nil {
 		rc.status.TotalFileSize.Store(estimatedSizeResult.SizeWithoutIndex)
 	}
-	if isLocalBackend(rc.cfg) {
+	if isPhysicalBackend(rc.cfg) {
 		pdController, err := pdutil.NewPdController(ctx, rc.keyspaceName, rc.cfg.TiDB.PdAddr,
 			rc.tls.TLSConfig(), rc.tls.ToPDSecurityOption())
 		if err != nil {
@@ -2206,9 +2222,11 @@ func (rc *Controller) preCheckRequirements(ctx context.Context) error {
 				needCheck = taskCheckpoints == nil
 			}
 			if needCheck {
-				err = rc.localResource(ctx)
-				if err != nil {
-					return common.ErrCheckLocalResource.Wrap(err).GenWithStackByArgs()
+				if isLocalBackend(rc.cfg) {
+					err = rc.localResource(ctx)
+					if err != nil {
+						return common.ErrCheckLocalResource.Wrap(err).GenWithStackByArgs()
+					}
 				}
 				if err := rc.clusterResource(ctx); err != nil {
 					if err1 := rc.taskMgr.CleanupTask(ctx); err1 != nil {
@@ -2250,6 +2268,10 @@ func (rc *Controller) DataCheck(ctx context.Context) error {
 		}
 	}
 
+	if err := rc.checkSoureDataSize(ctx); err != nil {
+		return errors.Trace(err)
+	}
+
 	if err := rc.checkCheckpoints(ctx); err != nil {
 		return errors.Trace(err)
 	}
@@ -2263,6 +2285,7 @@ func (rc *Controller) DataCheck(ctx context.Context) error {
 	if err := rc.checkTableEmpty(ctx); err != nil {
 		return common.ErrCheckTableEmpty.Wrap(err).GenWithStackByArgs()
 	}
+
 	if err := rc.checkCSVHeader(ctx); err != nil {
 		return common.ErrCheckCSVHeader.Wrap(err).GenWithStackByArgs()
 	}

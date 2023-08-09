@@ -265,24 +265,26 @@ func (*encodingBuilder) MakeEmptyRows() encode.Rows {
 }
 
 type targetInfoGetter struct {
-	tls      *common.TLS
-	targetDB *sql.DB
-	pdAddr   string
+	tls          *common.TLS
+	targetDB     *sql.DB
+	pdAddr       string
+	keyspaceName string
 }
 
 // NewTargetInfoGetter creates an TargetInfoGetter with local backend implementation.
-func NewTargetInfoGetter(tls *common.TLS, db *sql.DB, pdAddr string) backend.TargetInfoGetter {
+func NewTargetInfoGetter(tls *common.TLS, db *sql.DB, pdAddr, keyspaceName string) backend.TargetInfoGetter {
 	return &targetInfoGetter{
-		tls:      tls,
-		targetDB: db,
-		pdAddr:   pdAddr,
+		tls:          tls,
+		targetDB:     db,
+		pdAddr:       pdAddr,
+		keyspaceName: keyspaceName,
 	}
 }
 
 // FetchRemoteTableModels obtains the models of all tables given the schema name.
 // It implements the `TargetInfoGetter` interface.
 func (g *targetInfoGetter) FetchRemoteTableModels(ctx context.Context, schemaName string) ([]*model.TableInfo, error) {
-	return tikv.FetchRemoteTableModelsFromTLS(ctx, g.tls, schemaName)
+	return tikv.FetchRemoteTableModelsFromTLS(ctx, g.tls, g.keyspaceName, schemaName)
 }
 
 // CheckRequirements performs the check whether the backend satisfies the version requirements.
@@ -1764,7 +1766,7 @@ func getSplitConfFromStore(ctx context.Context, host string, tls *common.TLS) (
 			} `json:"coprocessor"`
 		}
 	)
-	if err := tls.WithHost(host).GetJSON(ctx, "/config", &nested); err != nil {
+	if err := tls.WithHost(host).GetJSON(ctx, "/config", nil, &nested); err != nil {
 		return 0, 0, errors.Trace(err)
 	}
 	splitSize, err = units.FromHumanSize(nested.Coprocessor.RegionSplitSize)

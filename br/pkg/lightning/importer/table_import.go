@@ -919,65 +919,73 @@ func (tr *TableImporter) postProcess(
 		}
 		tr.logger.Info("local checksum", zap.Object("checksum", &localChecksum))
 
-		// 4.5. do duplicate detection.
-		// if we came here, it must be a local backend.
-		// todo: remove this cast after we refactor the backend interface. Physical mode is so different, we shouldn't
-		// try to abstract it with logical mode.
-		localBackend := rc.backend.(*local.Backend)
-		dupeController := localBackend.GetDupeController(rc.cfg.TikvImporter.RangeConcurrency*2, rc.errorMgr)
 		hasDupe := false
-		if rc.cfg.TikvImporter.DuplicateResolution != config.DupeResAlgNone {
-			opts := &encode.SessionOptions{
-				SQLMode: mysql.ModeStrictAllTables,
-				SysVars: rc.sysVars,
-			}
-			var err error
-			hasLocalDupe, err := dupeController.CollectLocalDuplicateRows(ctx, tr.encTable, tr.tableName, opts)
-			if err != nil {
-				tr.logger.Error("collect local duplicate keys failed", log.ShortError(err))
-				return false, err
-			}
-			hasDupe = hasLocalDupe
-		}
-		failpoint.Inject("SlowDownCheckDupe", func(v failpoint.Value) {
-			sec := v.(int)
-			tr.logger.Warn("start to sleep several seconds before checking other dupe",
-				zap.Int("seconds", sec))
-			time.Sleep(time.Duration(sec) * time.Second)
-		})
-
-		otherHasDupe, needRemoteDupe, baseTotalChecksum, err := metaMgr.CheckAndUpdateLocalChecksum(ctx, &localChecksum, hasDupe)
-		if err != nil {
-			return false, err
-		}
-		needChecksum := !otherHasDupe && needRemoteDupe
-		hasDupe = hasDupe || otherHasDupe
-
-		if needRemoteDupe && rc.cfg.TikvImporter.DuplicateResolution != config.DupeResAlgNone {
-			opts := &encode.SessionOptions{
-				SQLMode: mysql.ModeStrictAllTables,
-				SysVars: rc.sysVars,
-			}
-			hasRemoteDupe, e := dupeController.CollectRemoteDuplicateRows(ctx, tr.encTable, tr.tableName, opts)
-			if e != nil {
-				tr.logger.Error("collect remote duplicate keys failed", log.ShortError(e))
-				return false, e
-			}
-			hasDupe = hasDupe || hasRemoteDupe
-
-			if hasDupe {
-				if err = dupeController.ResolveDuplicateRows(ctx, tr.encTable, tr.tableName, rc.cfg.TikvImporter.DuplicateResolution); err != nil {
-					tr.logger.Error("resolve remote duplicate keys failed", log.ShortError(err))
+		needChecksum := true
+		baseTotalChecksum := &verify.KVChecksum{}
+		if rc.cfg.TikvImporter.Backend == config.BackendLocal {
+			// 4.5. do duplicate detection.
+			// if we came here, it must be a local backend.
+			// todo: remove this cast after we refactor the backend interface. Physical mode is so different, we shouldn't
+			// try to abstract it with logical mode.
+			localBackend := rc.backend.(*local.Backend)
+			dupeController := localBackend.GetDupeController(rc.cfg.TikvImporter.RangeConcurrency*2, rc.errorMgr)
+			if rc.cfg.TikvImporter.DuplicateResolution != config.DupeResAlgNone {
+				opts := &encode.SessionOptions{
+					SQLMode: mysql.ModeStrictAllTables,
+					SysVars: rc.sysVars,
+				}
+				var err error
+				hasLocalDupe, err := dupeController.CollectLocalDuplicateRows(ctx, tr.encTable, tr.tableName, opts)
+				if err != nil {
+					tr.logger.Error("collect local duplicate keys failed", log.ShortError(err))
 					return false, err
 				}
+				hasDupe = hasLocalDupe
+			}
+			failpoint.Inject("SlowDownCheckDupe", func(v failpoint.Value) {
+				sec := v.(int)
+				tr.logger.Warn("start to sleep several seconds before checking other dupe",
+					zap.Int("seconds", sec))
+				time.Sleep(time.Duration(sec) * time.Second)
+			})
+
+			var otherHasDupe bool
+			var needRemoteDupe bool
+			var err error
+			otherHasDupe, needRemoteDupe, baseTotalChecksum, err = metaMgr.CheckAndUpdateLocalChecksum(ctx, &localChecksum, hasDupe)
+			if err != nil {
+				return false, err
+			}
+			needChecksum = !otherHasDupe && needRemoteDupe
+			hasDupe = hasDupe || otherHasDupe
+
+			if needRemoteDupe && rc.cfg.TikvImporter.DuplicateResolution != config.DupeResAlgNone {
+				opts := &encode.SessionOptions{
+					SQLMode: mysql.ModeStrictAllTables,
+					SysVars: rc.sysVars,
+				}
+				hasRemoteDupe, e := dupeController.CollectRemoteDuplicateRows(ctx, tr.encTable, tr.tableName, opts)
+				if e != nil {
+					tr.logger.Error("collect remote duplicate keys failed", log.ShortError(e))
+					return false, e
+				}
+				hasDupe = hasDupe || hasRemoteDupe
+
+				if hasDupe {
+					if err = dupeController.ResolveDuplicateRows(ctx, tr.encTable, tr.tableName, rc.cfg.TikvImporter.DuplicateResolution); err != nil {
+						tr.logger.Error("resolve remote duplicate keys failed", log.ShortError(err))
+						return false, err
+					}
+				}
+			}
+
+			if rc.dupIndicator != nil {
+				tr.logger.Debug("set dupIndicator", zap.Bool("has-duplicate", hasDupe))
+				rc.dupIndicator.CompareAndSwap(false, hasDupe)
 			}
 		}
 
-		if rc.dupIndicator != nil {
-			tr.logger.Debug("set dupIndicator", zap.Bool("has-duplicate", hasDupe))
-			rc.dupIndicator.CompareAndSwap(false, hasDupe)
-		}
-
+		var err error
 		nextStage := checkpoints.CheckpointStatusChecksummed
 		if rc.cfg.PostRestore.Checksum != config.OpLevelOff && !hasDupe && needChecksum {
 			if cp.Checksum.SumKVS() > 0 || baseTotalChecksum.SumKVS() > 0 {
