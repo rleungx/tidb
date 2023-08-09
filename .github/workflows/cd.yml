@@ -3,8 +3,7 @@ name: TIDB-CD
 on:
   push:
     branches: ["release-7.1-keyspace"]
-  pull_request:
-    branches: ["release-7.1-keyspace"]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -23,9 +22,43 @@ jobs:
       GCR_REPO: gcr.io/pingcap-public/serverless/tidb
       GCR_TAG: v7.1.0
       IS_RELEASE_BRANCH: ${{ github.ref == 'refs/heads/release-7.1-keyspace' && github.event_name == 'push' }}
+      TIDB_VERSION: v7.1.1-serverless
+      TIDB_GIT_BRANCH: release-7.1-serverless
     steps:
       - name: Check out Code
         uses: actions/checkout@v2
+
+      # Setup Go with version from go.mod
+      # Note: this will automatically set up go mod and build cache.
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+
+      # Setup private repo access in case we need to pull from tidbcloud.
+      - name: Configure git for private modules
+        if: env.GITHUB_TOKEN != ''
+        run: git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/";
+
+      - name: Build ARM64 TiDB
+        env:
+          GOARCH: arm64
+          CGO_ENABLED: 0 # Set CGO_ENABLED=0 for cross compiling.
+          CD_TARGET: ./tmp/tidb-server-arm64 # Build to tmp instead of bin to avoid .dockerignore.
+          GOPRIVATE: github.com/tidbcloud
+          MIN_TIKV_VERSION: 6.1.0
+          REGISTER_METRICS_INIT: false
+        run: make server_cd
+
+      - name: Build AMD64 TiDB
+        env:
+          GOARCH: amd64
+          CGO_ENABLED: 0
+          CD_TARGET: ./tmp/tidb-server-amd64
+          GOPRIVATE: github.com/tidbcloud
+          MIN_TIKV_VERSION: 6.1.0
+          REGISTER_METRICS_INIT: false
+        run: make server_cd
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
@@ -40,6 +73,17 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           endpoint: tls-env
+
+      # Setup buildx cache.
+      - name: Set up buildx cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            /tmp/.buildx-cache
+          # Set cache key to be based on Dockerfile.cd, since the actual build is outside buildx.
+          key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile.cd') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
 
       - name: Install AWS CLI
         run: |
@@ -106,8 +150,19 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           context: .
+          file: ./Dockerfile.cd
           platforms: "linux/amd64,linux/arm64"
           push: true
           build-args: |
             GITHUB_TOKEN=${{ secrets.GIT_ACTION_BOT }}
           tags: ${{ env.TAGS }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      # Buildx's cache-to currently only work with empty directory, here is a temp workaround.
+      # https://github.com/docker/build-push-action/issues/252
+      # https://github.com/moby/buildkit/issues/1896
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache

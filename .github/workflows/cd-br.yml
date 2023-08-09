@@ -3,8 +3,7 @@ name: BR-CD
 on:
   push:
     branches: ["release-7.1-keyspace"]
-  pull_request:
-    branches: ["release-7.1-keyspace"]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -27,6 +26,38 @@ jobs:
       - name: Check out Code
         uses: actions/checkout@v2
 
+      # Setup Go with version from go.mod
+      # Note: this will automatically set up go mod and build cache.
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+
+      # Setup private repo access in case we need to pull from tidbcloud.
+      - name: Configure git for private modules
+        if: env.GITHUB_TOKEN != ''
+        run: git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/";
+
+      - name: Build ARM64 BR
+        env:
+          GOARCH: arm64
+          CGO_ENABLED: 0 # Set CGO_ENABLED=0 for cross compiling.
+          CD_BR_TARGET: ./tmp/br-arm64
+          GOPRIVATE: github.com/tidbcloud
+          MIN_TIKV_VERSION: 6.1.0
+          REGISTER_METRICS_INIT: false
+        run: make build_br_cd
+
+      - name: Build AMD64 BR
+        env:
+          GOARCH: amd64
+          CGO_ENABLED: 0 # Set CGO_ENABLED=0 for cross compiling.
+          CD_BR_TARGET: ./tmp/br-amd64
+          GOPRIVATE: github.com/tidbcloud
+          MIN_TIKV_VERSION: 6.1.0
+          REGISTER_METRICS_INIT: false
+        run: make build_br_cd
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
         with:
@@ -40,6 +71,16 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           endpoint: tls-env
+
+      # Setup buildx cache.
+      - name: Set up buildx cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile.cd') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
 
       - name: Install AWS CLI
         run: |
@@ -108,9 +149,17 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           context: .
-          file: br/Dockerfile
+          file: br/Dockerfile.cd
           platforms: "linux/amd64,linux/arm64"
           push: true
-          build-args: |
-            GITHUB_TOKEN=${{ secrets.GIT_ACTION_BOT }}
           tags: ${{ env.TAGS }}
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      # Buildx's cache-to currently only work with empty directory, here is a temp workaround.
+      # https://github.com/docker/build-push-action/issues/252
+      # https://github.com/moby/buildkit/issues/1896
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache

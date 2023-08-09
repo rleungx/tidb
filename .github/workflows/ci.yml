@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   tidb-cse-check:
@@ -21,10 +21,10 @@ jobs:
       GOPRIVATE: github.com/tidbcloud
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v4
         with:
-          go-version: '1.20.5'
-      - uses: jwlawson/actions-setup-bazel@v1.10.0
+          go-version-file: 'go.mod'
+      - uses: jwlawson/actions-setup-bazel@v1.9.0
         with:
           bazel-version: '5.4.0'
       - name: check
@@ -39,9 +39,9 @@ jobs:
       GOPRIVATE: github.com/tidbcloud
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v4
         with:
-          go-version: '1.20.5'
+          go-version-file: 'go.mod'
       - name: build
         shell: bash
         run: |
