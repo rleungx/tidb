@@ -64,6 +64,8 @@ const (
 	serverlessVersion15 = 15
 	// serverlessVersion16 is noop.
 	serverlessVersion16 = 16
+	// serverlessVersion17 disable tidb_pessimistic_txn_fair_locking.
+	serverlessVersion17 = 17
 )
 
 const (
@@ -77,7 +79,7 @@ const (
 
 // currentServerlessVersion is defined as a variable, so we can modify its value for testing.
 // please make sure this is the largest version
-var currentServerlessVersion int64 = serverlessVersion16
+var currentServerlessVersion int64 = serverlessVersion17
 
 var bootstrapServerlessVersion = []func(Session, int64){
 	upgradeToServerlessVer2,
@@ -94,6 +96,7 @@ var bootstrapServerlessVersion = []func(Session, int64){
 	upgradeToServerlessVer13,
 	upgradeToServerlessVer14,
 	upgradeToServerlessVer15,
+	upgradeToServerlessVer17,
 }
 
 // updateServerlessVersion updates serverless version variable in mysql.TiDB table.
@@ -409,6 +412,15 @@ func upgradeToServerlessVer15(s Session, ver int64) {
 	}
 }
 
+func upgradeToServerlessVer17(s Session, ver int64) {
+	if ver >= serverlessVersion17 {
+		return
+	}
+
+	// TODO: remove this after the next cse upgrade to 7.1
+	mustExecute(s, "set @@global.tidb_pessimistic_txn_fair_locking=OFF")
+}
+
 // Serverless bootstrap procedures.
 // NOTE: The following methods will only be executed once at doDMLWorks during TiDB Bootstrap,
 // therefore any modification of it requires addition to the serverless version upgrade function above
@@ -450,6 +462,10 @@ func bootstrapServerlessVariables(s Session) {
 		variable.MaxExecutionTime,
 		defaultMaxExecutionTime,
 		defaultMaxExecutionTime,
+	)
+	// TODO: remove this after the next cse upgrade to 7.1
+	mustExecute(s, `INSERT HIGH_PRIORITY INTO %n.%n VALUES(%?, %?) ON DUPLICATE KEY UPDATE VARIABLE_VALUE=%?`,
+		mysql.SystemDB, mysql.GlobalVariablesTable, variable.TiDBPessimisticTransactionFairLocking, variable.Off, variable.Off,
 	)
 }
 

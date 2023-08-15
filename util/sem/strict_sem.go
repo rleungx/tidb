@@ -234,7 +234,9 @@ func strictModeReadOnlySysVar(varNameInLower string) bool {
 		variable.TiDBWaitSplitRegionFinish,
 		variable.TiDBWaitSplitRegionTimeout,
 		variable.TiDBTxnScope,
-		variable.ValidatePasswordEnable:
+		variable.ValidatePasswordEnable,
+		// TODO: remove this after the next cse upgrade to 7.1
+		variable.TiDBPessimisticTransactionFairLocking:
 		return true
 
 	}
