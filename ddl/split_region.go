@@ -37,12 +37,12 @@ func splitPartitionTableRegion(ctx sessionctx.Context, store kv.SplittableStore,
 	defer cancel()
 	ctxWithTimeout = kv.WithInternalSourceType(ctxWithTimeout, kv.InternalTxnDDL)
 	if shardingBits(tbInfo) > 0 && tbInfo.PreSplitRegions > 0 {
-		for _, def := range pi.Definitions {
-			regionIDs = append(regionIDs, preSplitPhysicalTableByShardRowID(ctxWithTimeout, store, tbInfo, def.ID, scatter)...)
+		for range pi.Definitions {
+			regionIDs = append(regionIDs, preSplitPhysicalTableByShardRowID(ctxWithTimeout, store, tbInfo, tbInfo.ID, scatter)...)
 		}
 	} else {
-		for _, def := range pi.Definitions {
-			regionIDs = append(regionIDs, SplitRecordRegion(ctxWithTimeout, store, def.ID, scatter))
+		for range pi.Definitions {
+			regionIDs = append(regionIDs, SplitRecordRegion(ctxWithTimeout, store, tbInfo.ID, scatter))
 		}
 	}
 	if scatter {
