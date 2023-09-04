@@ -106,7 +106,7 @@ func (m *TiFlashReplicaManagerCtx) GetPlacementRule(ctx context.Context, tableID
 	if err != nil {
 		return nil, err
 	}
-	if resp == nil && err == nil {
+	if resp == nil {
 		return nil, nil
 	}
 	rule := &placement.TiFlashRule{}

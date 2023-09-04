@@ -30,9 +30,9 @@ func newInvalidModeErr(s string) error {
 var (
 	// TiDBReleaseVersion is initialized by (git describe --tags) in Makefile.
 	TiDBReleaseVersion      = "None"
-	TiDBReleaseVersionFixed = "v7.1.0"
+	TiDBReleaseVersionFixed = "v7.1.1-serverless"
 
-	ServerlessTiDBReleaseVersionFixed = "v7.1.0"
+	ServerlessTiDBReleaseVersionFixed = "v7.1.1-serverless"
 
 	// ServerVersion is the version information of this tidb-server in MySQL's format.
 	ServerVersion = fmt.Sprintf("5.7.25-TiDB-%s", TiDBReleaseVersionFixed)

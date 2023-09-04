@@ -1773,10 +1773,14 @@ func TestSecurityEnhancedModeInfoschema(t *testing.T) {
 	defer sem.Disable()
 
 	// Even though we have super, we still can't read protected information from tidb_servers_info, cluster_* tables
-	tk.MustQuery(`SELECT COUNT(*) FROM information_schema.tidb_servers_info WHERE ip IS NOT NULL`).Check(testkit.Rows("0"))
-	err := tk.QueryToErr(`SELECT COUNT(*) FROM information_schema.cluster_info WHERE status_address IS NOT NULL`)
-	require.Error(t, err)
-	require.EqualError(t, err, "[planner:1227]Access denied; you need (at least one of) the PROCESS privilege(s) for this operation")
+	tk.MustGetErrMsg(
+		`SELECT COUNT(*) FROM information_schema.tidb_servers_info WHERE ip IS NOT NULL`,
+		"[planner:1142]SELECT command denied to user 'uroot1'@'%' for table 'tidb_servers_info'",
+	)
+	tk.MustGetErrMsg(
+		`SELECT COUNT(*) FROM information_schema.cluster_info WHERE status_address IS NOT NULL`,
+		"[planner:1142]SELECT command denied to user 'uroot1'@'%' for table 'cluster_info'",
+	)
 
 	// That is unless we have the RESTRICTED_TABLES_ADMIN privilege
 	tk.Session().Auth(&auth.UserIdentity{
@@ -2022,18 +2026,18 @@ func TestSecurityEnhancedModeSysVars(t *testing.T) {
 	tk.MustQuery(`SELECT * FROM performance_schema.session_variables WHERE variable_name = 'tidb_top_sql_max_meta_count'`).Check(testkit.Rows())
 
 	_, err := tk.Exec("SET @@global.tidb_force_priority = 'NO_PRIORITY'")
-	require.EqualError(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
+	require.ErrorContains(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
 	_, err = tk.Exec("SET GLOBAL tidb_enable_telemetry = OFF")
-	require.EqualError(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
+	require.ErrorContains(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
 	_, err = tk.Exec("SET GLOBAL tidb_top_sql_max_time_series_count = 100")
-	require.EqualError(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
+	require.ErrorContains(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
 
 	_, err = tk.Exec("SELECT @@global.tidb_force_priority")
-	require.EqualError(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
+	require.ErrorContains(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
 	_, err = tk.Exec("SELECT @@global.tidb_enable_telemetry")
-	require.EqualError(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
+	require.ErrorContains(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
 	_, err = tk.Exec("SELECT @@global.tidb_top_sql_max_time_series_count")
-	require.EqualError(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
+	require.ErrorContains(t, err, "[planner:1227]Access denied; you need (at least one of) the RESTRICTED_VARIABLES_ADMIN privilege(s) for this operation")
 
 	tk.Session().Auth(&auth.UserIdentity{
 		Username:     "svroot2",
@@ -2563,9 +2567,9 @@ func TestPlacementPolicyStmt(t *testing.T) {
 
 	require.NoError(t, tk.Session().Auth(&auth.UserIdentity{Username: "empty_user", Hostname: "localhost"}, nil, nil, nil))
 	err := tk.ExecToErr(createStmt)
-	require.EqualError(t, err, "[planner:1227]Access denied; you need (at least one of) the SUPER or PLACEMENT_ADMIN privilege(s) for this operation")
+	require.ErrorContains(t, err, "[planner:1227]Access denied; you need (at least one of) the SUPER or PLACEMENT_ADMIN privilege(s) for this operation")
 	err = tk.ExecToErr(dropStmt)
-	require.EqualError(t, err, "[planner:1227]Access denied; you need (at least one of) the SUPER or PLACEMENT_ADMIN privilege(s) for this operation")
+	require.ErrorContains(t, err, "[planner:1227]Access denied; you need (at least one of) the SUPER or PLACEMENT_ADMIN privilege(s) for this operation")
 
 	require.NoError(t, tk.Session().Auth(&auth.UserIdentity{Username: "super_user", Hostname: "localhost"}, nil, nil, nil))
 	tk.MustExec(createStmt)

@@ -63,7 +63,7 @@ func TestIsRestrictedPrivilege(t *testing.T) {
 	assert.True(IsRestrictedPrivilege("RESTRICTED_TABLES_ADMIN"))
 	assert.True(IsRestrictedPrivilege("RESTRICTED_STATUS_VARIABLES_ADMIN"))
 	assert.False(IsRestrictedPrivilege("CONNECTION_ADMIN"))
-	assert.False(IsRestrictedPrivilege("BACKUP_ADMIN"))
+	assert.True(IsRestrictedPrivilege("BACKUP_ADMIN")) // backup admin is a restricted privilege in serverless.
 	assert.False(IsRestrictedPrivilege("aa"))
 }
 

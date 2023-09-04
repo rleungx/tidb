@@ -1718,15 +1718,18 @@ func TestVariablesInfo(t *testing.T) {
 	// Test that in the current_value matches the default value in all
 	// but a few permitted special cases.
 	// See session/bootstrap.go:doDMLWorks() for where the exceptions are defined.
+	// Some of the default has been modified for serverless.
 	stmt := tk.MustQuery(`SELECT variable_name, default_value, current_value FROM information_schema.variables_info WHERE current_value != default_value and default_value  != '' ORDER BY variable_name`)
 	stmt.Check(testkit.Rows(
 		"last_sql_use_alloc OFF ON",                 // for test stability
+		"require_secure_transport OFF ON",           // serverless always have secure transport on
 		"tidb_enable_auto_analyze ON OFF",           // always changed for tests
 		"tidb_enable_collect_execution_info ON OFF", // for test stability
 		"tidb_enable_mutation_checker OFF ON",       // for new installs
 		"tidb_mem_oom_action CANCEL LOG",            // always changed for tests
 		"tidb_pessimistic_txn_fair_locking OFF ON",  // for new instances
 		"tidb_row_format_version 1 2",               // for new installs
+		"tidb_server_memory_limit 80% 0",            // serverless vpa, skip setting memory limit
 		"tidb_txn_assertion_level OFF FAST",         // for new installs
 		"timestamp 0 123456789",                     // always dynamic
 	))

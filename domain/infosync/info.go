@@ -199,7 +199,7 @@ func GlobalInfoSyncerInit(
 	skipRegisterToDashBoard bool,
 ) (*InfoSyncer, error) {
 	var keyspaceServerIDPath string
-	if codec.GetKeyspace() != nil {
+	if codec != nil && codec.GetKeyspace() != nil {
 		keyspaceServerIDPath = fmt.Sprintf("%d_%s", codec.GetKeyspaceID(), id)
 	} else {
 		keyspaceServerIDPath = id
@@ -1316,7 +1316,7 @@ func ConfigureTiFlashPDForPartitions(accel bool, definitions *[]model.PartitionD
 	pids := make([]int64, 0, len(*definitions))
 	for _, p := range *definitions {
 		logutil.BgLogger().Info("ConfigureTiFlashPDForPartitions", zap.Int64("tableID", tableID), zap.Int64("partID", p.ID), zap.Bool("accel", accel), zap.Uint64("count", count),
-		    zap.Bool("with extra s3 rule", placement.NeedExtraS3TiFlashRule()))
+			zap.Bool("with extra s3 rule", placement.NeedExtraS3TiFlashRule()))
 		ruleNew := MakeNewRule(p.ID, count, *locationLabels)
 		rules = append(rules, ruleNew)
 		pids = append(pids, p.ID)

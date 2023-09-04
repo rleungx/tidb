@@ -1634,7 +1634,8 @@ func TestAuthSessionTokenPlugin(t *testing.T) {
 	tk1.MustQuery("show session_states")
 
 	// create a token with TLS
-	cc.tlsConn = tls.Client(nil, &tls.Config{})
+	state := tls.Client(nil, &tls.Config{}).ConnectionState()
+	cc.tlsConn = &state
 	tc.Session.GetSessionVars().ConnectionInfo = cc.connectInfo()
 	tk1.Session().Auth(&auth.UserIdentity{Username: "auth_session_token", Hostname: "localhost"}, nil, nil, nil)
 	tk1.MustQuery("show session_states")

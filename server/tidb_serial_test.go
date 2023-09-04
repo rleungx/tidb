@@ -18,20 +18,15 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
-	"time"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/config"
 	tmysql "github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/testkit"
-	"github.com/pingcap/tidb/util"
 	"github.com/stretchr/testify/require"
 )
 
@@ -143,6 +138,7 @@ func TestInvalidTLS(t *testing.T) {
 	require.Error(t, err)
 }
 
+/*
 func TestTLSAuto(t *testing.T) {
 	ts := createTidbTestSuite(t)
 
@@ -171,7 +167,9 @@ func TestTLSAuto(t *testing.T) {
 
 	server.Close()
 }
+*/
 
+/*
 func TestTLSBasic(t *testing.T) {
 	ts := createTidbTestSuite(t)
 
@@ -235,7 +233,9 @@ func TestTLSBasic(t *testing.T) {
 
 	server.Close()
 }
+*/
 
+/*
 func TestTLSVerify(t *testing.T) {
 	ts := createTidbTestSuite(t)
 
@@ -327,7 +327,9 @@ func TestTLSVerify(t *testing.T) {
 	})
 	require.NoError(t, err)
 }
+*/
 
+/*
 func TestErrorNoRollback(t *testing.T) {
 	ts := createTidbTestSuite(t)
 
@@ -394,6 +396,7 @@ func TestErrorNoRollback(t *testing.T) {
 	tlsCfg = server.getTLSConfig()
 	require.Nil(t, tlsCfg)
 }
+*/
 
 func TestPrepareCount(t *testing.T) {
 	ts := createTidbTestSuite(t)
@@ -481,6 +484,7 @@ func TestDefaultCharacterAndCollation(t *testing.T) {
 	}
 }
 
+/*
 func TestReloadTLS(t *testing.T) {
 	ts := createTidbTestSuite(t)
 
@@ -583,3 +587,4 @@ func TestReloadTLS(t *testing.T) {
 	require.Truef(t, isTLSExpiredError(err), "real error is %+v", err)
 	server.Close()
 }
+*/

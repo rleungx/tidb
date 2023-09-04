@@ -199,6 +199,7 @@ func (b *remoteBackend) loadDataInit(clusterID, ts uint64) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return errors.Errorf("failed to open engine %s", resp.Status)
 	}
@@ -256,10 +257,10 @@ func sendRequest(ctx context.Context, method, url string, body io.Reader) ([]byt
 	if err != nil {
 		return nil, errors.Errorf("failed to send request %s", url)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return nil, errors.Errorf("failed to send request %s, status %s", url, resp.Status)
 	}
-	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
 }
 
@@ -282,9 +283,6 @@ func (b *remoteBackend) loadDataBuild(ctx context.Context, engine *engine, split
 func (b *remoteBackend) loadDataGetStates(ctx context.Context, engine *engine) (*LoadDataStates, error) {
 	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d", b.workerAddr, engine.clusterID, engine.ts)
 	data, err := sendRequest(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
 	if err != nil {
 		return nil, err
 	}
@@ -503,9 +501,9 @@ func (b *remoteBackend) setupReportWRU(ctx context.Context, keyspaceID uint32, k
 		return err
 	}
 	var defaultRule *pdtypes.Rule
-	for _, rule := range placementRules {
-		if rule.ID == "default" {
-			defaultRule = &rule
+	for i := range placementRules {
+		if placementRules[i].ID == "default" {
+			defaultRule = &placementRules[i]
 			break
 		}
 	}

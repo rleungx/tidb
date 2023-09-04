@@ -40,6 +40,7 @@ import (
 	"github.com/pingcap/tidb/util/collate"
 	"github.com/pingcap/tidb/util/errmsg"
 	"github.com/pingcap/tidb/util/gctuner"
+	"github.com/pingcap/tidb/util/intest"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/mathutil"
 	"github.com/pingcap/tidb/util/memory"
@@ -934,15 +935,17 @@ var defaultSysVars = []*SysVar{
 			return str, nil
 		},
 		SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
-			// bt, str, err := parseMemoryLimit(s, val, val)
-			// if err != nil {
-			// 	return err
-			// }
-			// memory.ServerMemoryLimitOriginText.Store(str)
-			// memory.ServerMemoryLimit.Store(bt)
-			// gctuner.GlobalMemoryLimitTuner.UpdateMemoryLimit()
-			//
 			// skip in serverless cluster.
+			if !intest.InTest {
+				return nil
+			}
+			bt, str, err := parseMemoryLimit(s, val, val)
+			if err != nil {
+				return err
+			}
+			memory.ServerMemoryLimitOriginText.Store(str)
+			memory.ServerMemoryLimit.Store(bt)
+			gctuner.GlobalMemoryLimitTuner.UpdateMemoryLimit()
 			return nil
 		},
 	},

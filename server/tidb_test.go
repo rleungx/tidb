@@ -1238,6 +1238,8 @@ func TestGracefulShutdown(t *testing.T) {
 		require.NoError(t, err)
 	}()
 	time.Sleep(time.Millisecond * 100)
+	failpoint.Enable("github.com/pingcap/tidb/server/forceWaitBeforeShutdown", `return`)
+	defer failpoint.Disable("github.com/pingcap/tidb/server/forceWaitBeforeShutdown")
 
 	resp, err := cli.fetchStatus("/status") // server is up
 	require.NoError(t, err)
@@ -1246,7 +1248,8 @@ func TestGracefulShutdown(t *testing.T) {
 	go server.Close()
 	time.Sleep(time.Millisecond * 500)
 
-	resp, _ = cli.fetchStatus("/status") // should return 5xx code
+	resp, err = cli.fetchStatus("/status") // should return 5xx code
+	require.NoError(t, err)
 	require.Equal(t, 500, resp.StatusCode)
 	require.Nil(t, resp.Body.Close())
 

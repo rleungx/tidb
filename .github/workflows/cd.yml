@@ -1,4 +1,4 @@
-name: TIDB-CD
+name: TiDB-CD
 
 on:
   push:

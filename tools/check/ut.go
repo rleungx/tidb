@@ -66,6 +66,9 @@ ut run $package $test
 // run test cases that match a pattern
 ut run $package 'r:$regex'
 
+// run multiple test packages
+ut run-multi $package1 $package2 ...
+
 // build all test package
 ut build
 
@@ -179,6 +182,64 @@ func cmdBuild(args ...string) bool {
 		err := buildTestBinary(pkg)
 		if err != nil {
 			log.Println("build package error", pkg, err)
+			return false
+		}
+	}
+	return true
+}
+
+func cmdRunMulti(pkgs ...string) bool {
+	var err error
+	if len(pkgs) == 0 {
+		return true
+	}
+
+	// Build tasks
+	tasks := make([]task, 0, 4096)
+	start := time.Now()
+	err = buildTestBinaryMulti(pkgs)
+	if err != nil {
+		log.Println("build package error", pkgs, err)
+		return false
+	}
+	for _, pkg := range pkgs {
+		exist, err := testBinaryExist(pkg)
+		if err != nil {
+			log.Println("check test binary existence error", err)
+			return false
+		}
+		if !exist {
+			fmt.Println("no test case in ", pkg)
+			continue
+		}
+		tasks, err = listTestCases(pkg, tasks)
+		if err != nil {
+			log.Println("list test cases error", err)
+			return false
+		}
+	}
+
+	fmt.Printf("building task finish, maxproc=%d, count=%d, takes=%v\n", p, len(tasks), time.Since(start))
+
+	// Run tasks
+	taskCh := make(chan task, 100)
+	works := make([]numa, p)
+	var wg sync.WaitGroup
+	for i := 0; i < p; i++ {
+		wg.Add(1)
+		go works[i].worker(&wg, taskCh)
+	}
+	shuffle(tasks)
+	start = time.Now()
+	for _, task := range tasks {
+		taskCh <- task
+	}
+	close(taskCh)
+	wg.Wait()
+	fmt.Println("run all tasks takes", time.Since(start))
+
+	for _, work := range works {
+		if work.Fail {
 			return false
 		}
 	}
@@ -464,6 +525,8 @@ func main() {
 			isSucceed = cmdBuild(os.Args[2:]...)
 		case "run":
 			isSucceed = cmdRun(os.Args[2:]...)
+		case "run-multi":
+			isSucceed = cmdRunMulti(os.Args[2:]...)
 		default:
 			isSucceed = usage()
 		}
@@ -715,7 +778,7 @@ func (n *numa) runTestCase(pkg string, fn string) testResult {
 
 	var buf bytes.Buffer
 	var err error
-	var start time.Time
+	var start = time.Now()
 	for i := 0; i < 3; i++ {
 		cmd := n.testCommand(pkg, fn)
 		cmd.Dir = path.Join(workDir, pkg)
@@ -723,24 +786,14 @@ func (n *numa) runTestCase(pkg string, fn string) testResult {
 		cmd.Stdout = &buf
 		cmd.Stderr = &buf
 
-		start = time.Now()
 		err = cmd.Run()
 		if err != nil {
 			//lint:ignore S1020
 			if _, ok := err.(*exec.ExitError); ok {
 				// Retry 3 times to get rid of the weird error:
-				switch err.Error() {
-				case "signal: segmentation fault (core dumped)":
-					buf.Reset()
-					continue
-				case "signal: trace/breakpoint trap (core dumped)":
-					buf.Reset()
-					continue
-				}
-				if strings.Contains(buf.String(), "panic during panic") {
-					buf.Reset()
-					continue
-				}
+				fmt.Printf("retry %d times for %s: %s\nerror: %s\n", i, pkg, fn, err.Error())
+				buf.Reset()
+				continue
 			}
 		}
 		break

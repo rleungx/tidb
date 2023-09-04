@@ -37,7 +37,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http" //nolint:goimports
-
 	// For pprof
 	_ "net/http/pprof" // #nosec G108
 	"os"
@@ -51,6 +50,7 @@ import (
 
 	"github.com/blacktear23/go-proxyprotocol"
 	"github.com/pingcap/errors"
+	"github.com/pingcap/failpoint"
 	autoid "github.com/pingcap/tidb/autoid_service"
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/domain"
@@ -531,6 +531,10 @@ func (s *Server) startShutdown() {
 	if maxWaitTime > 0 {
 		logutil.BgLogger().Info("waiting for stray connections before starting shutdown process", zap.Duration("maxWaitTime", maxWaitTime))
 
+		failpoint.Inject("forceWaitBeforeShutdown", func() {
+			time.Sleep(maxWaitTime)
+			return
+		})
 		done := make(chan struct{}, 1)
 		go func() {
 			s.rwlock.Lock()

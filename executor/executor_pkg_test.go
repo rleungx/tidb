@@ -107,7 +107,7 @@ func TestSlowQueryRuntimeStats(t *testing.T) {
 // Test whether the actual buckets in Golang Map is same with the estimated number.
 // The test relies the implement of Golang Map. ref https://github.com/golang/go/blob/go1.13/src/runtime/map.go#L114
 func TestAggPartialResultMapperB(t *testing.T) {
-	if runtime.Version() < `go1.13` {
+	if runtime.Version() < `go1.13` || runtime.Version() >= `go1.21` {
 		t.Skip("Unsupported version")
 	}
 	type testCase struct {

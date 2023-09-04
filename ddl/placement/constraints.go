@@ -168,7 +168,7 @@ func NeedExtraS3TiFlashRule() bool {
 	return config.GetGlobalConfig().TiFlashReplicas.ExtraS3Rule
 }
 
-// GetTiFlashRuleGroupIDByConfig returns the gropu id from config.
+// GetTiFlashRuleGroupIDByConfig returns the group id from config.
 func GetTiFlashRuleGroupIDByConfig() string {
 	return config.GetGlobalConfig().TiFlashReplicas.GroupID
 }

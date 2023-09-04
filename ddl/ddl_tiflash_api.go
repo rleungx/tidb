@@ -574,8 +574,12 @@ func (d *ddl) refreshTiFlashPlacementRules(sctx sessionctx.Context, tick uint64)
 
 	for _, db := range schema.AllSchemas() {
 		tables := schema.SchemaTables(db.Name)
+		pending := pending{
+			DBInfo: db,
+		}
 		for _, tbl := range tables {
 			tblInfo := tbl.Meta()
+			pending.TableInfo = tblInfo
 			if tblInfo.TiFlashReplica == nil {
 				continue
 			}
@@ -583,21 +587,15 @@ func (d *ddl) refreshTiFlashPlacementRules(sctx sessionctx.Context, tick uint64)
 			if ps := tblInfo.GetPartitionInfo(); ps != nil {
 				collectPendings := func(ps []model.PartitionDefinition) {
 					for _, p := range ps {
-						pendings = append(pendings, pending{
-							ID:        p.ID,
-							TableInfo: tblInfo,
-							DBInfo:    db,
-						})
+						pending.ID = p.ID
+						pendings = append(pendings, pending)
 					}
 				}
 				collectPendings(ps.Definitions)
 				collectPendings(ps.AddingDefinitions)
 			} else {
-				pendings = append(pendings, pending{
-					ID:        tblInfo.ID,
-					TableInfo: tblInfo,
-					DBInfo:    db,
-				})
+				pending.ID = tblInfo.ID
+				pendings = append(pendings, pending)
 			}
 		}
 	}

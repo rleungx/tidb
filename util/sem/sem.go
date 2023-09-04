@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/sessionctx/variable"
@@ -110,6 +111,11 @@ const (
 // Enable enables SEM. This is intended to be used by the test-suite.
 // Dynamic configuration by users may be a security risk.
 func Enable(level string) error {
+	failpoint.Inject("skipSEM", func() {
+		logutil.BgLogger().Info("skip enabling SEM")
+		failpoint.Return(nil)
+	})
+
 	switch level {
 	case config.SEMLevelBasic:
 		atomic.StoreInt32(&semEnabled, levelBasicVal)

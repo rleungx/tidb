@@ -991,9 +991,9 @@ func NewConfig() *Config {
 		},
 		RUConfig: RUConfig{
 			ReportWRU:             true,
-			WriteBaseCost:         float64(defaultRUConfig.WriteBaseCost),
-			WritePerBatchBaseCost: float64(defaultRUConfig.WritePerBatchBaseCost),
-			WriteCostPerByte:      float64(defaultRUConfig.WriteCostPerByte),
+			WriteBaseCost:         defaultRUConfig.WriteBaseCost,
+			WritePerBatchBaseCost: defaultRUConfig.WritePerBatchBaseCost,
+			WriteCostPerByte:      defaultRUConfig.WriteCostPerByte,
 		},
 		Metrics: Metrics{
 			Addrs:    nil,

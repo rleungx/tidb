@@ -46,6 +46,7 @@ go_library(
         "//util/errmsg",
         "//util/execdetails",
         "//util/gctuner",
+        "//util/intest",
         "//util/kvcache",
         "//util/logutil",
         "//util/mathutil",

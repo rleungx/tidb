@@ -1042,6 +1042,7 @@ func TestStaleReadPrepare(t *testing.T) {
 
 	tk.MustExec("create table t1 (id int, v int)")
 	tk.MustExec("insert into t1 values (1,10)")
+	time.Sleep(5 * time.Millisecond)
 	tk.MustExec("set @a=now(6)")
 	time.Sleep(5 * time.Millisecond)
 	tk.MustExec("update t1 set v=100 where id=1")

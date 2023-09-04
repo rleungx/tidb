@@ -91,6 +91,11 @@ func TestForClusterServerInfo(t *testing.T) {
 	require.NoError(t, failpoint.Enable(fpName, fpExpr))
 	defer func() { require.NoError(t, failpoint.Disable(fpName)) }()
 
+	require.NoError(t, failpoint.Enable("github.com/pingcap/tidb/util/sem/skipSEM", "return"))
+	defer func() {
+		require.NoError(t, failpoint.Disable("github.com/pingcap/tidb/util/sem/skipSEM"))
+	}()
+
 	cases := []struct {
 		sql        string
 		types      set.StringSet

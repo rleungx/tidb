@@ -4293,6 +4293,10 @@ def go_deps():
         name = "com_github_tikv_pd",
         build_file_proto_mode = "disable",
         importpath = "github.com/tikv/pd",
+        patch_args = ["-p1"],
+        patches = [
+            "//build/patches:com_github_tikv_pd.patch",
+        ],
         sum = "h1:1BBlbLSCua+oK3xngEjPO2dj1oLcItJxhCzqYG6XANA=",
         version = "v0.0.0-20230420042919-0e0313adef1f",
     )

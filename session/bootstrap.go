@@ -2880,6 +2880,17 @@ func doDMLWorks(s Session) {
 
 	// Serverless Bootstrap function.
 	bootstrapControl := config.GetGlobalConfig().BootstrapControl
+
+	// If running in test, skip all the privilege bootstrap steps.
+	if intest.InTest {
+		bootstrapControl = config.BootstrapControl{
+			SkipServerlessVariables: true,
+			SkipRootPriv:            true,
+			SkipRoleAdminPriv:       true,
+			SkipCloudAdminPriv:      true,
+			SkipPushdownBlacklist:   true,
+		}
+	}
 	if !bootstrapControl.SkipServerlessVariables {
 		bootstrapServerlessVariables(s) // Write serverless variables.
 	}

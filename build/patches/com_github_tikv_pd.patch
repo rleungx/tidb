@@ -1,0 +1,16 @@
+diff --git a/pkg/utils/syncutil/BUILD.bazel b/pkg/utils/syncutil/BUILD.bazel
+index 4a1e9a98..7b338b16 100644
+--- a/pkg/utils/syncutil/BUILD.bazel
++++ b/pkg/utils/syncutil/BUILD.bazel
+@@ -5,9 +5,11 @@ go_library(
+     srcs = [
+         "lock_group.go",
+         "mutex_sync.go",
++        "mutex_deadlock.go", #keep
+     ],
+     importpath = "github.com/tikv/pd/pkg/utils/syncutil",
+     visibility = ["//visibility:public"],
++    deps = ["@com_github_sasha_s_go_deadlock//:go-deadlock"],  #keep
+ )
+ 
+ alias(

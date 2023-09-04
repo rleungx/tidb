@@ -28,3 +28,13 @@ allowed-clock-drift = 0
 
 [experimental]
 allow-expression-index = true
+
+[security]
+enable-sem = false
+
+[bootstrap-control]
+skip-serverless-variables = true
+skip-root-priv = true
+skip-cloud-admin-priv = true
+skip-role-admin-priv = true
+skip-pushdown-blacklist = true

@@ -17,10 +17,10 @@ package server
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io/fs"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -559,6 +559,7 @@ func TestCursorFetchErrorInFetch(t *testing.T) {
 		mysql.CursorTypeReadOnly, 0x1, 0x0, 0x0, 0x0,
 	)))
 
+	fdClosed := false
 	// close these disk files to produce error
 	filepath.Walk("/proc/self/fd", func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
@@ -572,9 +573,15 @@ func TestCursorFetchErrorInFetch(t *testing.T) {
 			fd, err := strconv.Atoi(filepath.Base(path))
 			require.NoError(t, err)
 			require.NoError(t, syscall.Close(fd))
+			fdClosed = true
 		}
 		return nil
 	})
+
+	// Skip the test if failed to find the proper file descriptor.
+	if !fdClosed {
+		return
+	}
 
 	// it'll get "bad file descriptor", as it has been closed in the test.
 	require.Error(t, c.Dispatch(ctx, appendUint32(appendUint32([]byte{mysql.ComStmtFetch}, uint32(stmt.ID())), 1024)))

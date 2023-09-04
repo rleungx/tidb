@@ -655,7 +655,7 @@ engines = ["tikv", "tiflash", "tidb"]
 
 	for _, test := range configTest {
 		conf := new(Config)
-		configFile := "config.toml"
+		configFile := "remove_var_config.toml"
 		f, err := os.Create(configFile)
 		require.NoError(t, err)
 		// Write the sample config file
@@ -690,7 +690,7 @@ func TestConfig(t *testing.T) {
 	conf.TiKVClient.CommitTimeout = "10s"
 	conf.TiKVClient.RegionCacheTTL = 600
 	conf.Instance.EnableSlowLog.Store(logutil.DefaultTiDBEnableSlowLog)
-	configFile := "config.toml"
+	configFile := "test_config.toml"
 	f, err := os.Create(configFile)
 	require.NoError(t, err)
 	defer func(configFile string) {
@@ -759,8 +759,8 @@ allow-expression-index = true
 engines = ["tiflash"]
 [labels]
 foo= "bar"
-group= "abc"
-zone= "dc-1"
+group = "abc"
+zone = "dc-1"
 [security]
 spilled-file-encryption-method = "plaintext"
 [pessimistic-txn]
@@ -1021,7 +1021,7 @@ func TestTxnTotalSizeLimitValid(t *testing.T) {
 func TestConflictInstanceConfig(t *testing.T) {
 	var expectedNewName string
 	conf := new(Config)
-	configFile := "config.toml"
+	configFile := "conflict_config.toml"
 
 	f, err := os.Create(configFile)
 	require.NoError(t, err)
@@ -1077,7 +1077,7 @@ func TestConflictInstanceConfig(t *testing.T) {
 func TestDeprecatedConfig(t *testing.T) {
 	var expectedNewName string
 	conf := new(Config)
-	configFile := "config.toml"
+	configFile := "deprecate_config.toml"
 
 	f, err := os.Create(configFile)
 	require.NoError(t, err)

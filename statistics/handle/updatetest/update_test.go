@@ -17,6 +17,7 @@ package updatetest
 import (
 	"fmt"
 	"math/rand"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -1970,10 +1971,10 @@ func BenchmarkHandleAutoAnalyze(b *testing.B) {
 func subtraction(newMetric *dto.Metric, oldMetric *dto.Metric) int {
 	newStr := newMetric.String()
 	oldStr := oldMetric.String()
-	newIdx := strings.LastIndex(newStr, ":")
-	newNum, _ := strconv.Atoi(newStr[newIdx+1 : len(newStr)-3])
-	oldIdx := strings.LastIndex(oldStr, ":")
-	oldNum, _ := strconv.Atoi(oldStr[oldIdx+1 : len(oldStr)-3])
+
+	re := regexp.MustCompile(`value:(\d+)`)
+	newNum, _ := strconv.Atoi(re.FindStringSubmatch(newStr)[1])
+	oldNum, _ := strconv.Atoi(re.FindStringSubmatch(oldStr)[1])
 	return newNum - oldNum
 }
 

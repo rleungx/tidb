@@ -248,6 +248,11 @@ func TestGetLock(t *testing.T) {
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
 
+	// Increase pessimistic txn max retry count to make test more stable.
+	cfg := config.GetGlobalConfig()
+	cfg.PessimisticTxn.MaxRetryCount = 2048
+	config.StoreGlobalConfig(cfg)
+
 	// No timeout specified
 	err := tk.ExecToErr("SELECT get_lock('testlock')")
 	require.Error(t, err)

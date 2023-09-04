@@ -1370,7 +1370,7 @@ func (w *GCWorker) resolveKeyspacesLocks(ctx context.Context, runner *rangetask.
 }
 
 func (w *GCWorker) getAllKeyspace(ctx context.Context) ([]*keyspacepb.KeyspaceMeta, error) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var allkeyspaces []*keyspacepb.KeyspaceMeta

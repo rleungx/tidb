@@ -925,8 +925,7 @@ func setGlobalVars() error {
 
 	t, err := time.ParseDuration(cfg.TiKVClient.StoreLivenessTimeout)
 	if err != nil || t < 0 {
-		return errors.Errorf("invalid duration value for store-liveness-timeout",
-			zap.String("currentValue", cfg.TiKVClient.StoreLivenessTimeout))
+		return errors.Errorf("invalid duration value for store-liveness-timeout, current value: %v", cfg.TiKVClient.StoreLivenessTimeout)
 	}
 	tikv.SetStoreLivenessTimeout(t)
 	parsertypes.TiDBStrictIntegerDisplayWidth = cfg.DeprecateIntegerDisplayWidth
@@ -974,7 +973,7 @@ func createServer(storage kv.Storage, dom *domain.Domain) (*server.Server, error
 	// Both domain and storage have started, so we have to clean them before exiting.
 	if err != nil {
 		closeDomainAndStorage(storage, dom)
-		return nil, errors.Errorf("failed to create the server", zap.Error(err), zap.Stack("stack"))
+		return nil, errors.Errorf("failed to create the server, error: %v", err)
 	}
 	svr.SetDomain(dom)
 	svr.InitGlobalConnID(dom.ServerID)
@@ -1003,7 +1002,7 @@ func setupTracing() error {
 	tracingCfg.ServiceName = "TiDB"
 	tracer, _, err := tracingCfg.NewTracer()
 	if err != nil {
-		return errors.Errorf("setup jaeger tracer failed", zap.String("error message", err.Error()))
+		return errors.Errorf("setup jaeger tracer failed, error: %v", err)
 	}
 	opentracing.SetGlobalTracer(tracer)
 	return nil
@@ -1061,7 +1060,7 @@ func setupStmtSummary() error {
 			FileMaxBackups: instanceCfg.StmtSummaryFileMaxBackups,
 		})
 		if err != nil {
-			return errors.Errorf("failed to setup statements summary", zap.Error(err))
+			return errors.Errorf("failed to setup statements summary, error: %v", err)
 		}
 	}
 	return nil

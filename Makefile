@@ -86,11 +86,14 @@ test: test_part_1 test_part_2
 
 test_part_1: checklist explaintest
 
-test_part_2: test_part_parser ut gogenerate br_unit_test dumpling_unit_test
+test_part_2: test_part_parser gogenerate
 
 test_part_parser: parser_yacc test_part_parser_dev
 
 test_part_parser_dev: parser_fmt parser_unit_test
+
+ci-test-job: tools/bin/ut tools/bin/xprog failpoint-enable
+	@tools/bin/ut run-multi $(shell ./tools/scripts/ci-subtask.sh $(JOB_COUNT) $(JOB_INDEX))
 
 parser:
 	@cd parser && make parser
