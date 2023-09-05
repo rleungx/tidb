@@ -66,6 +66,11 @@ const (
 	serverlessVersion16 = 16
 	// serverlessVersion17 disable tidb_pessimistic_txn_fair_locking.
 	serverlessVersion17 = 17
+	// ...
+	// [serverlessVersion18, serverlessVersion29] is the version range reserved for serverless TiDB 6.6.
+	// ...
+	// serverlessVersion30 adds 7.1 executors that's incompatible with tiflash 6.5 to pushdown_blacklist.
+	serverlessVersion30 = 30
 )
 
 const (
@@ -79,7 +84,7 @@ const (
 
 // currentServerlessVersion is defined as a variable, so we can modify its value for testing.
 // please make sure this is the largest version
-var currentServerlessVersion int64 = serverlessVersion17
+var currentServerlessVersion int64 = serverlessVersion30
 
 var bootstrapServerlessVersion = []func(Session, int64){
 	upgradeToServerlessVer2,
@@ -97,6 +102,7 @@ var bootstrapServerlessVersion = []func(Session, int64){
 	upgradeToServerlessVer14,
 	upgradeToServerlessVer15,
 	upgradeToServerlessVer17,
+	upgradeToServerlessVer30,
 }
 
 // updateServerlessVersion updates serverless version variable in mysql.TiDB table.
@@ -421,6 +427,18 @@ func upgradeToServerlessVer17(s Session, ver int64) {
 	mustExecute(s, "set @@global.tidb_pessimistic_txn_fair_locking=OFF")
 }
 
+func upgradeToServerlessVer30(s Session, ver int64) {
+	if ver >= serverlessVersion30 {
+		return
+	}
+
+	mustExecute(s, "INSERT HIGH_PRIORITY INTO mysql.expr_pushdown_blacklist VALUES"+
+		"('ilike','tiflash', 'Compatibility with tiflash 6.5'),"+
+		"('is_ipv4','tiflash', 'Compatibility with tiflash 6.5'),"+
+		"('is_ipv6','tiflash', 'Compatibility with tiflash 6.5')",
+	)
+}
+
 // Serverless bootstrap procedures.
 // NOTE: The following methods will only be executed once at doDMLWorks during TiDB Bootstrap,
 // therefore any modification of it requires addition to the serverless version upgrade function above
@@ -433,7 +451,10 @@ func bootstrapServerlessPushdownBlacklist(s Session) {
 		"('regexp_replace','tiflash', 'Compatibility with tiflash 6.1'),"+
 		"('least.LeastString','tiflash', 'Compatibility with tiflash 6.1'),"+
 		"('greatest.GreatestString','tiflash', 'Compatibility with tiflash 6.1'),"+
-		"('unhex','tiflash', 'Compatibility with tiflash 6.1')",
+		"('unhex','tiflash', 'Compatibility with tiflash 6.1'),"+
+		"('ilike','tiflash', 'Compatibility with tiflash 6.5'),"+
+		"('is_ipv4','tiflash', 'Compatibility with tiflash 6.5'),"+
+		"('is_ipv6','tiflash', 'Compatibility with tiflash 6.5')",
 	)
 }
 
