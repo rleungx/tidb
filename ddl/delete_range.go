@@ -25,6 +25,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
+	"github.com/pingcap/tidb/config"
 	sess "github.com/pingcap/tidb/ddl/internal/session"
 	"github.com/pingcap/tidb/ddl/util"
 	"github.com/pingcap/tidb/kv"
@@ -206,6 +207,9 @@ func (dr *delRange) doTask(sctx sessionctx.Context, r util.DelRangeTask) error {
 			if topsqlstate.TopSQLEnabled() {
 				// Only when TiDB run without PD(use unistore as storage for test) will run into here, so just set a mock internal resource tagger.
 				txn.SetOption(kv.ResourceGroupTagger, util.GetInternalResourceGroupTaggerForTopSQL())
+			}
+			if config.DefaultResourceGroup != "" {
+				txn.SetOption(kv.ResourceGroupName, config.DefaultResourceGroup)
 			}
 			iter, err := txn.Iter(oldStartKey, r.EndKey)
 			if err != nil {
