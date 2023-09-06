@@ -95,6 +95,8 @@ const (
 	DefAuthTokenRefreshInterval = time.Hour
 	// EnvVarKeyspaceName is the system env name for keyspace name.
 	EnvVarKeyspaceName = "KEYSPACE_NAME"
+	// safe point version v2.
+	SafePointV2 = "v2"
 )
 
 const (
@@ -351,6 +353,8 @@ type Config struct {
 	SkipGCWorker bool `toml:"skip-gc-worker" json:"skip-gc-worker"`
 	// EnableSafePointV2 is used to control whether to use safe point v2 interface.
 	EnableSafePointV2 bool `toml:"enable-safe-point-v2" json:"enable-safe-point-v2"`
+	// EnableGCFastStart is used to control whether to ignore wait time judgment at first tick.
+	EnableGCFastStart bool `toml:"enable-gc-fast-start" json:"enable-gc-fast-start"`
 	// ResolveLocksByKeyspace is used to control whether to do resolve locks by keyspace.
 	ResolveLocksByKeyspace bool `toml:"resolve-locks-by-keyspace" json:"resolve-locks-by-keyspace"`
 	// GCV1BlackList keyspace in black list will not resolve by gc worker.

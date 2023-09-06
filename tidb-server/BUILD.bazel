@@ -42,6 +42,7 @@ go_library(
         "//util/deadlockhistory",
         "//util/disk",
         "//util/domainutil",
+        "//util/gcutil",
         "//util/kvcache",
         "//util/logutil",
         "//util/memory",

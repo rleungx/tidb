@@ -68,6 +68,7 @@ import (
 	"github.com/pingcap/tidb/util/deadlockhistory"
 	"github.com/pingcap/tidb/util/disk"
 	"github.com/pingcap/tidb/util/domainutil"
+	"github.com/pingcap/tidb/util/gcutil"
 	"github.com/pingcap/tidb/util/kvcache"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/memory"
@@ -337,6 +338,9 @@ func main() {
 
 	keyspaceName := keyspace.GetKeyspaceNameBySettings()
 
+	// If safe point v2 etcd path exists, config.EnableSafePointV2 must be true
+	checkSafePointVersion(keyspaceMeta)
+
 	resourcemanager.InstanceResourceManager.Start()
 	storage, dom, err := createStoreAndDomain(keyspaceName)
 	mainErrHandler(err)
@@ -381,6 +385,15 @@ func main() {
 	terror.MustNil(svr.Run())
 	<-exited
 	syncLog()
+}
+
+func checkSafePointVersion(keyspaceMeta *keyspacepb.KeyspaceMeta) {
+	if keyspaceMeta != nil && keyspaceMeta.Config[gcutil.SafePointVersion] == config.SafePointV2 && !config.GetGlobalConfig().EnableSafePointV2 {
+		logutil.BgLogger().Warn("Safe point v2 etcd path exists, config.EnableSafePointV2 must be true.")
+		config.UpdateGlobal(func(c *config.Config) {
+			c.EnableSafePointV2 = true
+		})
+	}
 }
 
 func syncLog() {

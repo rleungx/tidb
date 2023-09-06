@@ -2176,7 +2176,7 @@ func (h *testHandler) handleGCResolveLocks(w http.ResponseWriter, req *http.Requ
 
 	ctx := req.Context()
 	logutil.Logger(ctx).Info("start resolving locks", zap.Uint64("safePoint", safePoint), zap.Bool("physical", usePhysical))
-	physicalUsed, err := gcworker.RunResolveLocks(ctx, h.Store, h.RegionCache.PDClient(), safePoint, "testGCWorker", 3, usePhysical)
+	physicalUsed, err := gcworker.RunResolveLocks(ctx, h.Store, h.Store, h.RegionCache.PDClient(), safePoint, "testGCWorker", 3, usePhysical)
 	if err != nil {
 		writeError(w, errors.Annotate(err, "resolveLocks failed"))
 	} else {

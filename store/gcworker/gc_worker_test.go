@@ -1305,7 +1305,7 @@ func TestRunGCJobAPI(t *testing.T) {
 
 	p := s.createGCProbe(t, "k1")
 	safePoint := s.mustAllocTs(t)
-	err := RunGCJob(gcContext(), s.tikvStore, s.pdClient, safePoint, "mock", 1)
+	err := RunGCJob(gcContext(), s.tikvStore, s.store, s.pdClient, safePoint, "mock", 1)
 	require.NoError(t, err)
 	s.checkCollected(t, p)
 	etcdSafePoint := s.loadEtcdSafePoint(t)
@@ -1319,7 +1319,7 @@ func TestRunDistGCJobAPI(t *testing.T) {
 	gcSafePointCacheInterval = 0
 
 	safePoint := s.mustAllocTs(t)
-	err := RunDistributedGCJob(gcContext(), s.tikvStore, s.pdClient, safePoint, "mock", 1)
+	err := RunDistributedGCJob(gcContext(), s.tikvStore, s.store, s.pdClient, safePoint, "mock", 1)
 	require.NoError(t, err)
 	pdSafePoint := s.mustGetSafePointFromPd(t)
 	require.Equal(t, safePoint, pdSafePoint)

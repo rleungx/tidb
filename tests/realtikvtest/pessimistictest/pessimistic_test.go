@@ -3487,7 +3487,7 @@ func TestIssueBatchResolveLocks(t *testing.T) {
 	// Simulate a later GC that should resolve all stale lock produced in above steps.
 	currentTS, err := store.CurrentVersion(kv.GlobalTxnScope)
 	require.NoError(t, err)
-	_, err = gcworker.RunResolveLocks(context.Background(), store.(tikv.Storage), domain.GetPDClient(), currentTS.Ver, "gc-worker-test-batch-resolve-locks", 1, false)
+	_, err = gcworker.RunResolveLocks(context.Background(), store.(tikv.Storage), store, domain.GetPDClient(), currentTS.Ver, "gc-worker-test-batch-resolve-locks", 1, false)
 	require.NoError(t, err)
 
 	// Check row 6 unlocked

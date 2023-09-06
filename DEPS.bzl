@@ -4275,6 +4275,14 @@ def go_deps():
         version = "v0.0.0-20221230034425-4025bc8a4d4a",
     )
     go_repository(
+        name = "com_github_tidbcloud_aws_shared_provider_pkg_tidbworker_client",
+        build_file_proto_mode = "disable",
+        importpath = "github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client",
+        sum = "h1:XuEYqqsHAQFD6PvD1fpalR3AfIgwPWIGOqmFe76c4Ds=",
+        version = "v0.0.0-20230818101345-dfd9e39730f2",
+    )
+
+    go_repository(
         name = "com_github_tidwall_gjson",
         build_file_proto_mode = "disable",
         importpath = "github.com/tidwall/gjson",
@@ -4286,8 +4294,8 @@ def go_deps():
         name = "com_github_tikv_client_go_v2",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/tikv/client-go/v2",
-        sum = "h1:lXR2U2ElJrPAanb6PCq+WrhJZO9YuO1f1QK8dn3xlSM=",
-        version = "v2.0.8-0.20230721075326-b27cb07173a2",
+        sum = "h1:bIZoOXel2ZOO0tUh2OOvSi5k8ZxSIuFZd8eTurD16LY=",
+        version = "v2.0.8-0.20230807090021-2ad441f530a3",
     )
     go_repository(
         name = "com_github_tikv_pd",

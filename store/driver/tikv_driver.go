@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	cse "github.com/iosmanthus/cse-region-client"
+	"github.com/iosmanthus/cse-region-client"
 	"github.com/pingcap/errors"
 	deadlockpb "github.com/pingcap/kvproto/pkg/deadlock"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
@@ -232,11 +232,6 @@ func (d TiKVDriver) OpenWithOptions(path string, options ...Option) (resStore kv
 		return nil, errors.Trace(err)
 	}
 
-	spkv, err = tikv.NewEtcdSafePointKV(etcdAddrs, tlsConfig)
-	if err != nil {
-		return nil, errors.Trace(err)
-	}
-
 	// ---------------- keyspace logic  ----------------
 	var (
 		pdClient *tikv.CodecPDClient
@@ -266,6 +261,13 @@ func (d TiKVDriver) OpenWithOptions(path string, options ...Option) (resStore kv
 		tikv.WithSecurity(d.security),
 		tikv.WithCodec(codec),
 	)
+
+	etcdNameSpace := keyspace.MakeKeyspaceEtcdNamespace(codec)
+	var opts = tikv.WithPrefix(etcdNameSpace)
+	spkv, err = tikv.NewEtcdSafePointKV(etcdAddrs, tlsConfig, opts)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
 
 	s, err = tikv.NewKVStore(uuid, pdClient, spkv, rpcClient, tikv.WithPDHTTPClient(tlsConfig, etcdAddrs))
 	if err != nil {

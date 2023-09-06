@@ -15,6 +15,7 @@
 package infosync
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -783,12 +784,20 @@ func (is *InfoSyncer) GetMinStartTS() uint64 {
 	return is.minStartTS
 }
 
+func (is *InfoSyncer) getMinStartTsEtcdCli() *clientv3.Client {
+	if config.GetGlobalConfig().EnableSafePointV2 {
+		return is.etcdCli
+	}
+	return is.unprefixedEtcdCli
+}
+
 // storeMinStartTS stores self server min start timestamp to etcd.
 func (is *InfoSyncer) storeMinStartTS(ctx context.Context) error {
-	if is.unprefixedEtcdCli == nil {
+	minStartTsEtcdCli := is.getMinStartTsEtcdCli()
+	if minStartTsEtcdCli == nil {
 		return nil
 	}
-	return util.PutKVToEtcd(ctx, is.unprefixedEtcdCli, keyOpDefaultRetryCnt, is.minStartTSPath,
+	return util.PutKVToEtcd(ctx, minStartTsEtcdCli, keyOpDefaultRetryCnt, is.minStartTSPath,
 		strconv.FormatUint(is.minStartTS, 10),
 		clientv3.WithLease(is.session.Lease()))
 }
@@ -1404,4 +1413,31 @@ func SetPDScheduleConfig(ctx context.Context, config map[string]interface{}) err
 		return errors.Trace(err)
 	}
 	return is.scheduleManager.SetPDScheduleConfig(ctx, config)
+}
+
+// KeyspaceSavePointVersion represents parameters needed to modify target keyspace's configs.
+type KeyspaceSavePointVersion struct {
+	Config struct {
+		SafePointVersion string `json:"safe_point_version,omitempty"`
+	} `json:"config"`
+}
+
+// UpdateKeyspaceSavePointVersion is used to update the setting of keyspace safe point version.
+func UpdateKeyspaceSavePointVersion(ctx context.Context, keyspaceName string, safePointVersion string) error {
+	is, err := getGlobalInfoSyncer()
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	url := fmt.Sprintf(pdapi.KeyspaceConfig, keyspaceName)
+
+	input := KeyspaceSavePointVersion{}
+	input.Config.SafePointVersion = safePointVersion
+	j, err := json.Marshal(input)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	_, err = doRequest(ctx, "UpdateKeyspaceSavePointVersion", is.etcdCli.Endpoints(), url, "PATCH", bytes.NewReader(j))
+	return err
 }

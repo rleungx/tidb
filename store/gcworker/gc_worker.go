@@ -71,16 +71,17 @@ import (
 
 // GCWorker periodically triggers GC process on tikv server.
 type GCWorker struct {
-	uuid         string
-	desc         string
-	store        kv.Storage
-	tikvStore    tikv.Storage
-	pdClient     pd.Client
-	gcIsRunning  bool
-	lastFinish   time.Time
-	cancel       context.CancelFunc
-	done         chan error
-	testingKnobs struct {
+	uuid                string
+	desc                string
+	store               kv.Storage
+	tikvStore           tikv.Storage
+	pdClient            pd.Client
+	gcIsRunning         bool
+	lastFinish          time.Time
+	isFirstTickFinished bool
+	cancel              context.CancelFunc
+	done                chan error
+	testingKnobs        struct {
 		scanLocks         func(key []byte, regionID uint64, maxVersion uint64) []*txnlock.Lock
 		batchResolveLocks func(locks []*txnlock.Lock, regionID tikv.RegionVerID, safepoint uint64) (ok bool, err error)
 		resolveLocks      func(locks []*txnlock.Lock, lowResolutionTS uint64) (int64, error)
@@ -203,6 +204,7 @@ const (
 	tidbGCLeaderUUID  = "tidb_gc_leader_uuid"
 	tidbGCSafePoint   = "tidb_gc_safe_point"
 
+	// Get all keyspace page size.
 	getAllKeyspaceLimit = 50
 )
 
@@ -255,6 +257,7 @@ func (w *GCWorker) start(ctx context.Context, wg *sync.WaitGroup) {
 		case err := <-w.done:
 			w.gcIsRunning = false
 			w.lastFinish = time.Now()
+			w.isFirstTickFinished = true
 			if err != nil {
 				logutil.Logger(ctx).Error("[gc worker] runGCJob", zap.Error(err))
 			}
@@ -336,14 +339,24 @@ func (w *GCWorker) tick(ctx context.Context) {
 }
 
 // getGCSafePoint returns the current gc safe point.
-func getGCSafePoint(ctx context.Context, pdClient pd.Client) (uint64, error) {
+func (w *GCWorker) getGCSafePoint(ctx context.Context, pdClient pd.Client) (uint64, error) {
 	// If there is try to set gc safepoint is 0, the interface will not set gc safepoint to 0,
 	// it will return current gc safepoint.
-	safePoint, err := pdClient.UpdateGCSafePoint(ctx, 0)
+	var gcSafePoint uint64
+	var err error
+	keyspaceID := w.store.GetCodec().GetKeyspaceID()
+	if w.isKeyspaceInGCSafePointV2() {
+		gcSafePoint, err = pdClient.UpdateGCSafePointV2(ctx, uint32(keyspaceID), 0)
+		if err != nil {
+			return 0, errors.Trace(err)
+		}
+	} else {
+		gcSafePoint, err = pdClient.UpdateGCSafePoint(ctx, 0)
+	}
 	if err != nil {
 		return 0, errors.Trace(err)
 	}
-	return safePoint, nil
+	return gcSafePoint, nil
 }
 
 func (w *GCWorker) logIsGCSafePointTooEarly(ctx context.Context, safePoint uint64) error {
@@ -367,7 +380,7 @@ func (w *GCWorker) runKeyspaceDeleteRange(ctx context.Context, concurrency int) 
 	// The GC safe point is updated only after the global GC have done resolveLocks phase globally.
 	// So, in the following code, resolveLocks must have been done by the global GC on the ranges to be deleted,
 	// so its safe to delete the ranges.
-	safePoint, err := getGCSafePoint(ctx, w.pdClient)
+	safePoint, err := w.getGCSafePoint(ctx, w.pdClient)
 	if err != nil {
 		logutil.Logger(ctx).Info("[gc worker] get gc safe point error", zap.Error(errors.Trace(err)))
 		return nil
@@ -438,14 +451,22 @@ func (w *GCWorker) leaderTick(ctx context.Context) error {
 	// If `keyspace-name` is set, the TiDB node will only do its own delete range, and will not calculate gc safe point and resolve locks.
 	// Note that when `keyspace-name` is set, `checkLeader` will be done within the key space.
 	// Therefore only one TiDB node in each key space will be responsible to do delete range.
-	if w.store.GetCodec().GetKeyspace() != nil {
-		err = w.runKeyspaceGCJob(ctx, concurrency)
+	if w.isKeyspaceInGCSafePointV1() {
+		// If we use global gc safe point, a tidb which has keyspace-name should only do delete range logic.
+		err = w.runKeyspaceGCJobInSafePointV1(ctx, concurrency)
 		if err != nil {
 			return errors.Trace(err)
 		}
 		return nil
 	}
 
+	if w.isKeyspaceInGCSafePointV2() {
+		keyspaceName := config.GetGlobalKeyspaceName()
+		err = infosync.UpdateKeyspaceSavePointVersion(ctx, keyspaceName, config.SafePointV2)
+		if err != nil {
+			return errors.Trace(err)
+		}
+	}
 	ok, safePoint, err := w.prepare(ctx)
 	if err != nil {
 		metrics.GCJobFailureCounter.WithLabelValues("prepare").Inc()
@@ -466,7 +487,7 @@ func (w *GCWorker) leaderTick(ctx context.Context) error {
 	}
 	// When the worker is just started, or an old GC job has just finished,
 	// wait a while before starting a new job.
-	if time.Since(w.lastFinish) < gcWaitTime {
+	if w.isNeedToWait() {
 		logutil.Logger(ctx).Info("[gc worker] another gc job has just finished, skipped.",
 			zap.String("leaderTick on ", w.uuid))
 		return nil
@@ -483,7 +504,26 @@ func (w *GCWorker) leaderTick(ctx context.Context) error {
 	return nil
 }
 
-func (w *GCWorker) runKeyspaceGCJob(ctx context.Context, concurrency int) error {
+func (w *GCWorker) isNeedToWait() bool {
+	if config.GetGlobalConfig().EnableGCFastStart {
+		return time.Since(w.lastFinish) < gcWaitTime && w.isFirstTickFinished
+	}
+	return time.Since(w.lastFinish) < gcWaitTime
+}
+
+func (w *GCWorker) isKeyspaceInGCSafePointV2() bool {
+	return w.store.GetCodec().GetKeyspace() != nil && config.GetGlobalConfig().EnableSafePointV2
+}
+
+func (w *GCWorker) isNullKeyspaceInGCSafePointV2() bool {
+	return w.store.GetCodec().GetKeyspace() == nil && config.GetGlobalConfig().EnableSafePointV2
+}
+
+func (w *GCWorker) isKeyspaceInGCSafePointV1() bool {
+	return w.store.GetCodec().GetKeyspace() != nil && !config.GetGlobalConfig().EnableSafePointV2
+}
+
+func (w *GCWorker) runKeyspaceGCJobInSafePointV1(ctx context.Context, concurrency int) error {
 	// When the worker is just started, or an old GC job has just finished,
 	// wait a while before starting a new job.
 	if time.Since(w.lastFinish) < gcWaitTime {
@@ -774,8 +814,22 @@ func (w *GCWorker) calcNewSafePoint(ctx context.Context, now time.Time) (*time.T
 // setGCWorkerServiceSafePoint sets the given safePoint as TiDB's service safePoint to PD, and returns the current minimal
 // service safePoint among all services.
 func (w *GCWorker) setGCWorkerServiceSafePoint(ctx context.Context, safePoint uint64) (uint64, error) {
+	var minSafePoint uint64
+	var err error
 	// Sets TTL to MAX to make it permanently valid.
-	minSafePoint, err := w.pdClient.UpdateServiceGCSafePoint(ctx, gcWorkerServiceSafePointID, math.MaxInt64, safePoint)
+	ttl := int64(math.MaxInt64)
+
+	if w.isKeyspaceInGCSafePointV2() {
+		keyspaceID := w.store.GetCodec().GetKeyspaceID()
+		minSafePoint, err = w.pdClient.UpdateServiceSafePointV2(ctx, uint32(keyspaceID), gcWorkerServiceSafePointID, ttl, safePoint)
+		logutil.Logger(ctx).Info("[gc worker] update keyspace service safe point",
+			zap.String("uuid", w.uuid),
+			zap.Uint64("req-service-safe-point", safePoint),
+			zap.Uint64("resp-min-safe-point", minSafePoint))
+	} else {
+		// It is the situation when the keyspace is not set.
+		minSafePoint, err = w.pdClient.UpdateServiceGCSafePoint(ctx, gcWorkerServiceSafePointID, ttl, safePoint)
+	}
 	if err != nil {
 		logutil.Logger(ctx).Error("[gc worker] failed to update service safe point",
 			zap.String("uuid", w.uuid),
@@ -861,6 +915,36 @@ func (w *GCWorker) runGCJob(ctx context.Context, safePoint uint64, concurrency i
 			return errors.Trace(err)
 		}
 	}
+
+	// Handle GCV2 tidb worker after a round of GC.
+	//if config.GetGlobalConfig().EnableSafePointV2 {
+	//	// If current TiDB is the master, it should send a heartbeat to tidb worker service
+	//	// in order to prevent unnecessary activation of the GCV2 tidb worker.
+	//	if tidbworker.IsMaster() {
+	//		gcRunTime := time.Now().Unix()
+	//		err = tidbworker.GlobalTiDBWorkerManager.RegisterGCV2(ctx, gcRunTime, safePoint)
+	//		if err != nil {
+	//			logutil.Logger(ctx).Error("[tidb worker] failed to register gc v2 job",
+	//				zap.Uint64("safe-point", safePoint),
+	//				zap.Int64("gc-run-time", gcRunTime),
+	//				zap.Error(err))
+	//			return errors.Trace(err)
+	//		}
+	//	}
+	//
+	//	// If current TiDB is master or worker, it should notify tidb worker service that it
+	//	// has finished a round of GC.
+	//	if tidbworker.IsMaster() || tidbworker.IsGCV2Worker() {
+	//		err = tidbworker.GlobalTiDBWorkerManager.RecycleGCV2(ctx, safePoint)
+	//		if err != nil {
+	//			logutil.Logger(ctx).Error("[tidb worker] failed to recycle gc v2 job",
+	//				zap.Uint64("safe-point", safePoint),
+	//				zap.Error(err))
+	//			return errors.Trace(err)
+	//		}
+	//	}
+	//
+	//}
 
 	return nil
 }
@@ -980,6 +1064,13 @@ func (w *GCWorker) deleteRanges(ctx context.Context, safePoint uint64, concurren
 		zap.Int("num of ranges", len(ranges)),
 		zap.Duration("cost time", time.Since(startTime)))
 	metrics.GCHistogram.WithLabelValues("delete_ranges").Observe(time.Since(startTime).Seconds())
+
+	// RecycleGC when all ranges prior to safePoint has been successfully cleaned.
+	//if rangeCleared == len(ranges) && tidbworker.IsGCWorker() {
+	//	if err = tidbworker.GlobalTiDBWorkerManager.RecycleGC(ctx, safePoint); err != nil {
+	//		return errors.Trace(err)
+	//	}
+	//}
 	return nil
 }
 
@@ -1295,16 +1386,59 @@ func (w *GCWorker) legacyResolveLocks(
 		return w.resolveLocksForRange(ctx, safePoint, tryResolveLocksTS, r.StartKey, r.EndKey)
 	}
 
+	var completedRegions int
+	globalCfg := config.GetGlobalConfig()
+	isResolveLocksByKeyspace := globalCfg.ResolveLocksByKeyspace
 	runner := rangetask.NewRangeTaskRunner("resolve-locks-runner", w.tikvStore, concurrency, handler)
-	// Run resolve lock on the whole TiKV cluster. Empty keys means the range is unbounded.
-	err := runner.RunOnRange(ctx, []byte(""), []byte(""))
+	var err error
+	var errMsg string
+	var txnLeftBound []byte
+	var txnRightBound []byte
+
+	if w.isKeyspaceInGCSafePointV2() {
+		// When enable safe point v2, legacyResolveLocks only resolve specified keyspace locks.
+		keyspaceID := w.store.GetCodec().GetKeyspaceID()
+		// resolve locks in `keyspaceID` range.
+		txnLeftBound, txnRightBound = keyspace.GetKeyspaceTxnRange(uint32(keyspaceID))
+		err = w.legacyResolveKeyspaceLocks(ctx, txnLeftBound, txnRightBound, runner, safePoint)
+		errMsg = "[gc worker] keyspace resolve locks err."
+	} else if w.isNullKeyspaceInGCSafePointV2() {
+		// only do resolve locks in api v1 range.
+		// 1. resolve locks in ["","x")
+		txnLeftBound = []byte("")
+		txnRightBound = []byte("x")
+		err = w.legacyResolveKeyspaceLocks(ctx, txnLeftBound, txnRightBound, runner, safePoint)
+
+		// 2. resolve locks in ["y","").
+		if err == nil {
+			txnLeftBound = []byte("y")
+			txnRightBound = []byte("")
+			err = w.legacyResolveKeyspaceLocks(ctx, txnLeftBound, txnRightBound, runner, safePoint)
+			errMsg = "[gc worker] null keyspace resolve locks err."
+		}
+	} else if isResolveLocksByKeyspace {
+		logutil.Logger(ctx).Info("[gc worker] start all keyspaces resolve locks when use safe point v1")
+		// Use safe point v1, resolve locks by all keyspace.
+		err = w.resolveKeyspacesLocks(ctx, runner, safePoint)
+		errMsg = "[gc worker] resolve locks all keyspace failed"
+	} else {
+		logutil.Logger(ctx).Info("[gc worker] start resolve locks in ['','') ranges when use safe point v1")
+		// Run resolve lock on the whole TiKV cluster. Empty keys means the range is unbounded.
+		err = runner.RunOnRange(ctx, []byte(""), []byte(""))
+		errMsg = "[gc worker] resolve locks failed"
+	}
+
 	if err != nil {
-		logutil.Logger(ctx).Error("[gc worker] resolve locks failed",
+		logutil.Logger(ctx).Error(errMsg,
 			zap.String("uuid", w.uuid),
 			zap.Uint64("safePoint", safePoint),
+			zap.String("txnLeftBound", hex.EncodeToString(txnLeftBound)),
+			zap.String("txnRightBound", hex.EncodeToString(txnRightBound)),
 			zap.Error(err))
 		return errors.Trace(err)
 	}
+
+	completedRegions = completedRegions + runner.CompletedRegions()
 
 	logutil.Logger(ctx).Info("[gc worker] finish resolve locks",
 		zap.String("uuid", w.uuid),
@@ -1958,7 +2092,16 @@ func (w *GCWorker) uploadSafePointToPD(ctx context.Context, safePoint uint64) er
 
 	bo := tikv.NewBackofferWithVars(ctx, gcOneRegionMaxBackoff, nil)
 	for {
-		newSafePoint, err = w.pdClient.UpdateGCSafePoint(ctx, safePoint)
+		keyspaceID := w.store.GetCodec().GetKeyspaceID()
+		if w.isKeyspaceInGCSafePointV2() {
+			newSafePoint, err = w.pdClient.UpdateGCSafePointV2(ctx, uint32(keyspaceID), safePoint)
+			logutil.Logger(ctx).Info("[gc worker] update keyspace gc safe point",
+				zap.String("uuid", w.uuid),
+				zap.Uint64("req-gc-safe-point", safePoint),
+				zap.Uint64("resp-gc-safe-point", newSafePoint))
+		} else {
+			newSafePoint, err = w.pdClient.UpdateGCSafePoint(ctx, safePoint)
+		}
 		if err != nil {
 			if errors.Cause(err) == context.Canceled {
 				return errors.Trace(err)
@@ -2345,11 +2488,14 @@ func (w *GCWorker) doGCPlacementRules(se session.Session, safePoint uint64, dr u
 		failpoint.Inject("gcDeletePlacementRuleCounter", func() {})
 		logutil.BgLogger().Info("try delete TiFlash pd rule",
 			zap.Int64("tableID", id), zap.String("endKey", string(dr.EndKey)), zap.Uint64("safePoint", safePoint))
-		groupID := placement.GetTiFlashRuleGroupIDByConfig()
 		ruleID := infosync.MakeRuleID(id)
+		groupID := placement.GetTiFlashRuleGroupIDByConfig()
 		if err := infosync.DeleteTiFlashPlacementRule(context.Background(), groupID, ruleID); err != nil {
-			logutil.BgLogger().Error("delete TiFlash pd rule failed when gc", zap.Error(err),
-				zap.String("ruleID", ruleID), zap.String("groupID", groupID), zap.Uint64("safePoint", safePoint))
+			logutil.BgLogger().Error("delete TiFlash pd rule failed when gc",
+				zap.Error(err), zap.String("groupID", groupID), zap.String("ruleID", ruleID), zap.Uint64("safePoint", safePoint))
+		} else {
+			// Cache the table id if its related rule are deleted successfully.
+			gcPlacementRuleCache[id] = struct{}{}
 		}
 
 		if config.GetGlobalConfig().TiFlashReplicas.ExtraS3Rule {
@@ -2454,9 +2600,10 @@ func getGCRules(ids []int64, rules map[string]*label.Rule) []string {
 }
 
 // RunGCJob sends GC command to KV. It is exported for kv api, do not use it with GCWorker at the same time.
-func RunGCJob(ctx context.Context, s tikv.Storage, pd pd.Client, safePoint uint64, identifier string, concurrency int) error {
+func RunGCJob(ctx context.Context, s tikv.Storage, store kv.Storage, pd pd.Client, safePoint uint64, identifier string, concurrency int) error {
 	gcWorker := &GCWorker{
 		tikvStore: s,
+		store:     store,
 		uuid:      identifier,
 		pdClient:  pd,
 	}
@@ -2491,9 +2638,10 @@ func RunGCJob(ctx context.Context, s tikv.Storage, pd pd.Client, safePoint uint6
 // RunDistributedGCJob notifies TiKVs to do GC. It is exported for kv api, do not use it with GCWorker at the same time.
 // This function may not finish immediately because it may take some time to do resolveLocks.
 // Param concurrency specifies the concurrency of resolveLocks phase.
-func RunDistributedGCJob(ctx context.Context, s tikv.Storage, pd pd.Client, safePoint uint64, identifier string, concurrency int) error {
+func RunDistributedGCJob(ctx context.Context, s tikv.Storage, store kv.Storage, pd pd.Client, safePoint uint64, identifier string, concurrency int) error {
 	gcWorker := &GCWorker{
 		tikvStore: s,
+		store:     store,
 		uuid:      identifier,
 		pdClient:  pd,
 	}
@@ -2525,9 +2673,10 @@ func RunDistributedGCJob(ctx context.Context, s tikv.Storage, pd pd.Client, safe
 
 // RunResolveLocks resolves all locks before the safePoint and returns whether the physical scan mode is used.
 // It is exported only for test, do not use it in the production environment.
-func RunResolveLocks(ctx context.Context, s tikv.Storage, pd pd.Client, safePoint uint64, identifier string, concurrency int, usePhysical bool) (bool, error) {
+func RunResolveLocks(ctx context.Context, s tikv.Storage, store kv.Storage, pd pd.Client, safePoint uint64, identifier string, concurrency int, usePhysical bool) (bool, error) {
 	gcWorker := &GCWorker{
 		tikvStore: s,
+		store:     store,
 		uuid:      identifier,
 		pdClient:  pd,
 	}
