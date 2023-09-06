@@ -569,6 +569,13 @@ func (s *Server) closeListener() {
 		terror.Log(errors.Trace(err))
 		s.statusServer = nil
 	}
+	defer func() { // serverless: delay close status server, avoid readiness probe failed
+		if s.statusServer != nil {
+			err := s.statusServer.Close()
+			terror.Log(errors.Trace(err))
+			s.statusServer = nil
+		}
+	}()
 	if s.grpcServer != nil {
 		s.grpcServer.Stop()
 		s.grpcServer = nil
