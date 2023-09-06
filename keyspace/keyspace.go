@@ -130,3 +130,11 @@ func BuildAPIContext(keyspaceName string) (apiContext pd.APIContext) {
 	}
 	return
 }
+
+// MakeKeyspaceEtcdNamespaceSlash return the keyspace prefix path for etcd namespace, and end with a slash.
+func MakeKeyspaceEtcdNamespaceSlash(c tikv.Codec) string {
+	if c.GetAPIVersion() == kvrpcpb.APIVersion_V1 {
+		return ""
+	}
+	return fmt.Sprintf(tidbKeyspaceEtcdPathPrefix+"%d/", c.GetKeyspaceID())
+}
