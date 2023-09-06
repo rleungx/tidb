@@ -1068,7 +1068,7 @@ const (
 	DefIndexLookupSize                             = 20000
 	DefDistSQLScanConcurrency                      = 15
 	DefBuildStatsConcurrency                       = 4
-	DefAutoAnalyzeRatio                            = 0.5
+	DefAutoAnalyzeRatio                            = 0.25
 	DefAutoAnalyzeStartTime                        = "00:00 +0000"
 	DefAutoAnalyzeEndTime                          = "23:59 +0000"
 	DefAutoIncrementIncrement                      = 1
