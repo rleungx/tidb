@@ -18,6 +18,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/sessionctx/variable"
@@ -50,6 +51,12 @@ func TestRunMain(t *testing.T) {
 
 func TestSetGlobalVars(t *testing.T) {
 	defer view.Stop()
+
+	require.NoError(t, failpoint.Enable("github.com/pingcap/tidb/util/sem/skipSEM", "return"))
+	defer func() {
+		require.NoError(t, failpoint.Disable("github.com/pingcap/tidb/util/sem/skipSEM"))
+	}()
+
 	require.Equal(t, "tikv,tiflash,tidb", variable.GetSysVar(variable.TiDBIsolationReadEngines).Value)
 	require.Equal(t, "1073741824", variable.GetSysVar(variable.TiDBMemQuotaQuery).Value)
 	require.NotEqual(t, "test", variable.GetSysVar(variable.Version).Value)

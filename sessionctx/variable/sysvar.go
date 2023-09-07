@@ -68,7 +68,7 @@ var defaultSysVars = []*SysVar{
 	{Scope: ScopeNone, Name: LogBin, Value: Off, Type: TypeBool},
 	{Scope: ScopeNone, Name: VersionComment, Value: "TiDB Server (Apache License 2.0) " + versioninfo.TiDBEdition + " Edition, MySQL 5.7 compatible"},
 	{Scope: ScopeNone, Name: Version, Value: mysql.ServerVersion},
-	{Scope: ScopeNone, Name: DataDir, Value: "/usr/local/mysql/data/"},
+	{Scope: ScopeNone, Name: DataDir, Value: DefDataDir},
 	{Scope: ScopeNone, Name: Socket, Value: ""},
 	{Scope: ScopeNone, Name: "license", Value: "Apache License 2.0"},
 	{Scope: ScopeNone, Name: "have_ssl", Value: "DISABLED", Type: TypeBool},

@@ -137,14 +137,16 @@ func Enable(level string) error {
 // Disable disables SEM. This is intended to be used by the test-suite.
 // Dynamic configuration by users may be a security risk.
 func Disable() {
-	if IsStrictMode() {
+	switch atomic.LoadInt32(&semEnabled) {
+	case levelBasicVal:
+		variable.SetSysVar(variable.TiDBEnableEnhancedSecurity, variable.Off)
+		if hostname, err := os.Hostname(); err == nil {
+			variable.SetSysVar(variable.Hostname, hostname)
+		}
+	case levelStrictVal:
 		disableStrictMode()
 	}
 	atomic.StoreInt32(&semEnabled, 0)
-	variable.SetSysVar(variable.TiDBEnableEnhancedSecurity, variable.Off)
-	if hostname, err := os.Hostname(); err == nil {
-		variable.SetSysVar(variable.Hostname, hostname)
-	}
 }
 
 // IsEnabled checks if Security Enhanced Mode (SEM) is enabled.
@@ -235,8 +237,7 @@ func IsInvisibleSysVar(varNameInLower string) bool {
 		variable.TiDBStmtSummaryFilename,
 		tidbAuditRetractLog,
 		variable.TiDBEnableAsyncCommit,
-		variable.TiDBEnableResourceControl,
-		variable.DataDir:
+		variable.TiDBEnableResourceControl:
 		return true
 	}
 	return IsStrictMode() && strictModeInvisibleSysVar(varNameInLower)

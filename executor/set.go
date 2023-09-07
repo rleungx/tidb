@@ -142,6 +142,14 @@ func (e *SetExecutor) setSysVariable(ctx context.Context, name string, v *expres
 		sessionVars.StmtCtx.AppendWarning(exeerrors.ErrInstanceScope.GenWithStackByArgs(sysVar.Name))
 	}
 
+	// Check if the variable is read only under SEM.
+	if err := e.checkSysVarReadOnlyForSEM(ctx, v, sysVar); err != nil {
+		// If the assignment violates sem ReadOnly, we simply append warning and ignore it, instead of
+		// returning error.
+		sessionVars.StmtCtx.AppendWarning(err)
+		return nil
+	}
+
 	if v.IsGlobal {
 		valStr, err := e.getVarValue(ctx, v, sysVar)
 		if err != nil {
@@ -269,6 +277,50 @@ func (e *SetExecutor) setCharset(cs, co string, isSetName bool) error {
 		return errors.Trace(err)
 	}
 	return errors.Trace(sessionVars.SetSystemVar(variable.CollationConnection, coDb))
+}
+
+// checkReadOnly checks if the variable assignment violates sem read-only rules.
+func (e *SetExecutor) checkSysVarReadOnlyForSEM(
+	ctx context.Context,
+	v *expression.VarAssignment,
+	sysVar *variable.SysVar) error {
+	if !sem.IsEnabled() || !sem.IsReadOnlySysVar(strings.ToLower(sysVar.Name)) {
+		return nil
+	}
+	// If the user has SUPER or RESTRICTED_VARIABLES_ADMIN, skip check.
+	pm := privilege.GetPrivilegeManager(e.ctx)
+	if pm == nil || pm.RequestDynamicVerification(e.ctx.GetSessionVars().ActiveRoles, "RESTRICTED_VARIABLES_ADMIN", false) {
+		return nil
+	}
+	var (
+		targetValue  string // The value to be set.
+		currentValue string // The current value of the variable.
+		err          error
+	)
+	// Obtain the target and current value of the set statement, must use getVarValue to handle the default value.
+	if v.IsGlobal {
+		targetValue, err = e.getVarValue(ctx, v, sysVar)
+		if err != nil {
+			return err
+		}
+		currentValue = sysVar.Value
+	} else {
+		targetValue, err = e.getVarValue(ctx, v, nil)
+		if err != nil {
+			return err
+		}
+		currentValue, err = e.ctx.GetSessionVars().GetGlobalSystemVar(ctx, v.Name)
+		if err != nil {
+			return err
+		}
+	}
+	// Normalize the target value without appending warnings.
+	targetValue = sysVar.ValidateWithRelaxedValidation(e.ctx.GetSessionVars(), targetValue, sysVar.Scope)
+	// Skip check sem read-only if the target value is the same as the current value.
+	if targetValue == currentValue {
+		return nil
+	}
+	return core.ErrSpecificAccessDenied.GenWithStackByArgs("SUPER or RESTRICTED_VARIABLES_ADMIN")
 }
 
 func (e *SetExecutor) getVarValue(ctx context.Context, v *expression.VarAssignment, sysVar *variable.SysVar) (value string, err error) {

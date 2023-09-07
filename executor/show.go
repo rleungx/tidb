@@ -1796,6 +1796,10 @@ func (e *ShowExec) fetchShowProcedureStatus() error {
 }
 
 func (e *ShowExec) fetchShowPlugins() error {
+	// When SEM strict mode is enabled, return an empty list for plugins.
+	if sem.IsStrictMode() {
+		return nil
+	}
 	tiPlugins := plugin.GetAll()
 	for _, ps := range tiPlugins {
 		for _, p := range ps {

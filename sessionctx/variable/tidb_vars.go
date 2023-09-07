@@ -1061,6 +1061,7 @@ const (
 // Default TiDB system variable values.
 const (
 	DefHostname                                    = "localhost"
+	DefDataDir                                     = "/usr/local/mysql/data/"
 	DefIndexLookupConcurrency                      = ConcurrencyUnset
 	DefIndexLookupJoinConcurrency                  = ConcurrencyUnset
 	DefIndexSerialScanConcurrency                  = 1

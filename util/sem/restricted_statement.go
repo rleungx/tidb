@@ -256,14 +256,15 @@ func verifyShow(stmt *ast.ShowStmt) error {
 		ast.ShowSessionStates,
 		// "SHOW CONFIG" command is necessary for lightning to function,
 		// therefore, it's access is restricted via privileges.
-		ast.ShowConfig:
+		ast.ShowConfig,
+		// "SHOW PLUGINS" command is necessary for mysql workbench,
+		// hence we return an empty result in fetchShowPlugins instead of returning an error here.
+		ast.ShowPlugins:
 		return nil
 	case ast.ShowCreateResourceGroup:
 		return dbterror.ErrNotSupportedOnServerless.GenWithStackByCause("SHOW CREATE RESOURCE GROUP")
 	case ast.ShowCreatePlacementPolicy:
 		return dbterror.ErrNotSupportedOnServerless.GenWithStackByCause("SHOW CREATE PLACEMENT POLICY")
-	case ast.ShowPlugins:
-		return dbterror.ErrNotSupportedOnServerless.GenWithStackByCause("SHOW PLUGINS")
 	case ast.ShowDrainerStatus:
 		return dbterror.ErrNotSupportedOnServerless.GenWithStackByCause("SHOW DRAINER STATUS")
 	case ast.ShowPumpStatus:

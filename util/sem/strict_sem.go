@@ -15,14 +15,23 @@
 package sem
 
 import (
+	"os"
 	"sync/atomic"
 
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/sessionctx/variable"
 )
 
 // enableStrictMode changes some variable's default value and restrictions.
 func enableStrictMode() {
+	// Mark sem as enabled.
+	variable.SetSysVar(variable.TiDBEnableEnhancedSecurity, variable.On)
+	// Mask @@hostname to localhost.
+	variable.SetSysVar(variable.Hostname, variable.DefHostname)
+	// Mask @@datadir to it's default value.
+	variable.SetSysVar(variable.DataDir, variable.DefDataDir)
+	// Set password validation rules.
 	variable.SetSysVarMin(variable.ValidatePasswordLength, 8)
 	variable.SetSysVarMin(variable.ValidatePasswordMixedCaseCount, 1)
 	variable.SetSysVarMin(variable.ValidatePasswordNumberCount, 1)
@@ -31,6 +40,15 @@ func enableStrictMode() {
 
 // disableStrictMode changes variable's default value and restrictions back to normal.
 func disableStrictMode() {
+	// Mark sem as disabled.
+	variable.SetSysVar(variable.TiDBEnableEnhancedSecurity, variable.Off)
+	// Restore @@hostname.
+	if hostname, err := os.Hostname(); err == nil {
+		variable.SetSysVar(variable.Hostname, hostname)
+	}
+	// Restore @@datadir.
+	variable.SetSysVar(variable.DataDir, config.GetGlobalConfig().Path)
+	// Set password validation rules.
 	variable.SetSysVarMin(variable.ValidatePasswordLength, 0)
 	variable.SetSysVarMin(variable.ValidatePasswordMixedCaseCount, 0)
 	variable.SetSysVarMin(variable.ValidatePasswordNumberCount, 0)
@@ -138,7 +156,6 @@ func strictModeInvisibleTable(dbLowerName, tblLowerName string) bool {
 func strictModeInvisibleSysVar(varNameInLower string) bool {
 	switch varNameInLower {
 	case
-		variable.DataDir,
 		variable.PluginDir,
 		variable.PluginLoad,
 		variable.TiDBCheckMb4ValueInUTF8,
@@ -236,7 +253,10 @@ func strictModeReadOnlySysVar(varNameInLower string) bool {
 		variable.TiDBTxnScope,
 		variable.ValidatePasswordEnable,
 		// TODO: remove this after the next cse upgrade to 7.1
-		variable.TiDBPessimisticTransactionFairLocking:
+		variable.TiDBPessimisticTransactionFairLocking,
+		// The following variables contain sensitive information, so we mask them when enabling sem and
+		// mark them as read-only.
+		variable.DataDir:
 		return true
 
 	}
