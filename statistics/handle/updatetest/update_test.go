@@ -2228,16 +2228,16 @@ func TestAutoAnalyzeRatio(t *testing.T) {
 	require.Equal(t, getStatsHealthy(), 44)
 	require.True(t, h.HandleAutoAnalyze(is))
 
-	tk.MustExec("delete from t limit 12")
+	tk.MustExec("delete from t limit 6")
 	require.NoError(t, h.DumpStatsDeltaToKV(handle.DumpAll))
 	require.NoError(t, h.Update(is))
-	require.Equal(t, getStatsHealthy(), 61)
+	require.Equal(t, getStatsHealthy(), 80)
 	require.False(t, h.HandleAutoAnalyze(is))
 
 	tk.MustExec("delete from t limit 4")
 	require.NoError(t, h.DumpStatsDeltaToKV(handle.DumpAll))
 	require.NoError(t, h.Update(is))
-	require.Equal(t, getStatsHealthy(), 48)
+	require.Equal(t, getStatsHealthy(), 67)
 	require.True(t, h.HandleAutoAnalyze(dom.InfoSchema()))
 }
 
