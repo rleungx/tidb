@@ -101,7 +101,7 @@ func TestDupDetectIterator(t *testing.T) {
 		i = j
 	}
 
-	keyAdapter := dupDetectKeyAdapter{}
+	keyAdapter := DupDetectKeyAdapter{}
 
 	// Write pairs to db after shuffling the pairs.
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -206,7 +206,7 @@ func TestDupDetectIterSeek(t *testing.T) {
 	db, err := pebble.Open(filepath.Join(storeDir, "kv"), &pebble.Options{})
 	require.NoError(t, err)
 
-	keyAdapter := dupDetectKeyAdapter{}
+	keyAdapter := DupDetectKeyAdapter{}
 	wb := db.NewBatch()
 	for _, p := range pairs {
 		key := keyAdapter.Encode(nil, p.Key, p.RowID)
@@ -228,7 +228,7 @@ func TestDupDetectIterSeek(t *testing.T) {
 }
 
 func TestKeyAdapterEncoding(t *testing.T) {
-	keyAdapter := dupDetectKeyAdapter{}
+	keyAdapter := DupDetectKeyAdapter{}
 	srcKey := []byte{1, 2, 3}
 	v := keyAdapter.Encode(nil, srcKey, common.EncodeIntRowID(1))
 	resKey, err := keyAdapter.Decode(nil, v)

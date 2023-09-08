@@ -45,25 +45,31 @@ func reallocBytes(b []byte, n int) []byte {
 	return b
 }
 
-type noopKeyAdapter struct{}
+// NoopKeyAdapter is a key adapter that does nothing.
+type NoopKeyAdapter struct{}
 
-func (noopKeyAdapter) Encode(dst []byte, key []byte, _ []byte) []byte {
+// Encode implements KeyAdapter.
+func (NoopKeyAdapter) Encode(dst []byte, key []byte, _ []byte) []byte {
 	return append(dst, key...)
 }
 
-func (noopKeyAdapter) Decode(dst []byte, data []byte) ([]byte, error) {
+// Decode implements KeyAdapter
+func (NoopKeyAdapter) Decode(dst []byte, data []byte) ([]byte, error) {
 	return append(dst, data...), nil
 }
 
-func (noopKeyAdapter) EncodedLen(key []byte, _ []byte) int {
+// EncodedLen implements KeyAdapter
+func (NoopKeyAdapter) EncodedLen(key []byte, _ []byte) int {
 	return len(key)
 }
 
-var _ KeyAdapter = noopKeyAdapter{}
+var _ KeyAdapter = NoopKeyAdapter{}
 
-type dupDetectKeyAdapter struct{}
+// DupDetectKeyAdapter is a key adapter that appends the rowID to the key.
+type DupDetectKeyAdapter struct{}
 
-func (dupDetectKeyAdapter) Encode(dst []byte, key []byte, rowID []byte) []byte {
+// Encode implements KeyAdapter
+func (DupDetectKeyAdapter) Encode(dst []byte, key []byte, rowID []byte) []byte {
 	dst = codec.EncodeBytes(dst, key)
 	dst = reallocBytes(dst, len(rowID)+2)
 	dst = append(dst, rowID...)
@@ -72,7 +78,8 @@ func (dupDetectKeyAdapter) Encode(dst []byte, key []byte, rowID []byte) []byte {
 	return dst
 }
 
-func (dupDetectKeyAdapter) Decode(dst []byte, data []byte) ([]byte, error) {
+// Decode implements KeyAdapter
+func (DupDetectKeyAdapter) Decode(dst []byte, data []byte) ([]byte, error) {
 	if len(data) < 2 {
 		return nil, errors.New("insufficient bytes to decode value")
 	}
@@ -96,11 +103,12 @@ func (dupDetectKeyAdapter) Decode(dst []byte, data []byte) ([]byte, error) {
 	return append(dst, key...), nil
 }
 
-func (dupDetectKeyAdapter) EncodedLen(key []byte, rowID []byte) int {
+// EncodedLen implements KeyAdapter
+func (DupDetectKeyAdapter) EncodedLen(key []byte, rowID []byte) int {
 	return codec.EncodedBytesLength(len(key)) + len(rowID) + 2
 }
 
-var _ KeyAdapter = dupDetectKeyAdapter{}
+var _ KeyAdapter = DupDetectKeyAdapter{}
 
 // static vars for rowID
 var (

@@ -1256,7 +1256,7 @@ func (cfg *Config) AdjustCommon() (bool, error) {
 		cfg.TikvImporter.LocalWriterMemCacheSize = DefaultLocalWriterMemCacheSize
 	}
 
-	if cfg.TikvImporter.Backend == BackendLocal {
+	if cfg.TikvImporter.Backend == BackendLocal || cfg.TikvImporter.Backend == BackendRemote {
 		if err := cfg.CheckAndAdjustForLocalBackend(); err != nil {
 			return mustHaveInternalConnections, err
 		}

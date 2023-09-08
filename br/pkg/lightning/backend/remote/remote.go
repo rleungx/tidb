@@ -19,13 +19,17 @@ import (
 	"context"
 	"database/sql"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/google/uuid"
 	"github.com/pingcap/errors"
 	rmpb "github.com/pingcap/kvproto/pkg/resource_manager"
@@ -37,6 +41,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/checkpoints"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
+	"github.com/pingcap/tidb/br/pkg/lightning/errormanager"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/metric"
 	"github.com/pingcap/tidb/br/pkg/pdutil"
@@ -74,6 +79,8 @@ import (
 		DELETE /load_data?cluster_id=%d&start_ts=%d
 */
 
+const maxDuplicateBatchSize = 4 << 20
+
 // LoadDataStates is json data that returned by remote server GET API.
 type LoadDataStates struct {
 	Canceled        bool   `json:"canceled"`
@@ -81,6 +88,17 @@ type LoadDataStates struct {
 	Error           string `json:"error"`
 	CreatedFiles    int    `json:"created-files"`
 	IngestedRegions int    `json:"ingested-regions"`
+
+	DuplicateEntries []duplicateEntry `json:"duplicated-entries"`
+}
+
+type duplicateEntry struct {
+	Key    string   `json:"key"`
+	Values []string `json:"values"`
+}
+
+func (s *LoadDataStates) hasDuplicateEntries() bool {
+	return len(s.DuplicateEntries) > 0
 }
 
 // NewRemoteBackend creates a new remote backend instance.
@@ -91,6 +109,38 @@ func NewRemoteBackend(
 	db *sql.DB,
 	keyspaceName string,
 ) (backend.Backend, error) {
+	localFile := cfg.TikvImporter.SortedKVDir
+
+	shouldCreate := true
+	if cfg.Checkpoint.Enable {
+		if info, err := os.Stat(localFile); err != nil {
+			if !os.IsNotExist(err) {
+				return nil, err
+			}
+		} else if info.IsDir() {
+			shouldCreate = false
+		}
+	}
+	if shouldCreate {
+		err := os.Mkdir(localFile, 0o700)
+		if err != nil {
+			return nil, common.ErrInvalidSortedKVDir.Wrap(err).GenWithStackByArgs(localFile)
+		}
+	}
+	var (
+		duplicateDB *pebble.DB
+		err         error
+	)
+	keyAdapter := local.KeyAdapter(local.NoopKeyAdapter{})
+	duplicateDetection := cfg.TikvImporter.DuplicateResolution != config.DupeResAlgNone
+	if duplicateDetection {
+		duplicateDB, err = local.OpenDuplicateDB(localFile)
+		if err != nil {
+			return nil, common.ErrOpenDuplicateDB.Wrap(err).GenWithStackByArgs()
+		}
+		keyAdapter = local.DupDetectKeyAdapter{}
+	}
+
 	pdCtl, err := pdutil.NewPdController(ctx, keyspaceName, cfg.TiDB.PdAddr, tls.TLSConfig(), tls.ToPDSecurityOption())
 	if err != nil {
 		return nil, common.NormalizeOrWrapErr(common.ErrCreatePDClient, err)
@@ -106,8 +156,19 @@ func NewRemoteBackend(
 		}
 	}
 
+	tikvCodec := pdCliForTiKV.GetCodec()
+	spkv, err := tikvclient.NewEtcdSafePointKV(strings.Split(cfg.TiDB.PdAddr, ","), tls.TLSConfig())
+	if err != nil {
+		return nil, common.ErrCreateKVClient.Wrap(err).GenWithStackByArgs()
+	}
+	rpcCli := tikvclient.NewRPCClient(tikvclient.WithSecurity(tls.ToTiKVSecurityConfig()), tikvclient.WithCodec(tikvCodec))
+	tikvCli, err := tikvclient.NewKVStore("lightning-remote-backend", pdCliForTiKV, spkv, rpcCli)
+	if err != nil {
+		return nil, common.ErrCreateKVClient.Wrap(err).GenWithStackByArgs()
+	}
+
 	keyspace := pdCliForTiKV.GetCodec().GetKeyspace()
-	remote := &remoteBackend{
+	remote := &Backend{
 		targetInfoGetter: local.NewTargetInfoGetter(tls, db, cfg.TiDB.PdAddr, keyspaceName),
 		workerAddr:       cfg.TikvImporter.Addr,
 		pdCtl:            pdCtl,
@@ -116,6 +177,15 @@ func NewRemoteBackend(
 		keyspace:         keyspace,
 		logger:           log.FromContext(ctx),
 		reportWriteBytes: func(int64) {},
+
+		tikvCodec:          tikvCodec,
+		tikvCli:            tikvCli,
+		duplicateDB:        duplicateDB,
+		keyAdapter:         keyAdapter,
+		dupeConcurrency:    cfg.TikvImporter.RangeConcurrency * 2,
+		duplicateDetection: duplicateDetection,
+		checkpointEnabled:  cfg.Checkpoint.Enable,
+		localStoreDir:      localFile,
 	}
 
 	if m, ok := metric.FromContext(ctx); ok {
@@ -134,7 +204,8 @@ func NewRemoteBackend(
 	return remote, nil
 }
 
-type remoteBackend struct {
+// Backend is a remote backend that sends KV pairs to remote worker.
+type Backend struct {
 	targetInfoGetter backend.TargetInfoGetter
 	workerAddr       string
 	pdCtl            *pdutil.PdController
@@ -146,24 +217,49 @@ type remoteBackend struct {
 	engines          sync.Map
 	logger           log.Logger
 	reportWriteBytes func(int64)
+
+	tikvCodec          tikvclient.Codec
+	duplicateDB        *pebble.DB
+	tikvCli            *tikvclient.KVStore
+	keyAdapter         local.KeyAdapter
+	dupeConcurrency    int
+	duplicateDetection bool
+	checkpointEnabled  bool
+	localStoreDir      string
 }
 
 // Close the connection to the backend.
-func (b *remoteBackend) Close() {
+func (b *Backend) Close() {
+	if b.duplicateDB != nil {
+		local.CloseDuplicateDB(b.duplicateDB, b.checkpointEnabled, b.localStoreDir, b.logger)
+		b.duplicateDB = nil
+	}
+
+	// if checkpoint is disable or we finish load all data successfully, then files in this
+	// dir will be useless, so we clean up this dir and all files in it.
+	if !b.checkpointEnabled || common.IsEmptyDir(b.localStoreDir) {
+		err := os.RemoveAll(b.localStoreDir)
+		if err != nil {
+			b.logger.Warn("remove local db file failed", zap.Error(err))
+		}
+	}
+	_ = b.tikvCli.Close()
+	b.pdCtl.Close()
 }
 
 // RetryImportDelay returns the duration to sleep when retrying an import
-func (b *remoteBackend) RetryImportDelay() time.Duration {
+func (b *Backend) RetryImportDelay() time.Duration {
 	return 0
 }
 
 // ShouldPostProcess returns whether KV-specific post-processing should be
 // performed for this backend. Post-processing includes checksum and analyze.
-func (b *remoteBackend) ShouldPostProcess() bool {
+func (b *Backend) ShouldPostProcess() bool {
 	return true
 }
 
-func (b *remoteBackend) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, engineUUID uuid.UUID) error {
+// OpenEngine opens an engine for writing.
+func (b *Backend) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, engineUUID uuid.UUID) error {
 	physical, logical, err := b.pdCtl.GetPDClient().GetTS(ctx)
 	if err != nil {
 		return err
@@ -188,7 +284,7 @@ func (b *remoteBackend) OpenEngine(ctx context.Context, cfg *backend.EngineConfi
 	return nil
 }
 
-func (b *remoteBackend) loadDataInit(clusterID, ts uint64) error {
+func (b *Backend) loadDataInit(clusterID, ts uint64) error {
 	url := fmt.Sprintf(
 		"%s/load_data?cluster_id=%d&start_ts=%d&commit_ts=%d",
 		b.workerAddr,
@@ -206,11 +302,13 @@ func (b *remoteBackend) loadDataInit(clusterID, ts uint64) error {
 	return nil
 }
 
-func (b *remoteBackend) CloseEngine(ctx context.Context, cfg *backend.EngineConfig, engineUUID uuid.UUID) error {
+// CloseEngine closes backend engine by uuid.
+func (b *Backend) CloseEngine(ctx context.Context, cfg *backend.EngineConfig, engineUUID uuid.UUID) error {
 	return nil
 }
 
-func (b *remoteBackend) ImportEngine(ctx context.Context, engineUUID uuid.UUID, regionSplitSize, regionSplitKeys int64) error {
+// ImportEngine imports an engine to TiKV.
+func (b *Backend) ImportEngine(ctx context.Context, engineUUID uuid.UUID, regionSplitSize, regionSplitKeys int64) error {
 	engine, err := b.getEngine(engineUUID)
 	if err != nil {
 		return err
@@ -226,14 +324,20 @@ func (b *remoteBackend) ImportEngine(ctx context.Context, engineUUID uuid.UUID, 
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			states, err1 := b.loadDataGetStates(ctx, engine)
-			if err1 != nil {
-				return err1
+			states, err := b.loadDataGetStates(ctx, engine)
+			if err != nil {
+				return err
 			}
 			if states.Canceled {
 				b.logger.Error("loadData canceled", zap.Uint64("start_ts", engine.ts), zap.String("error", states.Error))
 				return errors.Errorf("load data canceled, start_ts:%d, error:%s", engine.ts, states.Error)
 			} else if states.Finished {
+				if states.hasDuplicateEntries() {
+					err = b.handleDuplicateEntries(ctx, engine, states)
+					if err != nil {
+						return err
+					}
+				}
 				b.logger.Info("loadData finished", zap.Uint64("start_ts", engine.ts))
 				return nil
 			} else {
@@ -245,6 +349,60 @@ func (b *remoteBackend) ImportEngine(ctx context.Context, engineUUID uuid.UUID, 
 			}
 		}
 	}
+}
+
+func (b *Backend) handleDuplicateEntries(ctx context.Context, engine *engine, states *LoadDataStates) error {
+	if !b.duplicateDetection {
+		return nil
+	}
+
+	b.logger.Info("handling duplicate entries",
+		zap.String("db", engine.tbl.DB),
+		zap.String("table", engine.tbl.Name),
+		zap.Int("duplicateEntries", len(states.DuplicateEntries)))
+
+	writeBatch := b.duplicateDB.NewBatch()
+	writeBatchSize := int64(0)
+	for _, entry := range states.DuplicateEntries {
+		if len(entry.Values) == 0 {
+			continue
+		}
+		rawKey, err := hex.DecodeString(entry.Key)
+		if err != nil {
+			b.logger.Warn("failed to decode key", zap.String("key", entry.Key), zap.Error(err))
+			return err
+		}
+		for i, value := range entry.Values {
+			// append index to rawKey to make it unique.
+			encodedRawKey := b.keyAdapter.Encode(nil, rawKey, common.EncodeIntRowID(int64(i)))
+
+			rawValue, err := hex.DecodeString(value)
+			if err != nil {
+				b.logger.Warn("failed to decode value", zap.String("value", value), zap.Error(err))
+				return err
+			}
+			writeBatch.Set(encodedRawKey, rawValue, nil)
+			writeBatchSize += int64(len(encodedRawKey) + len(rawValue))
+			if writeBatchSize >= maxDuplicateBatchSize {
+				err = writeBatch.Commit(nil)
+				if err != nil {
+					b.logger.Warn("failed to write duplicate entries", zap.Error(err))
+					return err
+				}
+				writeBatch = b.duplicateDB.NewBatch()
+				writeBatchSize = 0
+			}
+		}
+	}
+
+	if writeBatchSize > 0 {
+		err := writeBatch.Commit(nil)
+		if err != nil {
+			b.logger.Warn("failed to write duplicate entries", zap.Error(err))
+			return err
+		}
+	}
+	return nil
 }
 
 func sendRequest(ctx context.Context, method, url string, body io.Reader) ([]byte, error) {
@@ -264,7 +422,7 @@ func sendRequest(ctx context.Context, method, url string, body io.Reader) ([]byt
 	return io.ReadAll(resp.Body)
 }
 
-func (b *remoteBackend) loadDataBuild(ctx context.Context, engine *engine, splitSize, splitKeys int64) error {
+func (b *Backend) loadDataBuild(ctx context.Context, engine *engine, splitSize, splitKeys int64) error {
 	maxChunkID := engine.chunkID.Load()
 	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d&build=true&compression=zstd&split_size=%d&split_keys=%d",
 		b.workerAddr, engine.clusterID, engine.ts, splitSize, splitKeys)
@@ -280,7 +438,7 @@ func (b *remoteBackend) loadDataBuild(ctx context.Context, engine *engine, split
 	return err
 }
 
-func (b *remoteBackend) loadDataGetStates(ctx context.Context, engine *engine) (*LoadDataStates, error) {
+func (b *Backend) loadDataGetStates(ctx context.Context, engine *engine) (*LoadDataStates, error) {
 	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d", b.workerAddr, engine.clusterID, engine.ts)
 	data, err := sendRequest(ctx, "GET", url, nil)
 	if err != nil {
@@ -294,7 +452,8 @@ func (b *remoteBackend) loadDataGetStates(ctx context.Context, engine *engine) (
 	return states, nil
 }
 
-func (b *remoteBackend) CleanupEngine(ctx context.Context, engineUUID uuid.UUID) error {
+// CleanupEngine cleanup the engine and reclaim the space.
+func (b *Backend) CleanupEngine(ctx context.Context, engineUUID uuid.UUID) error {
 	engine, err := b.getEngine(engineUUID)
 	if err != nil {
 		return err
@@ -302,7 +461,7 @@ func (b *remoteBackend) CleanupEngine(ctx context.Context, engineUUID uuid.UUID)
 	return b.loadDataCleanUp(ctx, engine)
 }
 
-func (b *remoteBackend) loadDataCleanUp(ctx context.Context, engine *engine) error {
+func (b *Backend) loadDataCleanUp(ctx context.Context, engine *engine) error {
 	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d", b.workerAddr, engine.clusterID, engine.ts)
 	_, err := sendRequest(ctx, "DELETE", url, nil)
 	if err != nil {
@@ -313,7 +472,7 @@ func (b *remoteBackend) loadDataCleanUp(ctx context.Context, engine *engine) err
 
 // CheckRequirements performs the check whether the backend satisfies the
 // version requirements
-func (b *remoteBackend) CheckRequirements(context.Context, *backend.CheckCtx) error {
+func (b *Backend) CheckRequirements(context.Context, *backend.CheckCtx) error {
 	return nil
 }
 
@@ -329,7 +488,7 @@ func (b *remoteBackend) CheckRequirements(context.Context, *backend.CheckCtx) er
 //   - State (must be model.StatePublic)
 //   - Offset (must be 0, 1, 2, ...)
 //   - PKIsHandle (true = do not generate _tidb_rowid)
-func (b *remoteBackend) FetchRemoteTableModels(ctx context.Context, schemaName string) ([]*model.TableInfo, error) {
+func (b *Backend) FetchRemoteTableModels(ctx context.Context, schemaName string) ([]*model.TableInfo, error) {
 	return b.targetInfoGetter.FetchRemoteTableModels(ctx, schemaName)
 }
 
@@ -339,31 +498,31 @@ func (b *remoteBackend) FetchRemoteTableModels(ctx context.Context, schemaName s
 //
 // This method is only relevant for local backend, and is no-op for all
 // other backends.
-func (b *remoteBackend) FlushEngine(ctx context.Context, engineUUID uuid.UUID) error {
+func (b *Backend) FlushEngine(ctx context.Context, engineUUID uuid.UUID) error {
 	return nil
 }
 
 // FlushAllEngines performs FlushEngine on all opened engines. This is a
 // very expensive operation and should only be used in some rare situation
 // (e.g. preparing to resolve a disk quota violation).
-func (b *remoteBackend) FlushAllEngines(ctx context.Context) error {
+func (b *Backend) FlushAllEngines(ctx context.Context) error {
 	return nil
 }
 
 // EngineFileSizes obtains the size occupied locally of all engines managed
 // by this backend. This method is used to compute disk quota.
 // It can return nil if the content are all stored remotely.
-func (b *remoteBackend) EngineFileSizes() []backend.EngineFileSize {
+func (b *Backend) EngineFileSizes() []backend.EngineFileSize {
 	return nil
 }
 
 // ResetEngine clears all written KV pairs in this opened engine.
-func (b *remoteBackend) ResetEngine(ctx context.Context, engineUUID uuid.UUID) error {
+func (b *Backend) ResetEngine(ctx context.Context, engineUUID uuid.UUID) error {
 	return errors.New("cannot reset an engine in Remote backend")
 }
 
 // LocalWriter obtains a thread-local EngineWriter for writing rows into the given engine.
-func (b *remoteBackend) LocalWriter(_ context.Context, _ *backend.LocalWriterConfig, engineUUID uuid.UUID) (backend.EngineWriter, error) {
+func (b *Backend) LocalWriter(_ context.Context, _ *backend.LocalWriterConfig, engineUUID uuid.UUID) (backend.EngineWriter, error) {
 	engine, err := b.getEngine(engineUUID)
 	if err != nil {
 		return nil, err
@@ -375,7 +534,7 @@ func (b *remoteBackend) LocalWriter(_ context.Context, _ *backend.LocalWriterCon
 	return client, nil
 }
 
-func (b *remoteBackend) getEngine(engineUUID uuid.UUID) (*engine, error) {
+func (b *Backend) getEngine(engineUUID uuid.UUID) (*engine, error) {
 	v, ok := b.engines.Load(engineUUID)
 	if !ok {
 		return nil, errors.Errorf("could not found engine for %s", engineUUID.String())
@@ -492,7 +651,7 @@ func (r remoteRequestInfo) StoreID() uint64 {
 	return 0
 }
 
-func (b *remoteBackend) setupReportWRU(ctx context.Context, keyspaceID uint32, keyspaceName string, cfg *config.Config) error {
+func (b *Backend) setupReportWRU(ctx context.Context, keyspaceID uint32, keyspaceName string, cfg *config.Config) error {
 	// remote backend used to import new table data,
 	// so we can use default placement rule as repliace count.
 	placementRules, err := pdutil.GetPlacementRules(ctx, b.pdAddr, b.tls.TLSConfig())
@@ -536,4 +695,9 @@ func (b *remoteBackend) setupReportWRU(ctx context.Context, keyspaceID uint32, k
 		zap.Float64("WriteCostPerByte", cfg.RUConfig.WriteCostPerByte),
 	)
 	return nil
+}
+
+// GetDupeController returns a new dupe controller.
+func (b *Backend) GetDupeController(dupeConcurrency int, errorMgr *errormanager.ErrorManager) *local.DupeController {
+	return local.NewDupeController(dupeConcurrency, errorMgr, nil, b.tikvCli, b.tikvCodec, b.duplicateDB, b.keyAdapter, nil, false)
 }

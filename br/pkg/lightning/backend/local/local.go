@@ -480,7 +480,8 @@ type Backend struct {
 var _ DiskUsage = (*Backend)(nil)
 var _ backend.Backend = (*Backend)(nil)
 
-func openDuplicateDB(storeDir string) (*pebble.DB, error) {
+// OpenDuplicateDB opens the kv db for duplicate detection.
+func OpenDuplicateDB(storeDir string) (*pebble.DB, error) {
 	dbPath := filepath.Join(storeDir, duplicateDBName)
 	// TODO: Optimize the opts for better write.
 	opts := &pebble.Options{
@@ -533,7 +534,7 @@ func NewBackend(
 
 	var duplicateDB *pebble.DB
 	if config.DupeDetectEnabled {
-		duplicateDB, err = openDuplicateDB(config.LocalStoreDir)
+		duplicateDB, err = OpenDuplicateDB(config.LocalStoreDir)
 		if err != nil {
 			return nil, common.ErrOpenDuplicateDB.Wrap(err).GenWithStackByArgs()
 		}
@@ -562,9 +563,9 @@ func NewBackend(
 		return nil, common.ErrCreateKVClient.Wrap(err).GenWithStackByArgs()
 	}
 	importClientFactory := newImportClientFactoryImpl(splitCli, tls, config.MaxConnPerStore, config.ConnCompressType)
-	keyAdapter := KeyAdapter(noopKeyAdapter{})
+	keyAdapter := KeyAdapter(NoopKeyAdapter{})
 	if config.DupeDetectEnabled {
-		keyAdapter = dupDetectKeyAdapter{}
+		keyAdapter = DupDetectKeyAdapter{}
 	}
 	var writeLimiter StoreWriteLimiter
 	if config.StoreWriteBWLimit > 0 {
@@ -749,29 +750,7 @@ func (local *Backend) Close() {
 	local.bufferPool.Destroy()
 
 	if local.duplicateDB != nil {
-		// Check if there are duplicates that are not collected.
-		iter := local.duplicateDB.NewIter(&pebble.IterOptions{})
-		hasDuplicates := iter.First()
-		allIsWell := true
-		if err := iter.Error(); err != nil {
-			local.logger.Warn("iterate duplicate db failed", zap.Error(err))
-			allIsWell = false
-		}
-		if err := iter.Close(); err != nil {
-			local.logger.Warn("close duplicate db iter failed", zap.Error(err))
-			allIsWell = false
-		}
-		if err := local.duplicateDB.Close(); err != nil {
-			local.logger.Warn("close duplicate db failed", zap.Error(err))
-			allIsWell = false
-		}
-		// If checkpoint is disabled, or we don't detect any duplicate, then this duplicate
-		// db dir will be useless, so we clean up this dir.
-		if allIsWell && (!local.CheckpointEnabled || !hasDuplicates) {
-			if err := os.RemoveAll(filepath.Join(local.LocalStoreDir, duplicateDBName)); err != nil {
-				local.logger.Warn("remove duplicate db file failed", zap.Error(err))
-			}
-		}
+		CloseDuplicateDB(local.duplicateDB, local.CheckpointEnabled, local.LocalStoreDir, local.logger)
 		local.duplicateDB = nil
 	}
 
@@ -785,6 +764,35 @@ func (local *Backend) Close() {
 	}
 	_ = local.tikvCli.Close()
 	local.pdCtl.Close()
+}
+
+// CloseDuplicateDB closes the duplicate db.
+func CloseDuplicateDB(duplicateDB *pebble.DB, checkpointEnabled bool, localStoreDir string, logger log.Logger) {
+	if duplicateDB != nil {
+		// Check if there are duplicates that are not collected.
+		iter := duplicateDB.NewIter(&pebble.IterOptions{})
+		hasDuplicates := iter.First()
+		allIsWell := true
+		if err := iter.Error(); err != nil {
+			logger.Warn("iterate duplicate db failed", zap.Error(err))
+			allIsWell = false
+		}
+		if err := iter.Close(); err != nil {
+			logger.Warn("close duplicate db iter failed", zap.Error(err))
+			allIsWell = false
+		}
+		if err := duplicateDB.Close(); err != nil {
+			logger.Warn("close duplicate db failed", zap.Error(err))
+			allIsWell = false
+		}
+		// If checkpoint is disabled, or we don't detect any duplicate, then this duplicate
+		// db dir will be useless, so we clean up this dir.
+		if allIsWell && (checkpointEnabled || !hasDuplicates) {
+			if err := os.RemoveAll(filepath.Join(localStoreDir, duplicateDBName)); err != nil {
+				logger.Warn("remove duplicate db file failed", zap.Error(err))
+			}
+		}
+	}
 }
 
 // FlushEngine ensure the written data is saved successfully, to make sure no data lose after restart
@@ -1649,16 +1657,7 @@ func (local *Backend) CleanupEngine(ctx context.Context, engineUUID uuid.UUID) e
 
 // GetDupeController returns a new dupe controller.
 func (local *Backend) GetDupeController(dupeConcurrency int, errorMgr *errormanager.ErrorManager) *DupeController {
-	return &DupeController{
-		splitCli:            local.splitCli,
-		tikvCli:             local.tikvCli,
-		tikvCodec:           local.tikvCodec,
-		errorMgr:            errorMgr,
-		dupeConcurrency:     dupeConcurrency,
-		duplicateDB:         local.duplicateDB,
-		keyAdapter:          local.keyAdapter,
-		importClientFactory: local.importClientFactory,
-	}
+	return NewDupeController(dupeConcurrency, errorMgr, nil, local.tikvCli, local.tikvCodec, local.duplicateDB, local.keyAdapter, nil, false)
 }
 
 // UnsafeImportAndReset forces the backend to import the content of an engine
