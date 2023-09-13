@@ -1,11 +1,10 @@
 name: TiDB-UT
 
 on:
-  issue_comment:
-    types: [created]
-#  pull_request:
-#    branches: [ "release-7.1-keyspace" ]
-    
+  pull_request:
+    branches: [ "release-7.1-keyspace" ]
+    types: [ opened, synchronize, reopened, labeled ]
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -13,7 +12,7 @@ concurrency:
 jobs:
   TiDB-Test-Part1:
     runs-on: self-hosted
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/ut')
+    if: contains(github.event.pull_request.labels.*.name, 'run-ut')
     env:
       GITHUB_TOKEN: ${{ secrets.GIT_ACTION_BOT }}
       GOPRIVATE: github.com/tidbcloud
@@ -41,7 +40,7 @@ jobs:
 
   TiDB-Test-Part2:
     runs-on: self-hosted
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/ut')
+    if: contains(github.event.pull_request.labels.*.name, 'run-ut')
     env:
       GITHUB_TOKEN: ${{ secrets.GIT_ACTION_BOT }}
       GOPRIVATE: github.com/tidbcloud
@@ -68,7 +67,7 @@ jobs:
 
   TiDB-Unit-Test:
     runs-on: self-hosted
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '/ut')
+    if: contains(github.event.pull_request.labels.*.name, 'run-ut')
     strategy:
       max-parallel: 4
       fail-fast: false
