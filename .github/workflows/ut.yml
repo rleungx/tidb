@@ -1,10 +1,10 @@
 name: TiDB-UT
 
 on:
-#  issue_comment:
-#    types: [created]
-  pull_request:
-    branches: [ "release-7.1-keyspace" ]
+  issue_comment:
+    types: [created]
+#  pull_request:
+#    branches: [ "release-7.1-keyspace" ]
     
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -13,7 +13,7 @@ concurrency:
 jobs:
   TiDB-Test-Part1:
     runs-on: self-hosted
-#    if: github.event.issue.pull_request && contains(github.event.comment.body, '/ut')
+    if: github.event.issue.pull_request && contains(github.event.comment.body, '/ut')
     env:
       GITHUB_TOKEN: ${{ secrets.GIT_ACTION_BOT }}
       GOPRIVATE: github.com/tidbcloud
@@ -41,7 +41,7 @@ jobs:
 
   TiDB-Test-Part2:
     runs-on: self-hosted
-#    if: github.event.issue.pull_request && contains(github.event.comment.body, '/ut')
+    if: github.event.issue.pull_request && contains(github.event.comment.body, '/ut')
     env:
       GITHUB_TOKEN: ${{ secrets.GIT_ACTION_BOT }}
       GOPRIVATE: github.com/tidbcloud
@@ -68,12 +68,12 @@ jobs:
 
   TiDB-Unit-Test:
     runs-on: self-hosted
-#    if: github.event.issue.pull_request && contains(github.event.comment.body, '/ut')
+    if: github.event.issue.pull_request && contains(github.event.comment.body, '/ut')
     strategy:
-      max-parallel: 16
+      max-parallel: 4
       fail-fast: false
       matrix:
-        worker_id: [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32 ]
+        worker_id: [ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 ]
     steps:
       - name: checkout code
         uses: actions/checkout@v3
@@ -94,7 +94,7 @@ jobs:
       - name: make ut-test
         env:
           WORKER_ID: ${{ matrix.worker_id }}
-          WORKER_COUNT: 32
+          WORKER_COUNT: 16
           TZ: Asia/Shanghai
         run: |
           make ci-test-job JOB_COUNT=$(($WORKER_COUNT)) JOB_INDEX=$WORKER_ID
