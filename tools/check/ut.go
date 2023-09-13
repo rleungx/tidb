@@ -792,7 +792,10 @@ func (n *numa) runTestCase(pkg string, fn string) testResult {
 			if _, ok := err.(*exec.ExitError); ok {
 				// Retry 3 times to get rid of the weird error:
 				fmt.Printf("retry %d times for %s: %s\nerror: %s\n", i, pkg, fn, err.Error())
-				buf.Reset()
+				// Only printout error information on last retry.
+				if i != 2 {
+					buf.Reset()
+				}
 				continue
 			}
 		}
