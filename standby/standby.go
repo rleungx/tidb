@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/pingcap/tidb/util/signal"
 	"go.uber.org/zap"
 )
 
@@ -87,7 +88,7 @@ func Handler() *http.ServeMux {
 		case <-r.Context().Done(): // client closed connection.
 			go func() {
 				EndStandby(errors.New("client closed connection"))
-				os.Exit(1)
+				signal.TiDBExit()
 			}()
 		case <-timeout: // reach hardlimit timeout from config.
 			logutil.BgLogger().Warn("timeout waiting for activation")
@@ -95,7 +96,7 @@ func Handler() *http.ServeMux {
 			w.Write([]byte("timeout waiting for activation"))
 			go func() {
 				EndStandby(errors.New("timeout waiting for activation"))
-				os.Exit(1)
+				signal.TiDBExit()
 			}()
 		case <-serverStartCh:
 			if startServerErr != nil {
@@ -107,8 +108,11 @@ func Handler() *http.ServeMux {
 		}
 	})
 	mux.HandleFunc("/tidb-pool/exit", func(w http.ResponseWriter, r *http.Request) {
-		logutil.BgLogger().Info("receiving exit signal, exiting...")
-		os.Exit(0)
+		logutil.BgLogger().Info("receiving exit signal, exit after 2s...")
+		w.WriteHeader(http.StatusOK)
+		go func() {
+			signal.TiDBExit()
+		}()
 	})
 	return mux
 }
