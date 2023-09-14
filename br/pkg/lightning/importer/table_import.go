@@ -1214,6 +1214,11 @@ func (tr *TableImporter) compareChecksum(remoteChecksum *local.RemoteChecksum, l
 }
 
 func (tr *TableImporter) analyzeTable(ctx context.Context, db *sql.DB) error {
+	// Add a timeout to implement async analyze.
+	// If the timeout is reached, the analyze will continue in the background.
+	ctx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
 	task := tr.logger.Begin(zap.InfoLevel, "analyze")
 	exec := common.SQLWithRetry{
 		DB:     db,

@@ -266,11 +266,10 @@ func (b *Backend) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, eng
 	}
 	ts := oracle.ComposeTS(physical, logical)
 	e, _ := b.engines.LoadOrStore(engineUUID, &engine{
-		tbl:              cfg.TableInfo,
-		addr:             b.workerAddr,
-		clusterID:        b.pdCtl.GetPDClient().GetClusterID(ctx),
-		ts:               ts,
-		reportWriteBytes: b.reportWriteBytes,
+		tbl:       cfg.TableInfo,
+		addr:      b.workerAddr,
+		clusterID: b.pdCtl.GetPDClient().GetClusterID(ctx),
+		ts:        ts,
 	})
 	engine := e.(*engine)
 	if engine.ts == ts {
@@ -338,11 +337,19 @@ func (b *Backend) ImportEngine(ctx context.Context, engineUUID uuid.UUID, region
 						return err
 					}
 				}
-				b.logger.Info("loadData finished", zap.Uint64("start_ts", engine.ts))
+				writeBytes := engine.writeBytes.Load()
+				b.reportWriteBytes(writeBytes)
+				b.logger.Info("loadData finished",
+					zap.String("db", engine.tbl.DB),
+					zap.String("table", engine.tbl.Name),
+					zap.Uint64("start_ts", engine.ts),
+					zap.Int64("write_bytes", writeBytes))
 				return nil
 			} else {
 				b.logger.Info(
 					"loadData states",
+					zap.String("db", engine.tbl.DB),
+					zap.String("table", engine.tbl.Name),
 					zap.Uint64("start_ts", engine.ts),
 					zap.Int("created_files", states.CreatedFiles),
 					zap.Int("ingested_regions", states.IngestedRegions))
@@ -543,12 +550,12 @@ func (b *Backend) getEngine(engineUUID uuid.UUID) (*engine, error) {
 }
 
 type engine struct {
-	ts               uint64
-	tbl              *checkpoints.TidbTableInfo
-	addr             string
-	clusterID        uint64
-	chunkID          atomic.Uint64
-	reportWriteBytes func(int64)
+	ts         uint64
+	tbl        *checkpoints.TidbTableInfo
+	addr       string
+	clusterID  uint64
+	chunkID    atomic.Uint64
+	writeBytes atomic.Int64
 }
 
 func (e *engine) allocChunkID() uint64 {
@@ -598,7 +605,7 @@ func (w *client) addChunk(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	w.e.reportWriteBytes(int64(len(w.buf)))
+	w.e.writeBytes.Add(int64(len(w.buf)))
 	w.buf = w.buf[:0]
 	return nil
 }
