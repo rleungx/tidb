@@ -361,12 +361,12 @@ type Config struct {
 	GCV1BlackList []uint32 `toml:"gc-v1-black-list" json:"gc-v1-black-list"`
 	// BootstrapControl is used to control serverless bootstrap procedure.
 	BootstrapControl BootstrapControl `toml:"bootstrap-control" json:"bootstrap-control"`
-
 	// CSE is the config collection for the cloud storage engine.
 	CSE CSE `toml:"cse" json:"cse"`
-
 	// TiFlashReplicas is used to control the format of TiFlash placement rules committed to PD.
 	TiFlashReplicas TiFlashReplicas `toml:"tiflash-replicas" json:"tiflash-replicas"`
+	// Rewrite collations for certain keyspaces
+	RewriteCollations map[string]map[string]string `toml:"rewrite-collations" json:"rewrite-collations"`
 }
 
 // CSE is the config collection for the cloud storage engine.
@@ -1170,6 +1170,7 @@ var defaultConf = Config{
 		GroupID:     defTiFlashRuleGroupID,
 		ExtraS3Rule: false,
 	},
+	RewriteCollations: make(map[string]map[string]string),
 }
 
 var (
