@@ -274,6 +274,9 @@ const (
 
 	// TiDBUseAlloc indicates whether the last statement used chunk alloc
 	TiDBUseAlloc = "last_sql_use_alloc"
+
+	// TiDBEnableRemoteCoprocessor indicates whether to enable remote coprocessor.
+	TiDBEnableRemoteCoprocessor = "tidb_enable_remote_coprocessor"
 )
 
 // TiDB system variable names that both in session and global scope.
@@ -1343,6 +1346,7 @@ const (
 	DefRuntimeFilterType                              = "IN"
 	DefRuntimeFilterMode                              = "OFF"
 	DefTiDBLockUnchangedKeys                          = true
+	DefTiDBEnableRemoteCoprocessor                    = false
 )
 
 // Process global variables.
