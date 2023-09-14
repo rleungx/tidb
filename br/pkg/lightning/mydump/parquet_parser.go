@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	batchReadRowSize = 32
+	batchReadRowSize = 1
 
 	// if a parquet if small than this threshold, parquet will load the whole file in a byte slice to
 	// optimize the read performance
@@ -49,6 +49,7 @@ type ParquetParser struct {
 	logger      log.Logger
 
 	readSeekCloser ReadSeekCloser
+	ctx            context.Context
 }
 
 // readerWrapper is a used for implement `source.ParquetFile`
@@ -399,9 +400,19 @@ func (pp *ParquetParser) ReadRow() error {
 		}
 
 		var err error
-		pp.rows, err = pp.Reader.ReadByNumber(count)
-		if err != nil {
-			return errors.Trace(err)
+		for {
+			select {
+			case <-pp.ctx.Done():
+				return errors.Trace(pp.ctx.Err())
+			default:
+				pp.rows, err = pp.Reader.ReadByNumber(count)
+				if err != nil {
+					return errors.Trace(err)
+				}
+			}
+			if len(pp.rows) > 0 {
+				break
+			}
 		}
 		pp.curStart = pp.readRows
 		pp.readRows += int64(len(pp.rows))
