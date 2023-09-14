@@ -246,6 +246,7 @@ func main() {
 				KeyPath:  cfg.Security.ClusterSSLKey,
 			},
 				pd.WithCustomTimeoutOption(time.Duration(cfg.PDClient.PDServerTimeout)*time.Second),
+				pd.WithInitMetricsOption(false),
 			)
 			mainErrHandler(err)
 			keyspaceMeta, err = pdCli.LoadKeyspace(context.TODO(), activateRequest.KeyspaceName)

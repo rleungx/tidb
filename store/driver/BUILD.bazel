@@ -11,6 +11,7 @@ go_library(
         "//executor/importer",
         "//keyspace",
         "//kv",
+        "//metrics",
         "//sessionctx/variable",
         "//store/copr",
         "//store/driver/error",

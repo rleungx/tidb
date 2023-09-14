@@ -34,6 +34,11 @@ func SetConstLabels(kv ...string) {
 	}
 }
 
+// GetConstLabels returns the constant labels.
+func GetConstLabels() prometheus.Labels {
+	return constLabels
+}
+
 // NewCounter wraps a prometheus.NewCounter.
 func NewCounter(opts prometheus.CounterOpts) prometheus.Counter {
 	opts.ConstLabels = constLabels
