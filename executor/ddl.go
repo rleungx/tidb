@@ -39,6 +39,7 @@ import (
 	"github.com/pingcap/tidb/util/dbterror"
 	"github.com/pingcap/tidb/util/dbterror/exeerrors"
 	"github.com/pingcap/tidb/util/gcutil"
+	"github.com/pingcap/tidb/util/intest"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
@@ -538,11 +539,14 @@ func (e *DDLExec) getRecoverTableByTableName(tableName *ast.TableName) (*model.J
 }
 
 func (e *DDLExec) executeFlashBackCluster(s *ast.FlashBackToTimestampStmt) error {
+	// Only allow flashback cluster in test.
+	if !intest.InTest {
+		return dbterror.ErrNotSupportedOnServerless.GenWithStackByCause("FLASHBACK CLUSTER")
+	}
 	flashbackTS, err := staleread.CalculateAsOfTsExpr(e.ctx, s.FlashbackTS)
 	if err != nil {
 		return err
 	}
-
 	return domain.GetDomain(e.ctx).DDL().FlashbackCluster(e.ctx, flashbackTS)
 }
 
