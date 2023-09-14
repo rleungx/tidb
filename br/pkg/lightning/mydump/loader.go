@@ -87,7 +87,7 @@ type SourceFileMeta struct {
 	Compression Compression
 	SortKey     string
 	FileSize    int64
-	// WARNING: variables below are not persistent
+	// WARNING: variables below are not persistent.
 	ExtendData ExtendColumnData
 	RealSize   int64
 	Rows       int64 // only for parquet

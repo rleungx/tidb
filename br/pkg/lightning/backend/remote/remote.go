@@ -44,6 +44,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/errormanager"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
 	"github.com/pingcap/tidb/br/pkg/lightning/metric"
+	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
 	"github.com/pingcap/tidb/br/pkg/pdutil"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/store/pdtypes"
@@ -273,8 +274,9 @@ func (b *Backend) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, eng
 	})
 	engine := e.(*engine)
 	if engine.ts == ts {
+		dataSize := b.estimateDataSize(cfg.TableMeta, cfg.TableInfo, cfg.IsIndexEngine)
 		// newly created engine.
-		err = b.loadDataInit(engine.clusterID, engine.ts)
+		err = b.loadDataInit(engine, dataSize)
 		if err != nil {
 			b.engines.Delete(engineUUID)
 			return err
@@ -283,22 +285,37 @@ func (b *Backend) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, eng
 	return nil
 }
 
-func (b *Backend) loadDataInit(clusterID, ts uint64) error {
-	url := fmt.Sprintf(
-		"%s/load_data?cluster_id=%d&start_ts=%d&commit_ts=%d",
-		b.workerAddr,
-		clusterID,
-		ts,
-		ts+1)
-	resp, err := http.Post(url, "application/json", nil)
-	if err != nil {
-		return err
+func (b *Backend) loadDataInit(engine *engine, dataSize int64) error {
+	for {
+		url := fmt.Sprintf(
+			"%s/load_data?cluster_id=%d&start_ts=%d&commit_ts=%d&data_size=%d",
+			engine.addr,
+			engine.clusterID,
+			engine.ts,
+			engine.ts+1,
+			dataSize,
+		)
+		client := &http.Client{
+			// disable redirect, we will handle redirect manually.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		resp, err := client.Post(url, "application/json", nil)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode == http.StatusFound {
+			engine.addr = strings.TrimSuffix(resp.Header.Get("Location"), "/load_data")
+			b.logger.Info("redirect to load_data worker", zap.String("worker addr", engine.addr))
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			msg, _ := io.ReadAll(resp.Body)
+			return errors.Errorf("failed to open engine %s, msg: %s", resp.Status, string(msg))
+		}
+		return nil
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("failed to open engine %s", resp.Status)
-	}
-	return nil
 }
 
 // CloseEngine closes backend engine by uuid.
@@ -432,7 +449,7 @@ func sendRequest(ctx context.Context, method, url string, body io.Reader) ([]byt
 func (b *Backend) loadDataBuild(ctx context.Context, engine *engine, splitSize, splitKeys int64) error {
 	maxChunkID := engine.chunkID.Load()
 	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d&build=true&compression=zstd&split_size=%d&split_keys=%d",
-		b.workerAddr, engine.clusterID, engine.ts, splitSize, splitKeys)
+		engine.addr, engine.clusterID, engine.ts, splitSize, splitKeys)
 	chunkIDs := make([]uint64, 0, maxChunkID)
 	for i := uint64(1); i <= maxChunkID; i++ {
 		chunkIDs = append(chunkIDs, i)
@@ -707,4 +724,29 @@ func (b *Backend) setupReportWRU(ctx context.Context, keyspaceID uint32, keyspac
 // GetDupeController returns a new dupe controller.
 func (b *Backend) GetDupeController(dupeConcurrency int, errorMgr *errormanager.ErrorManager) *local.DupeController {
 	return local.NewDupeController(dupeConcurrency, errorMgr, nil, b.tikvCli, b.tikvCodec, b.duplicateDB, b.keyAdapter, nil, false)
+}
+
+func (b *Backend) estimateDataSize(tblMeta *mydump.MDTableMeta, tblInfo *checkpoints.TidbTableInfo, isIndexEngine bool) int64 {
+	if tblMeta == nil || tblInfo == nil {
+		// if we can't get table meta or table info, we can't estimate data size.
+		return 0
+	}
+	if isIndexEngine && len(tblInfo.Core.Indices) == 0 {
+		return 0
+	}
+
+	totalSize := int64(0)
+	for _, dataFile := range tblMeta.DataFiles {
+		totalSize += dataFile.FileMeta.RealSize
+	}
+	if tblMeta.IndexRatio > 1 {
+		totalSize = int64(float64(totalSize) * tblMeta.IndexRatio)
+	}
+	b.logger.Info("estimate data size",
+		zap.Int64("estimatedDataSize", totalSize),
+		zap.String("db", tblInfo.DB),
+		zap.String("table", tblInfo.Name),
+		zap.Bool("IsIndexEngine", isIndexEngine),
+	)
+	return totalSize
 }

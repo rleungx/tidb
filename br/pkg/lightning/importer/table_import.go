@@ -361,7 +361,9 @@ func (tr *TableImporter) importEngines(pCtx context.Context, rc *Controller, cp 
 
 	handleDataEngineThisRun := false
 	idxEngineCfg := &backend.EngineConfig{
-		TableInfo: tr.tableInfo,
+		TableInfo:     tr.tableInfo,
+		TableMeta:     tr.tableMeta,
+		IsIndexEngine: true,
 	}
 	if indexEngineCp.Status < checkpoints.CheckpointStatusClosed {
 		handleDataEngineThisRun = true
@@ -549,7 +551,9 @@ func (tr *TableImporter) preprocessEngine(
 	// all data has finished written, we can close the engine directly.
 	if cp.Status >= checkpoints.CheckpointStatusAllWritten {
 		engineCfg := &backend.EngineConfig{
-			TableInfo: tr.tableInfo,
+			TableInfo:     tr.tableInfo,
+			TableMeta:     tr.tableMeta,
+			IsIndexEngine: false,
 		}
 		closedEngine, err := rc.engineMgr.UnsafeCloseEngine(ctx, engineCfg, tr.tableName, engineID)
 		// If any error occurred, recycle worker immediately
@@ -581,7 +585,9 @@ func (tr *TableImporter) preprocessEngine(
 
 	logTask := tr.logger.With(zap.Int32("engineNumber", engineID)).Begin(zap.InfoLevel, "encode kv data and write")
 	dataEngineCfg := &backend.EngineConfig{
-		TableInfo: tr.tableInfo,
+		TableInfo:     tr.tableInfo,
+		TableMeta:     tr.tableMeta,
+		IsIndexEngine: false,
 	}
 	if !tr.tableMeta.IsRowOrdered {
 		dataEngineCfg.Local.Compact = true
