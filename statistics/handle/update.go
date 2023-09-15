@@ -27,7 +27,6 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/infoschema"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/metrics"
@@ -1474,12 +1473,8 @@ func (h *Handle) RecalculateExpectCount(q *statistics.QueryFeedback, enablePseud
 	}
 	sctx := se.(sessionctx.Context)
 	timeZone := sctx.GetSessionVars().StmtCtx.TimeZone
-	if config.DefaultResourceGroup != "" {
-		sctx.GetSessionVars().ResourceGroupName = config.DefaultResourceGroup
-	}
 	defer func() {
 		sctx.GetSessionVars().StmtCtx.TimeZone = timeZone
-		sctx.GetSessionVars().ResourceGroupName = ""
 		h.pool.Put(se)
 	}()
 	sctx.GetSessionVars().StmtCtx.TimeZone = time.UTC
@@ -1579,12 +1574,8 @@ func (h *Handle) DumpFeedbackForIndex(q *statistics.QueryFeedback, t *statistics
 	sctx := se.(sessionctx.Context)
 	sc := sctx.GetSessionVars().StmtCtx
 	timeZone := sc.TimeZone
-	if config.DefaultResourceGroup != "" {
-		sctx.GetSessionVars().ResourceGroupName = config.DefaultResourceGroup
-	}
 	defer func() {
 		sctx.GetSessionVars().StmtCtx.TimeZone = timeZone
-		sctx.GetSessionVars().ResourceGroupName = ""
 		h.pool.Put(se)
 	}()
 	sc.TimeZone = time.UTC

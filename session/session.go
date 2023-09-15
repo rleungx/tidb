@@ -2701,9 +2701,6 @@ func (s *session) Auth(user *auth.UserIdentity, authentication, salt []byte, aut
 	} else {
 		s.sessionVars.ResourceGroupName = ""
 	}
-	if config.DefaultResourceGroup != "" {
-		s.sessionVars.ResourceGroupName = config.DefaultResourceGroup
-	}
 
 	if info.InSandBoxMode {
 		// Enter sandbox mode, only execute statement for resetting password.

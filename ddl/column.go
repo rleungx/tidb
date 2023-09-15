@@ -1465,9 +1465,6 @@ func (w *updateColumnWorker) BackfillData(handleRange reorgBackfillTask) (taskCt
 		if tagger := w.GetCtx().getResourceGroupTaggerForTopSQL(handleRange.getJobID()); tagger != nil {
 			txn.SetOption(kv.ResourceGroupTagger, tagger)
 		}
-		if config.DefaultResourceGroup != "" {
-			txn.SetOption(kv.ResourceGroupName, config.DefaultResourceGroup)
-		}
 
 		rowRecords, nextKey, taskDone, err := w.fetchRowColVals(txn, handleRange)
 		if err != nil {

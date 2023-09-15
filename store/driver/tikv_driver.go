@@ -418,6 +418,7 @@ func (s *tikvStore) Begin(opts ...tikv.TxnOption) (kv.Transaction, error) {
 	if err != nil {
 		return nil, derr.ToTiDBErr(err)
 	}
+	txn.SetResourceGroupName(tidb_config.DefaultResourceGroup)
 	tx := txn_driver.NewTiKVTxn(txn)
 	return tx, nil
 }
@@ -426,6 +427,7 @@ func (s *tikvStore) Begin(opts ...tikv.TxnOption) (kv.Transaction, error) {
 // if ver is MaxVersion or > current max committed version, we will use current version for this snapshot.
 func (s *tikvStore) GetSnapshot(ver kv.Version) kv.Snapshot {
 	snap := s.KVStore.GetSnapshot(ver.Ver)
+	snap.SetResourceGroupName(tidb_config.DefaultResourceGroup)
 	return txn_driver.NewSnapshot(snap)
 }
 
