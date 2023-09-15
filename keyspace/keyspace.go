@@ -15,6 +15,7 @@
 package keyspace
 
 import (
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -137,4 +138,13 @@ func MakeKeyspaceEtcdNamespaceSlash(c tikv.Codec) string {
 		return ""
 	}
 	return fmt.Sprintf(tidbKeyspaceEtcdPathPrefix+"%d/", c.GetKeyspaceID())
+}
+
+// NewEtcdSafePointKV is used to add prefix when set keyspace.
+func NewEtcdSafePointKV(etcdAddrs []string, codec tikv.Codec, tlsConfig *tls.Config) (*tikv.EtcdSafePointKV, error) {
+	var etcdNameSpace string
+	if config.GetGlobalConfig().EnableSafePointV2 {
+		etcdNameSpace = MakeKeyspaceEtcdNamespace(codec)
+	}
+	return tikv.NewEtcdSafePointKV(etcdAddrs, tlsConfig, tikv.WithPrefix(etcdNameSpace))
 }

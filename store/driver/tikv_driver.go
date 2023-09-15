@@ -264,9 +264,7 @@ func (d TiKVDriver) OpenWithOptions(path string, options ...Option) (resStore kv
 		tikv.WithCodec(codec),
 	)
 
-	etcdNameSpace := keyspace.MakeKeyspaceEtcdNamespace(codec)
-	var opts = tikv.WithPrefix(etcdNameSpace)
-	spkv, err = tikv.NewEtcdSafePointKV(etcdAddrs, tlsConfig, opts)
+	spkv, err = keyspace.NewEtcdSafePointKV(etcdAddrs, codec, tlsConfig)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}

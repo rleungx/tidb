@@ -46,6 +46,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/metric"
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
 	"github.com/pingcap/tidb/br/pkg/pdutil"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/store/pdtypes"
 	"github.com/tikv/client-go/v2/oracle"
@@ -158,7 +159,7 @@ func NewRemoteBackend(
 	}
 
 	tikvCodec := pdCliForTiKV.GetCodec()
-	spkv, err := tikvclient.NewEtcdSafePointKV(strings.Split(cfg.TiDB.PdAddr, ","), tls.TLSConfig())
+	spkv, err := keyspace.NewEtcdSafePointKV(strings.Split(cfg.TiDB.PdAddr, ","), tikvCodec, tls.TLSConfig())
 	if err != nil {
 		return nil, common.ErrCreateKVClient.Wrap(err).GenWithStackByArgs()
 	}

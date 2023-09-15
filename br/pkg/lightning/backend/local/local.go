@@ -51,6 +51,7 @@ import (
 	"github.com/pingcap/tidb/br/pkg/restore/split"
 	"github.com/pingcap/tidb/br/pkg/version"
 	"github.com/pingcap/tidb/infoschema"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/store/pdtypes"
 	"github.com/pingcap/tidb/tablecodec"
@@ -540,12 +541,6 @@ func NewBackend(
 		}
 	}
 
-	// The following copies tikv.NewTxnClient without creating yet another pdClient.
-	spkv, err := tikvclient.NewEtcdSafePointKV(strings.Split(config.PDAddr, ","), tls.TLSConfig())
-	if err != nil {
-		return nil, common.ErrCreateKVClient.Wrap(err).GenWithStackByArgs()
-	}
-
 	var pdCliForTiKV *tikvclient.CodecPDClient
 	if config.KeyspaceName == "" {
 		pdCliForTiKV = tikvclient.NewCodecPDClient(tikvclient.ModeTxn, pdCtl.GetPDClient())
@@ -554,6 +549,12 @@ func NewBackend(
 		if err != nil {
 			return nil, common.ErrCreatePDClient.Wrap(err).GenWithStackByArgs()
 		}
+	}
+
+	// The following copies tikv.NewTxnClient without creating yet another pdClient.
+	spkv, err := keyspace.NewEtcdSafePointKV(strings.Split(config.PDAddr, ","), pdCliForTiKV.GetCodec(), tls.TLSConfig())
+	if err != nil {
+		return nil, common.ErrCreateKVClient.Wrap(err).GenWithStackByArgs()
 	}
 
 	tikvCodec := pdCliForTiKV.GetCodec()

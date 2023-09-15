@@ -19,6 +19,7 @@ go_library(
         "//br/pkg/lightning/metric",
         "//br/pkg/lightning/mydump",
         "//br/pkg/pdutil",
+        "//keyspace",
         "//parser/model",
         "//store/pdtypes",
         "@com_github_cockroachdb_pebble//:pebble",
