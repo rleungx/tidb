@@ -1735,6 +1735,9 @@ func (w *addIndexTxnWorker) BackfillData(handleRange reorgBackfillTask) (taskCtx
 		if tagger := w.GetCtx().getResourceGroupTaggerForTopSQL(jobID); tagger != nil {
 			txn.SetOption(kv.ResourceGroupTagger, tagger)
 		}
+		if config.DefaultResourceGroup != "" {
+			txn.SetOption(kv.ResourceGroupName, config.DefaultResourceGroup)
+		}
 
 		idxRecords, nextKey, taskDone, err := w.fetchRowColVals(txn, handleRange)
 		if err != nil {
@@ -2114,6 +2117,9 @@ func (w *cleanUpIndexWorker) BackfillData(handleRange reorgBackfillTask) (taskCt
 		txn.SetOption(kv.Priority, handleRange.priority)
 		if tagger := w.GetCtx().getResourceGroupTaggerForTopSQL(handleRange.getJobID()); tagger != nil {
 			txn.SetOption(kv.ResourceGroupTagger, tagger)
+		}
+		if config.DefaultResourceGroup != "" {
+			txn.SetOption(kv.ResourceGroupName, config.DefaultResourceGroup)
 		}
 
 		idxRecords, nextKey, taskDone, err := w.fetchRowColVals(txn, handleRange)
