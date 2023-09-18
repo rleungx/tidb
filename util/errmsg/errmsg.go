@@ -34,7 +34,6 @@ const (
 	errServerlessNotSupport
 	errInvisibleTable
 	errInvisibleSysVar
-	errRatelimit
 	errMinTiFlashReplica
 	errReadOnlySysVar
 )
@@ -63,8 +62,6 @@ func (e errTag) errTagName() string {
 		return "invisible-table-error"
 	case errInvisibleSysVar:
 		return "invisible-sysvar-error"
-	case errRatelimit:
-		return "ratelimit-error"
 	case errMinTiFlashReplica:
 		return "min-tiflash-replica-error"
 	case errReadOnlySysVar:
@@ -75,7 +72,11 @@ func (e errTag) errTagName() string {
 }
 
 func withErrTag(err error, tag errTag) error {
-	return errors.WithMessagef(err, "WithErrTag:%d", tag)
+	eems := config.GetGlobalConfig().ExtendedErrorMsgs
+	if _, ok := eems[tag.errTagName()]; ok {
+		return errors.WithMessagef(err, "WithErrTag:%d", tag)
+	}
+	return err
 }
 
 // WithUserPrefixErrTag is used to add a tag to the user prefix error.
@@ -111,11 +112,6 @@ func WithInvisibleTableErrTag(err error) error {
 // WithInvisibleSysVarErrTag is used to add a tag to the invisible sysvar error.
 func WithInvisibleSysVarErrTag(err error) error {
 	return withErrTag(err, errInvisibleSysVar)
-}
-
-// WithRatelimitErrTag is used to add a tag to the ratelimit error.
-func WithRatelimitErrTag(err error) error {
-	return withErrTag(err, errRatelimit)
 }
 
 // WithMinTiFlashReplicaErrTag is used to add a tag to the min tiflash replica error.

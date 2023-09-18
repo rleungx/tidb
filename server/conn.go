@@ -89,6 +89,7 @@ import (
 	"github.com/pingcap/tidb/util/arena"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/dbterror/exeerrors"
+	"github.com/pingcap/tidb/util/errmsg"
 	"github.com/pingcap/tidb/util/execdetails"
 	"github.com/pingcap/tidb/util/hack"
 	"github.com/pingcap/tidb/util/logutil"
@@ -1580,6 +1581,7 @@ func (cc *clientConn) writeError(ctx context.Context, e error) error {
 			m = mysql.NewErrf(mysql.ErrUnknown, "%s", nil, e.Error())
 		}
 	}
+	errmsg.ExtendErrorMessage(e, m)
 
 	cc.lastCode = m.Code
 	defer errno.IncrementError(m.Code, cc.user, cc.peerHost)

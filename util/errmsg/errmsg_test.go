@@ -34,6 +34,21 @@ type testError struct {
 
 // TestErrTag tests that the error tag is added to the error message correctly.
 func TestErrTag(t *testing.T) {
+	originCfg := config.GetGlobalConfig()
+	newCfg := *originCfg
+	newCfg.ExtendedErrorMsgs = map[string]string{
+		"user-prefix-error":              "extend user prefix error message",
+		"require-secure-transport-error": "extend require secure transport error message",
+		"resource-unit-error":            "extend resource unit error message",
+		"serverless-not-support-error":   "extend serverless not support error message",
+		"invisible-table-error":          "extend invisible table error message",
+		"invisible-sysvar-error":         "extend invisible sysvar error message",
+	}
+	config.StoreGlobalConfig(&newCfg)
+	defer func() {
+		config.StoreGlobalConfig(originCfg)
+	}()
+
 	testErrs := make([]testError, 0, 20)
 
 	for i := 0; i < 20; i++ {
@@ -88,7 +103,6 @@ func TestExtendErrorMessage(t *testing.T) {
 	newCfg := *originCfg
 	newCfg.ExtendedErrorMsgs = map[string]string{
 		"user-prefix-error":              "extend user prefix error message",
-		"ratelimit-error":                "extend ratelimit error message",
 		"require-secure-transport-error": "extend require secure transport error message",
 		"resource-unit-error":            "extend resource unit error message",
 		"serverless-not-support-error":   "extend serverless not support error message",

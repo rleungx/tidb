@@ -66,6 +66,7 @@ import (
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/collate"
 	"github.com/pingcap/tidb/util/dbterror/exeerrors"
+	"github.com/pingcap/tidb/util/errmsg"
 	"github.com/pingcap/tidb/util/etcd"
 	"github.com/pingcap/tidb/util/format"
 	"github.com/pingcap/tidb/util/hack"
@@ -651,7 +652,7 @@ func (e *ShowExec) fetchShowColumns(ctx context.Context) error {
 	checker := privilege.GetPrivilegeManager(e.ctx)
 	activeRoles := e.ctx.GetSessionVars().ActiveRoles
 	if checker != nil && e.ctx.GetSessionVars().User != nil && !checker.RequestVerification(activeRoles, e.DBName.O, tb.Meta().Name.O, "", mysql.InsertPriv|mysql.SelectPriv|mysql.UpdatePriv|mysql.ReferencesPriv) {
-		return e.tableAccessDenied("SELECT", tb.Meta().Name.O)
+		return errmsg.WithInvisibleTableErrTag(e.tableAccessDenied("SELECT", tb.Meta().Name.O))
 	}
 
 	var cols []*table.Column
@@ -1824,14 +1825,17 @@ func (e *ShowExec) fetchShowWarnings(errOnly bool) error {
 		if errOnly && w.Level != stmtctx.WarnLevelError {
 			continue
 		}
+		var sqlErr *mysql.SQLError
+
 		warn := errors.Cause(w.Err)
 		switch x := warn.(type) {
 		case *terror.Error:
-			sqlErr := terror.ToSQLError(x)
-			e.appendRow([]interface{}{w.Level, int64(sqlErr.Code), sqlErr.Message})
+			sqlErr = terror.ToSQLError(x)
 		default:
-			e.appendRow([]interface{}{w.Level, int64(mysql.ErrUnknown), warn.Error()})
+			sqlErr = mysql.NewErrf(mysql.ErrUnknown, "%s", nil, warn.Error())
 		}
+		errmsg.ExtendErrorMessage(w.Err, sqlErr)
+		e.appendRow([]interface{}{w.Level, int64(sqlErr.Code), sqlErr.Message})
 	}
 	return nil
 }

@@ -40,6 +40,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/types"
+	"github.com/pingcap/tidb/util/errmsg"
 	utilhint "github.com/pingcap/tidb/util/hint"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/mathutil"
@@ -175,7 +176,7 @@ func CheckPrivilege(activeRoles []*auth.RoleIdentity, pm privilege.Manager, vs [
 			if v.err == nil {
 				return ErrPrivilegeCheckFail.GenWithStackByArgs(v.privilege.String())
 			}
-			return v.err
+			return errmsg.WithInvisibleTableErrTag(v.err)
 		}
 	}
 	return nil

@@ -22,6 +22,7 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/terror"
 	"github.com/pingcap/tidb/util/dbterror"
+	"github.com/pingcap/tidb/util/errmsg"
 	tikverr "github.com/tikv/client-go/v2/error"
 	pderr "github.com/tikv/pd/client/errs"
 )
@@ -180,7 +181,7 @@ func ToTiDBErr(err error) error {
 	}
 
 	if stderrs.Is(err, pderr.ErrClientResourceGroupThrottled) {
-		return ErrResourceGroupThrottled
+		return errmsg.WithResourceUnitErrTag(ErrResourceGroupThrottled)
 	}
 
 	return errors.Trace(err)

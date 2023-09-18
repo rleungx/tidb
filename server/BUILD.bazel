@@ -83,6 +83,7 @@ go_library(
         "//util/dbterror",
         "//util/dbterror/exeerrors",
         "//util/deadlockhistory",
+        "//util/errmsg",
         "//util/execdetails",
         "//util/fastrand",
         "//util/gcutil",
