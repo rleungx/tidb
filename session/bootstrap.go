@@ -1073,7 +1073,8 @@ func getTiDBVar(s Session, name string) (sVal string, isNull bool, e error) {
 }
 
 // SupportUpgradeStateVer is exported for testing.
-var SupportUpgradeStateVer = version145
+// TODO: At present, it only supports the way to upgrade from v6.6. Later, we still need to change it to version145.
+var SupportUpgradeStateVer = version134
 
 // upgrade function  will do some upgrade works, when the system is bootstrapped by low version TiDB server
 // For example, add new system variables into mysql.global_variables table.
