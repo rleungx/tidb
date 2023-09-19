@@ -95,6 +95,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/tdakkota/asciicheck v0.2.0
 	github.com/tiancaiamao/appdash v0.0.0-20181126055449-889f96f722a2
+	github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client v0.0.0-20230718101141-fef21b9394c0
 	github.com/tikv/client-go/v2 v2.0.8-0.20230807090021-2ad441f530a3
 	github.com/tikv/pd/client v0.0.0-20230717063645-40eaa35f26e8
 	github.com/timakin/bodyclose v0.0.0-20221125081123-e39cf3fc478e
@@ -139,6 +140,8 @@ require (
 	github.com/elliotchance/pie/v2 v2.1.0 // indirect
 	github.com/goccy/go-reflect v1.2.0 // indirect
 	github.com/google/flatbuffers v2.0.8+incompatible // indirect
+	github.com/jinzhu/inflection v1.0.0 // indirect
+	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
@@ -148,6 +151,8 @@ require (
 	github.com/sony/gobreaker v0.5.0 // indirect
 	github.com/tikv/pd v0.0.0-20230420042919-0e0313adef1f // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
+	gorm.io/driver/mysql v1.5.1 // indirect
+	gorm.io/gorm v1.25.1 // indirect
 )
 
 require (

@@ -126,6 +126,7 @@ go_library(
         "//util/rowDecoder",
         "//util/rowcodec",
         "//util/sem",
+        "//util/serverless/tidbworker",
         "//util/set",
         "//util/slice",
         "//util/sqlexec",

@@ -314,6 +314,8 @@ type Config struct {
 	EnableRULimit              bool `toml:"enable-ru-limit" json:"enable-ru-limit"`
 	EnableAlterUserPessimistic bool `toml:"enable-alter-user-pessimistic" json:"enable-alter-user-pessimistic"`
 
+	TiDBWorker TiDBWorker `toml:"tidb-worker" json:"tidb-worker"`
+
 	// The following items are deprecated. We need to keep them here temporarily
 	// to support the upgrade process. They can be removed in future.
 
@@ -1172,6 +1174,7 @@ var defaultConf = Config{
 		ExtraS3Rule: false,
 	},
 	RewriteCollations: make(map[string]map[string]string),
+	TiDBWorker:        defaultTiDBWorker(),
 }
 
 var (
@@ -1513,6 +1516,11 @@ func (c *Config) Valid() error {
 		if _, ok := allowOps[constraint.Op]; !ok {
 			return fmt.Errorf("invalid tiflash constraint op %s, only supports %v", constraint.Op, allowOps)
 		}
+	}
+
+	// check tidb worker
+	if err := c.TiDBWorker.Valid(c); err != nil {
+		return err
 	}
 
 	// test log level

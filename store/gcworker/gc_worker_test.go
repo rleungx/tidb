@@ -666,8 +666,8 @@ func TestDeleteRangesFailure(t *testing.T) {
 			defer se.Close()
 			_, err := se.Execute(gcContext(), `INSERT INTO mysql.gc_delete_range VALUES
 ("1", "2", "31", "32", "10"),
-("3", "4", "33", "34", "10"),
-("5", "6", "35", "36", "10")`)
+("3", "4", "33", "34", "11"),
+("5", "6", "35", "36", "12")`)
 			require.NoError(t, err)
 
 			ranges := []util.DelRangeTask{
@@ -676,18 +676,21 @@ func TestDeleteRangesFailure(t *testing.T) {
 					ElementID: 2,
 					StartKey:  []byte("1"),
 					EndKey:    []byte("2"),
+					Ts:        10,
 				},
 				{
 					JobID:     3,
 					ElementID: 4,
 					StartKey:  []byte("3"),
 					EndKey:    []byte("4"),
+					Ts:        11,
 				},
 				{
 					JobID:     5,
 					ElementID: 6,
 					StartKey:  []byte("5"),
 					EndKey:    []byte("6"),
+					Ts:        12,
 				},
 			}
 
@@ -837,24 +840,28 @@ func TestUnsafeDestroyRangeForRaftkv2(t *testing.T) {
 			ElementID: 2,
 			StartKey:  []byte("1"),
 			EndKey:    []byte("2"),
+			Ts:        5,
 		},
 		{
 			JobID:     3,
 			ElementID: 4,
 			StartKey:  []byte("3"),
 			EndKey:    []byte("4"),
+			Ts:        10,
 		},
 		{
 			JobID:     5,
 			ElementID: 6,
 			StartKey:  []byte("5"),
 			EndKey:    []byte("6"),
+			Ts:        15,
 		},
 		{
 			JobID:     7,
 			ElementID: 8,
 			StartKey:  []byte("7"),
 			EndKey:    []byte("8"),
+			Ts:        15,
 		},
 	}
 

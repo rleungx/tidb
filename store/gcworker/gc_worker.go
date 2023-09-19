@@ -55,6 +55,7 @@ import (
 	"github.com/pingcap/tidb/util/codec"
 	"github.com/pingcap/tidb/util/dbterror"
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/pingcap/tidb/util/serverless/tidbworker"
 	"github.com/pingcap/tidb/util/sqlexec"
 	tikverr "github.com/tikv/client-go/v2/error"
 	tikvstore "github.com/tikv/client-go/v2/kv"
@@ -917,35 +918,33 @@ func (w *GCWorker) runGCJob(ctx context.Context, safePoint uint64, concurrency i
 	}
 
 	// Handle GCV2 tidb worker after a round of GC.
-	//if config.GetGlobalConfig().EnableSafePointV2 {
-	//	// If current TiDB is the master, it should send a heartbeat to tidb worker service
-	//	// in order to prevent unnecessary activation of the GCV2 tidb worker.
-	//	if tidbworker.IsMaster() {
-	//		gcRunTime := time.Now().Unix()
-	//		err = tidbworker.GlobalTiDBWorkerManager.RegisterGCV2(ctx, gcRunTime, safePoint)
-	//		if err != nil {
-	//			logutil.Logger(ctx).Error("[tidb worker] failed to register gc v2 job",
-	//				zap.Uint64("safe-point", safePoint),
-	//				zap.Int64("gc-run-time", gcRunTime),
-	//				zap.Error(err))
-	//			return errors.Trace(err)
-	//		}
-	//	}
-	//
-	//	// If current TiDB is master or worker, it should notify tidb worker service that it
-	//	// has finished a round of GC.
-	//	if tidbworker.IsMaster() || tidbworker.IsGCV2Worker() {
-	//		err = tidbworker.GlobalTiDBWorkerManager.RecycleGCV2(ctx, safePoint)
-	//		if err != nil {
-	//			logutil.Logger(ctx).Error("[tidb worker] failed to recycle gc v2 job",
-	//				zap.Uint64("safe-point", safePoint),
-	//				zap.Error(err))
-	//			return errors.Trace(err)
-	//		}
-	//	}
-	//
-	//}
+	if config.GetGlobalConfig().EnableSafePointV2 {
+		// If current TiDB is the master, it should send a heartbeat to tidb worker service
+		// in order to prevent unnecessary activation of the GCV2 tidb worker.
+		if tidbworker.IsMaster() {
+			gcRunTime := time.Now().Unix()
+			err = tidbworker.GlobalTiDBWorkerManager.RegisterGCV2(ctx, gcRunTime, safePoint)
+			if err != nil {
+				logutil.Logger(ctx).Error("[tidb worker] failed to register gc v2 job",
+					zap.Uint64("safe-point", safePoint),
+					zap.Int64("gc-run-time", gcRunTime),
+					zap.Error(err))
+				return errors.Trace(err)
+			}
+		}
+		// If current TiDB is master or worker, it should notify tidb worker service that it
+		// has finished a round of GC.
+		if tidbworker.IsMaster() || tidbworker.IsGCV2Worker() {
+			err = tidbworker.GlobalTiDBWorkerManager.RecycleGCV2(ctx, safePoint)
+			if err != nil {
+				logutil.Logger(ctx).Error("[tidb worker] failed to recycle gc v2 job",
+					zap.Uint64("safe-point", safePoint),
+					zap.Error(err))
+				return errors.Trace(err)
+			}
+		}
 
+	}
 	return nil
 }
 
@@ -1010,6 +1009,7 @@ func (w *GCWorker) deleteRanges(ctx context.Context, safePoint uint64, concurren
 		zap.String("uuid", w.uuid),
 		zap.Int("ranges", len(ranges)))
 	startTime := time.Now()
+	rangeCleared := 0
 	for _, r := range ranges {
 		startKey, endKey := r.Range()
 		if v2 {
@@ -1058,6 +1058,7 @@ func (w *GCWorker) deleteRanges(ctx context.Context, safePoint uint64, concurren
 				zap.Error(err))
 			continue
 		}
+		rangeCleared++
 	}
 	logutil.Logger(ctx).Info("[gc worker] finish delete ranges",
 		zap.String("uuid", w.uuid),
@@ -1066,11 +1067,11 @@ func (w *GCWorker) deleteRanges(ctx context.Context, safePoint uint64, concurren
 	metrics.GCHistogram.WithLabelValues("delete_ranges").Observe(time.Since(startTime).Seconds())
 
 	// RecycleGC when all ranges prior to safePoint has been successfully cleaned.
-	//if rangeCleared == len(ranges) && tidbworker.IsGCWorker() {
-	//	if err = tidbworker.GlobalTiDBWorkerManager.RecycleGC(ctx, safePoint); err != nil {
-	//		return errors.Trace(err)
-	//	}
-	//}
+	if rangeCleared == len(ranges) && tidbworker.IsGCWorker() {
+		if err = tidbworker.GlobalTiDBWorkerManager.RecycleGC(ctx, safePoint); err != nil {
+			return errors.Trace(err)
+		}
+	}
 	return nil
 }
 

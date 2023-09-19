@@ -4461,8 +4461,8 @@ def go_deps():
         name = "com_github_tidbcloud_aws_shared_provider_pkg_tidbworker_client",
         build_file_proto_mode = "disable",
         importpath = "github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client",
-        sum = "h1:XuEYqqsHAQFD6PvD1fpalR3AfIgwPWIGOqmFe76c4Ds=",
-        version = "v0.0.0-20230818101345-dfd9e39730f2",
+        sum = "h1:9ZKOVerxUlCzcYB5r7m8nNPrtuhiesTCPJcuz/6Ac+U=",
+        version = "v0.0.0-20230718101141-fef21b9394c0",
     )
 
     go_repository(
@@ -6055,8 +6055,8 @@ def go_deps():
         name = "io_gorm_driver_mysql",
         build_file_proto_mode = "disable",
         importpath = "gorm.io/driver/mysql",
-        sum = "h1:u1lytId4+o9dDaNcPCFzNv7h6wvmc92UjNk3z8enSBU=",
-        version = "v1.4.5",
+        sum = "h1:WUEH5VF9obL/lTtzjmML/5e6VfFR/788coz2uaVCAZw=",
+        version = "v1.5.1",
     )
     go_repository(
         name = "io_gorm_driver_sqlite",
@@ -6069,8 +6069,8 @@ def go_deps():
         name = "io_gorm_gorm",
         build_file_proto_mode = "disable",
         importpath = "gorm.io/gorm",
-        sum = "h1:WL2ifUmzR/SLp85CSURAfybcHnGZ+yLSGSxgYXlFBHg=",
-        version = "v1.24.3",
+        sum = "h1:nsSALe5Pr+cM3V1qwwQ7rOkw+6UeLrX5O4v3llhHa64=",
+        version = "v1.25.1",
     )
 
     go_repository(
@@ -6310,6 +6310,21 @@ def go_deps():
         sum = "h1:KpwkzHKEF7B9Zxg18WzOa7djJ+Ha5DzthMyZYQfEn2A=",
         version = "v0.0.0-20230410155749-daa745c078e1",
     )
+    go_repository(
+        name = "org_golang_google_genproto_googleapis_api",
+        build_file_proto_mode = "disable",
+        importpath = "google.golang.org/genproto/googleapis/api",
+        sum = "h1:HiYVD+FGJkTo+9zj1gqz0anapsa1JxjiSrN+BJKyUmE=",
+        version = "v0.0.0-20230525234020-1aefcd67740a",
+    )
+    go_repository(
+        name = "org_golang_google_genproto_googleapis_rpc",
+        build_file_proto_mode = "disable",
+        importpath = "google.golang.org/genproto/googleapis/rpc",
+        sum = "h1:DEH99RbiLZhMxrpEJCZ0A+wdTe0EOgou/poSLx9vWf4=",
+        version = "v0.0.0-20230629202037-9506855d4529",
+    )
+
     go_repository(
         name = "org_golang_google_grpc",
         build_file_proto_mode = "disable_global",

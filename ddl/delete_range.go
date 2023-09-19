@@ -34,6 +34,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/pingcap/tidb/util/serverless/tidbworker"
 	"github.com/pingcap/tidb/util/sqlexec"
 	topsqlstate "github.com/pingcap/tidb/util/topsql/state"
 	"go.uber.org/zap"
@@ -270,6 +271,13 @@ func insertJobIntoDeleteRangeTable(ctx context.Context, sctx sessionctx.Context,
 	now, err := getNowTSO(sctx)
 	if err != nil {
 		return errors.Trace(err)
+	}
+
+	//  Register tasks to tidb worker service when tidb is operating as master and not using GCV2.
+	if tidbworker.IsMaster() && !config.GetGlobalConfig().EnableSafePointV2 {
+		if err = tidbworker.GlobalTiDBWorkerManager.RegisterGC(ctx, now); err != nil {
+			return errors.Trace(err)
+		}
 	}
 
 	ctx = kv.WithInternalSourceType(ctx, getDDLRequestSource(job.Type))

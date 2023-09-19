@@ -1,0 +1,21 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "tidbworker",
+    srcs = [
+        "manager.go",
+        "tidb_worker.go",
+        "util.go",
+    ],
+    importpath = "github.com/pingcap/tidb/util/serverless/tidbworker",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//config",
+        "//ddl/util",
+        "//sessionctx",
+        "@com_github_pingcap_errors//:errors",
+        "@com_github_pingcap_log//:log",
+        "@com_github_tidbcloud_aws_shared_provider_pkg_tidbworker_client//:client",
+        "@org_uber_go_zap//:zap",
+    ],
+)
