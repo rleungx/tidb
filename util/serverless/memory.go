@@ -171,7 +171,7 @@ func (ms *MemoryScaler) Run() {
 				ms.report(stats, limit)
 				lastReport = time.Now()
 			}
-			if limit != maxMemoryLimit && stats.HeapAlloc > limit*8/10 && time.Since(lastIncreseFailed) > time.Second {
+			if limit != maxMemoryLimit && stats.HeapInuse > limit*8/10 && time.Since(lastIncreseFailed) > time.Second {
 				if limit >= maxMemoryScale {
 					limit += maxMemoryScale
 				} else {
@@ -186,7 +186,7 @@ func (ms *MemoryScaler) Run() {
 				} else {
 					lastIncreseFailed = time.Now()
 				}
-			} else if limit != minMemoryLimit && time.Since(lastIncrease) > time.Minute && stats.HeapAlloc < limit/2 {
+			} else if limit != minMemoryLimit && time.Since(lastIncrease) > time.Minute && stats.HeapInuse < limit/2 {
 				limit /= 2
 				if limit < minMemoryLimit {
 					limit = minMemoryLimit
