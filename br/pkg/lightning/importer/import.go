@@ -380,7 +380,7 @@ func NewImportControllerWithPauser(
 		}
 	case config.BackendRemote:
 		encodingBuilder = local.NewEncodingBuilder(ctx)
-		backendObj, err = remote.NewRemoteBackend(ctx, tls, cfg, p.DB, p.KeyspaceName)
+		backendObj, err = remote.NewRemoteBackend(ctx, tls, cfg, p.KeyspaceName)
 		if err != nil {
 			return nil, common.NormalizeOrWrapErr(common.ErrUnknown, err)
 		}

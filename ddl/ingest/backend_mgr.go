@@ -21,7 +21,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend/remote"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/util/generic"
 	"github.com/pingcap/tidb/util/logutil"
@@ -110,13 +112,16 @@ func (m *litBackendCtxMgr) Register(ctx context.Context, unique bool, jobID int6
 	return bc, nil
 }
 
-func createLocalBackend(ctx context.Context, cfg *Config) (*local.Backend, error) {
+func createLocalBackend(ctx context.Context, cfg *Config) (backend.Backend, error) {
 	tls, err := cfg.Lightning.ToTLS()
 	if err != nil {
 		logutil.BgLogger().Error(LitErrCreateBackendFail, zap.Error(err))
 		return nil, err
 	}
-
+	if len(cfg.Lightning.TikvImporter.Addr) > 0 {
+		logutil.BgLogger().Info("[ddl-ingest] create remote backend for adding index", zap.String("keyspaceName", cfg.KeyspaceName))
+		return remote.NewRemoteBackend(ctx, tls, cfg.Lightning, cfg.KeyspaceName)
+	}
 	logutil.BgLogger().Info("[ddl-ingest] create local backend for adding index", zap.String("keyspaceName", cfg.KeyspaceName))
 	regionSizeGetter := &local.TableRegionSizeGetterImpl{
 		DB: nil,
@@ -127,7 +132,7 @@ func createLocalBackend(ctx context.Context, cfg *Config) (*local.Backend, error
 
 const checkpointUpdateInterval = 10 * time.Minute
 
-func newBackendContext(ctx context.Context, jobID int64, be *local.Backend,
+func newBackendContext(ctx context.Context, jobID int64, be backend.Backend,
 	cfg *config.Config, vars map[string]string, memRoot MemRoot, diskRoot DiskRoot, etcdClient *clientv3.Client) *litBackendCtx {
 	return &litBackendCtx{
 		SyncMap:        generic.NewSyncMap[int64, *engineInfo](10),
@@ -172,8 +177,9 @@ func (m *litBackendCtxMgr) TotalDiskUsage() uint64 {
 	var totalDiskUsed uint64
 	for _, key := range m.Keys() {
 		bc, exists := m.SyncMap.Load(key)
-		if exists {
-			_, _, bcDiskUsed, _ := local.CheckDiskQuota(bc.backend, math.MaxInt64)
+		if exists && len(bc.cfg.TikvImporter.Addr) == 0 {
+			backend := bc.backend.(*local.Backend)
+			_, _, bcDiskUsed, _ := local.CheckDiskQuota(backend, math.MaxInt64)
 			totalDiskUsed += uint64(bcDiskUsed)
 		}
 	}
@@ -184,8 +190,9 @@ func (m *litBackendCtxMgr) TotalDiskUsage() uint64 {
 func (m *litBackendCtxMgr) UpdateMemoryUsage() {
 	for _, key := range m.Keys() {
 		bc, exists := m.SyncMap.Load(key)
-		if exists {
-			curSize := bc.backend.TotalMemoryConsume()
+		if exists && len(bc.cfg.TikvImporter.Addr) == 0 {
+			backend := bc.backend.(*local.Backend)
+			curSize := backend.TotalMemoryConsume()
 			m.memRoot.ReleaseWithTag(EncodeBackendTag(bc.jobID))
 			m.memRoot.ConsumeWithTag(EncodeBackendTag(bc.jobID), curSize)
 		}

@@ -17,7 +17,6 @@ package remote
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -33,7 +32,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/pingcap/errors"
 	rmpb "github.com/pingcap/kvproto/pkg/resource_manager"
-	"github.com/pingcap/tidb/br/pkg/glue"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/encode"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/kv"
@@ -47,7 +45,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/mydump"
 	"github.com/pingcap/tidb/br/pkg/pdutil"
 	"github.com/pingcap/tidb/keyspace"
-	"github.com/pingcap/tidb/parser/model"
 	"github.com/pingcap/tidb/store/pdtypes"
 	"github.com/tikv/client-go/v2/oracle"
 	tikvclient "github.com/tikv/client-go/v2/tikv"
@@ -108,7 +105,6 @@ func NewRemoteBackend(
 	ctx context.Context,
 	tls *common.TLS,
 	cfg *config.Config,
-	db *sql.DB,
 	keyspaceName string,
 ) (backend.Backend, error) {
 	localFile := cfg.TikvImporter.SortedKVDir
@@ -171,7 +167,6 @@ func NewRemoteBackend(
 
 	keyspace := pdCliForTiKV.GetCodec().GetKeyspace()
 	remote := &Backend{
-		targetInfoGetter: local.NewTargetInfoGetter(tls, db, cfg.TiDB.PdAddr, keyspaceName),
 		workerAddr:       cfg.TikvImporter.Addr,
 		pdCtl:            pdCtl,
 		tls:              tls,
@@ -208,12 +203,10 @@ func NewRemoteBackend(
 
 // Backend is a remote backend that sends KV pairs to remote worker.
 type Backend struct {
-	targetInfoGetter backend.TargetInfoGetter
 	workerAddr       string
 	pdCtl            *pdutil.PdController
 	tls              *common.TLS
 	pdAddr           string
-	g                glue.Glue
 	keyspace         []byte
 	metrics          *metric.Metrics
 	engines          sync.Map
@@ -493,28 +486,6 @@ func (b *Backend) loadDataCleanUp(ctx context.Context, engine *engine) error {
 		return err
 	}
 	return nil
-}
-
-// CheckRequirements performs the check whether the backend satisfies the
-// version requirements
-func (b *Backend) CheckRequirements(context.Context, *backend.CheckCtx) error {
-	return nil
-}
-
-// FetchRemoteTableModels obtains the models of all tables given the schema
-// name. The returned table info does not need to be precise if the encoder,
-// is not requiring them, but must at least fill in the following fields for
-// TablesFromMeta to succeed:
-//   - Name
-//   - State (must be model.StatePublic)
-//   - ID
-//   - Columns
-//   - Name
-//   - State (must be model.StatePublic)
-//   - Offset (must be 0, 1, 2, ...)
-//   - PKIsHandle (true = do not generate _tidb_rowid)
-func (b *Backend) FetchRemoteTableModels(ctx context.Context, schemaName string) ([]*model.TableInfo, error) {
-	return b.targetInfoGetter.FetchRemoteTableModels(ctx, schemaName)
 }
 
 // FlushEngine ensures all KV pairs written to an open engine has been

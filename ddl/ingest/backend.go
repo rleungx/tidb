@@ -20,8 +20,10 @@ import (
 	"time"
 
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/encode"
 	"github.com/pingcap/tidb/br/pkg/lightning/backend/local"
+	"github.com/pingcap/tidb/br/pkg/lightning/backend/remote"
 	lightning "github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/errormanager"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
@@ -73,7 +75,7 @@ type litBackendCtx struct {
 	MemRoot  MemRoot
 	DiskRoot DiskRoot
 	jobID    int64
-	backend  *local.Backend
+	backend  backend.Backend
 	ctx      context.Context
 	cfg      *lightning.Config
 	sysVars  map[string]string
@@ -86,13 +88,23 @@ type litBackendCtx struct {
 	etcdClient      *clientv3.Client
 }
 
+func (bc *litBackendCtx) getDupeController(errorMgr *errormanager.ErrorManager) *local.DupeController {
+	if len(bc.cfg.TikvImporter.Addr) > 0 {
+		remoteBackend := bc.backend.(*remote.Backend)
+		return remoteBackend.GetDupeController(bc.cfg.TikvImporter.RangeConcurrency*2, errorMgr)
+	}
+	localBackend := bc.backend.(*local.Backend)
+	return localBackend.GetDupeController(bc.cfg.TikvImporter.RangeConcurrency*2, errorMgr)
+
+}
+
 // CollectRemoteDuplicateRows collects duplicate rows from remote TiKV.
 func (bc *litBackendCtx) CollectRemoteDuplicateRows(indexID int64, tbl table.Table) error {
 	errorMgr := errormanager.New(nil, bc.cfg, log.Logger{Logger: logutil.BgLogger()})
 	// backend must be a local backend.
 	// todo: when we can separate local backend completely from tidb backend, will remove this cast.
 	//nolint:forcetypeassert
-	dupeController := bc.backend.GetDupeController(bc.cfg.TikvImporter.RangeConcurrency*2, errorMgr)
+	dupeController := bc.getDupeController(errorMgr)
 	hasDupe, err := dupeController.CollectRemoteDuplicateRows(bc.ctx, tbl, tbl.Meta().Name.L, &encode.SessionOptions{
 		SQLMode: mysql.ModeStrictAllTables,
 		SysVars: bc.sysVars,
@@ -133,7 +145,7 @@ func (bc *litBackendCtx) FinishImport(indexID int64, unique bool, tbl table.Tabl
 		// backend must be a local backend.
 		// todo: when we can separate local backend completely from tidb backend, will remove this cast.
 		//nolint:forcetypeassert
-		dupeController := bc.backend.GetDupeController(bc.cfg.TikvImporter.RangeConcurrency*2, errorMgr)
+		dupeController := bc.getDupeController(errorMgr)
 		hasDupe, err := dupeController.CollectRemoteDuplicateRows(bc.ctx, tbl, tbl.Meta().Name.L, &encode.SessionOptions{
 			SQLMode: mysql.ModeStrictAllTables,
 			SysVars: bc.sysVars,
@@ -163,6 +175,11 @@ func acquireLock(ctx context.Context, se *concurrency.Session, key string) (*con
 
 // Flush checks the disk quota and imports the current key-values in engine to the storage.
 func (bc *litBackendCtx) Flush(indexID int64, mode FlushMode) (flushed, imported bool, err error) {
+	if len(bc.cfg.TikvImporter.Addr) > 0 {
+		return true, true, nil
+	}
+	backend := bc.backend.(*local.Backend)
+
 	ei, exist := bc.Load(indexID)
 	if !exist {
 		logutil.BgLogger().Error(LitErrGetEngineFail, zap.Int64("index ID", indexID))
@@ -215,7 +232,7 @@ func (bc *litBackendCtx) Flush(indexID int64, mode FlushMode) (flushed, imported
 
 	logutil.BgLogger().Info(LitInfoUnsafeImport, zap.Int64("index ID", indexID),
 		zap.String("usage info", bc.diskRoot.UsageInfo()))
-	err = bc.backend.UnsafeImportAndReset(bc.ctx, ei.uuid, int64(lightning.SplitRegionSize)*int64(lightning.MaxSplitRegionSizeRatio), int64(lightning.SplitRegionKeys))
+	err = backend.UnsafeImportAndReset(bc.ctx, ei.uuid, int64(lightning.SplitRegionSize)*int64(lightning.MaxSplitRegionSizeRatio), int64(lightning.SplitRegionKeys))
 	if err != nil {
 		logutil.BgLogger().Error(LitErrIngestDataErr, zap.Int64("index ID", indexID),
 			zap.String("usage info", bc.diskRoot.UsageInfo()))
