@@ -4461,8 +4461,8 @@ def go_deps():
         name = "com_github_tidbcloud_aws_shared_provider_pkg_tidbworker_client",
         build_file_proto_mode = "disable",
         importpath = "github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client",
-        sum = "h1:9ZKOVerxUlCzcYB5r7m8nNPrtuhiesTCPJcuz/6Ac+U=",
-        version = "v0.0.0-20230718101141-fef21b9394c0",
+        sum = "h1:q8wM89auGy5Q98vqUookr8fSwYLrja05CNGdtHdJek0=",
+        version = "v0.0.0-20230920024913-652388c1e5d9",
     )
 
     go_repository(
@@ -6069,8 +6069,8 @@ def go_deps():
         name = "io_gorm_gorm",
         build_file_proto_mode = "disable",
         importpath = "gorm.io/gorm",
-        sum = "h1:nsSALe5Pr+cM3V1qwwQ7rOkw+6UeLrX5O4v3llhHa64=",
-        version = "v1.25.1",
+        sum = "h1:iyNd8fNAe8W9dvtlgeRI5zSVZPsq3OpcTu37cYcpCmw=",
+        version = "v1.25.4",
     )
 
     go_repository(

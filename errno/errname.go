@@ -1145,4 +1145,5 @@ var MySQLErrName = map[uint16]*mysql.ErrMessage{
 
 	// Serverless Tier errors.
 	ErrNotSupportedOnServerless: mysql.Message("'%s' is not supported on TiDB Serverless.", nil),
+	ErrUserPrefixMismatch:       mysql.Message("An internal error occurred, please retry.", nil),
 }

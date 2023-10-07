@@ -115,6 +115,7 @@ var (
 	errNotSupportedAuthMode    = dbterror.ClassServer.NewStd(errno.ErrNotSupportedAuthMode)
 	errNetPacketTooLarge       = dbterror.ClassServer.NewStd(errno.ErrNetPacketTooLarge)
 	errMustChangePassword      = dbterror.ClassServer.NewStd(errno.ErrMustChangePassword)
+	errUserPrefixMismatch      = dbterror.ClassServer.NewStd(errno.ErrUserPrefixMismatch)
 )
 
 // DefaultCapability is the capability of the server when it is created using the default configuration.

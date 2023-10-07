@@ -880,6 +880,44 @@ func (cc *clientConn) openSessionAndDoAuth(authData []byte, authPlugin string) e
 	return nil
 }
 
+// checkUserPrefixMismatch checks if the user has different prefix than the assigned keyspace.
+func checkUserPrefixMismatch(ctx context.Context, user, assignedKeyspace string) error {
+	userTokens := strings.Split(user, ".")
+	if len(userTokens) >= 2 && userTokens[0] != assignedKeyspace {
+		logutil.Logger(ctx).Warn("user prefix mismatches assigned keyspace",
+			zap.String("user", user),
+			zap.String("assigned-keyspace", assignedKeyspace),
+		)
+		return errUserPrefixMismatch
+	}
+	return nil
+}
+
+func (cc *clientConn) matchIdentityWithPrefix(ctx context.Context, host, hasPassword string) (*auth.UserIdentity, error) {
+	assignedKeyspace := keyspace.GetKeyspaceNameBySettings()
+	if assignedKeyspace == "" {
+		return nil, errAccessDenied.FastGenByArgs(cc.user, host, hasPassword)
+	}
+	prefixedUser := assignedKeyspace + "." + cc.user
+	identity, err := cc.ctx.MatchIdentity(prefixedUser, host)
+	if err != nil {
+		// If the user already has a prefix, we check if the prefix matches the assigned keyspace of tidb,
+		// if so, return a special error to hint the user to retry.
+		if mismatchErr := checkUserPrefixMismatch(ctx, cc.user, assignedKeyspace); mismatchErr != nil {
+			return nil, mismatchErr
+		}
+		return nil, errAccessDenied.FastGenByArgs(cc.user, host, hasPassword)
+	}
+
+	logutil.Logger(ctx).Info("found user identity with prefix",
+		zap.String("user", cc.user),
+		zap.String("host", host),
+		zap.String("assigned-keyspace", assignedKeyspace),
+	)
+	cc.user = prefixedUser
+	return identity, nil
+}
+
 // Check if the Authentication Plugin of the server, client and user configuration matches
 func (cc *clientConn) checkAuthPlugin(ctx context.Context, resp *handshakeResponse41) ([]byte, error) {
 	// Open a context unless this was done before.
@@ -907,19 +945,10 @@ func (cc *clientConn) checkAuthPlugin(ctx context.Context, resp *handshakeRespon
 	// Find the identity of the user based on username and peer host.
 	identity, err := cc.ctx.MatchIdentity(cc.user, host)
 	if err != nil {
-		// try to append prefix
-		if prefix := keyspace.GetKeyspaceNameBySettings(); prefix != "" {
-			user2 := prefix + "." + cc.user
-			identity2, err2 := cc.ctx.MatchIdentity(user2, host)
-			if err2 == nil {
-				logutil.Logger(ctx).Info("found user identity with prefix",
-					zap.String("user", cc.user), zap.String("host", host), zap.String("prefix", prefix))
-				identity, err = identity2, nil
-				cc.user = user2
-			}
-		}
+		// If can't find the user, retry with appending keyspace prefix first.
+		identity, err = cc.matchIdentityWithPrefix(ctx, host, hasPassword)
 		if err != nil {
-			return nil, errAccessDenied.FastGenByArgs(cc.user, host, hasPassword)
+			return nil, err
 		}
 	}
 	// Get the plugin for the identity.
