@@ -34,6 +34,10 @@ import (
 
 // IsEnableFastReorg check whether Fast Reorg is allowed.
 func IsEnableFastReorg() bool {
+	// If `TiKVAPIServiceAddr` is empty, `fast reorg` will use local disk to store the temporary index data.
+	if len(config.GetGlobalConfig().TiKVAPIServiceAddr) == 0 {
+		return false
+	}
 	return variable.EnableFastReorg.Load()
 }
 

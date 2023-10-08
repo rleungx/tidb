@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/ddl/ingest"
 	"github.com/pingcap/tidb/ddl/testutil"
@@ -34,6 +35,11 @@ import (
 )
 
 func TestAddIndexMergeProcess(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 	tk := testkit.NewTestKit(t, store)
 	tk.MustExec("use test")
@@ -80,6 +86,11 @@ func TestAddIndexMergeProcess(t *testing.T) {
 }
 
 func TestAddPrimaryKeyMergeProcess(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	// Disable auto schema reload.
 	store, dom := testkit.CreateMockStoreAndDomainWithSchemaLease(t, 0)
 	tk := testkit.NewTestKit(t, store)
@@ -130,6 +141,11 @@ func TestAddPrimaryKeyMergeProcess(t *testing.T) {
 }
 
 func TestAddIndexMergeVersionIndexValue(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 	tk := testkit.NewTestKit(t, store)
 	tk.MustExec("use test")
@@ -178,6 +194,11 @@ func TestAddIndexMergeVersionIndexValue(t *testing.T) {
 }
 
 func TestAddIndexMergeIndexUntouchedValue(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 	tk := testkit.NewTestKit(t, store)
 	tk.MustExec("use test")
@@ -463,6 +484,11 @@ func TestAddIndexMergeDoubleDelete(t *testing.T) {
 }
 
 func TestAddIndexMergeConflictWithPessimistic(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 	tk := testkit.NewTestKit(t, store)
 	tk.MustExec("use test")
@@ -533,6 +559,11 @@ func TestAddIndexMergeConflictWithPessimistic(t *testing.T) {
 }
 
 func TestAddIndexMergeInsertOnMerging(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 
 	tk := testkit.NewTestKit(t, store)
@@ -580,6 +611,11 @@ func TestAddIndexMergeInsertOnMerging(t *testing.T) {
 }
 
 func TestAddIndexMergeReplaceOnMerging(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store := testkit.CreateMockStore(t)
 
 	tk := testkit.NewTestKit(t, store)
@@ -654,6 +690,11 @@ func TestAddIndexMergeInsertToDeletedTempIndex(t *testing.T) {
 }
 
 func TestAddIndexMergeReplaceDelete(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 
 	tk := testkit.NewTestKit(t, store)
@@ -899,6 +940,11 @@ func TestAddIndexDuplicateAndWriteConflict(t *testing.T) {
 }
 
 func TestAddIndexUpdateUntouchedValues(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 
 	tk := testkit.NewTestKit(t, store)

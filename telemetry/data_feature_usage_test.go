@@ -556,6 +556,11 @@ func TestFlashbackCluster(t *testing.T) {
 }
 
 func TestAddIndexAccelerationAndMDL(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
 	usage, err := telemetry.GetFeatureUsage(tk.Session())

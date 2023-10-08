@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/ddl/util/callback"
 	"github.com/pingcap/tidb/domain"
@@ -1041,6 +1042,10 @@ func TestMultiSchemaChangeMixCancelled(t *testing.T) {
 func TestMultiSchemaChangeAdminShowDDLJobs(t *testing.T) {
 	store, dom := testkit.CreateMockStoreAndDomain(t)
 
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
 	tk := testkit.NewTestKit(t, store)
 	tk.MustExec("use test")
 	originHook := dom.DDL().GetHook()

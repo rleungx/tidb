@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl"
 	"github.com/pingcap/tidb/ddl/util/callback"
 	"github.com/pingcap/tidb/errno"
@@ -357,6 +358,11 @@ func TestPauseJobWriteConflict(t *testing.T) {
 }
 
 func TestPauseJobNegative(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store, dom := testkit.CreateMockStoreAndDomainWithSchemaLease(t, dbTestLease)
 
 	tk1 := testkit.NewTestKit(t, store)

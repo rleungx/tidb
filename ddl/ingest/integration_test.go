@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl/ingest"
 	"github.com/pingcap/tidb/ddl/util/callback"
 	"github.com/pingcap/tidb/errno"
@@ -51,6 +52,11 @@ func injectMockBackendMgr(t *testing.T, store kv.Storage) (restore func()) {
 }
 
 func TestAddIndexIngestGeneratedColumns(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
 	tk.MustExec("use test;")
@@ -98,6 +104,10 @@ func TestAddIndexIngestGeneratedColumns(t *testing.T) {
 }
 
 func TestIngestCopSenderErr(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
 	tk.MustExec("use test;")
@@ -121,6 +131,10 @@ func TestIngestCopSenderErr(t *testing.T) {
 }
 
 func TestAddIndexIngestPanicOnCopRead(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
 	store := realtikvtest.CreateMockStoreAndSetup(t)
 	tk := testkit.NewTestKit(t, store)
 	tk.MustExec("use test;")

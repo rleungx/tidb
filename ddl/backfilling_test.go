@@ -19,6 +19,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl/ingest"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
@@ -50,6 +51,11 @@ func TestDoneTaskKeeper(t *testing.T) {
 }
 
 func TestPickBackfillType(t *testing.T) {
+	// To enable `fast reorg`.
+	config.UpdateGlobal(func(conf *config.Config) {
+		conf.TiKVAPIServiceAddr = "http://tikv-api-server:10000"
+	})
+
 	originMgr := ingest.LitBackCtxMgr
 	originInit := ingest.LitInitialized
 	originFastReorg := variable.EnableFastReorg.Load()
