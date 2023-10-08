@@ -33,6 +33,7 @@ import (
 	"github.com/pingcap/tidb/util/dbterror"
 	"github.com/pingcap/tidb/util/generic"
 	"github.com/pingcap/tidb/util/logutil"
+	tikvclient "github.com/tikv/client-go/v2/tikv"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 	atomicutil "go.uber.org/atomic"
@@ -41,7 +42,7 @@ import (
 
 // BackendCtx is the backend context for add index reorg task.
 type BackendCtx interface {
-	Register(jobID, indexID int64, schemaName, tableName string) (Engine, error)
+	Register(jobID, indexID, tableID int64, schemaName, tableName string, tikvCodec tikvclient.Codec) (Engine, error)
 	Unregister(jobID, indexID int64)
 
 	CollectRemoteDuplicateRows(indexID int64, tbl table.Table) error

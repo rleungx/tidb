@@ -16,7 +16,6 @@ go_library(
         "//br/pkg/lightning/errormanager",
         "//br/pkg/lightning/log",
         "//br/pkg/lightning/metric",
-        "//br/pkg/lightning/mydump",
         "//br/pkg/pdutil",
         "//keyspace",
         "//store/pdtypes",

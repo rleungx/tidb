@@ -390,7 +390,7 @@ func (b *ingestBackfillScheduler) createWorker() workerpool.Worker[idxRecResult]
 		return nil
 	}
 	bcCtx := b.backendCtx
-	ei, err := bcCtx.Register(job.ID, b.reorgInfo.currElement.ID, job.SchemaName, job.TableName)
+	ei, err := bcCtx.Register(job.ID, b.reorgInfo.currElement.ID, job.TableID, job.SchemaName, job.TableName, sessCtx.GetStore().GetCodec())
 	if err != nil {
 		// Return an error only if it is the first worker.
 		if b.writerMaxID == 0 {

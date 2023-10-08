@@ -87,11 +87,8 @@ type EngineConfig struct {
 	// KeepSortDir indicates whether to keep the temporary sort directory
 	// when opening the engine, instead of removing it.
 	KeepSortDir bool
-
-	// TableMeta is the corresponding mydump table meta
-	TableMeta *mydump.MDTableMeta
-	// IsIndexEngine specifies whether the engine is opened for index data
-	IsIndexEngine bool
+	// EstimatedDataSize is the estimated data size for this engine
+	EstimatedDataSize int64
 }
 
 // LocalEngineConfig is the configuration used for local backend in OpenEngine.

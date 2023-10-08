@@ -21,11 +21,12 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/backend"
 	"github.com/pingcap/tidb/util/dbterror"
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/tikv/client-go/v2/tikv"
 	"go.uber.org/zap"
 )
 
 // Register create a new engineInfo and register it to the backend context.
-func (bc *litBackendCtx) Register(jobID, indexID int64, schemaName, tableName string) (Engine, error) {
+func (bc *litBackendCtx) Register(jobID, indexID, tableID int64, schemaName, tableName string, tikvCodec tikv.Codec) (Engine, error) {
 	// Calculate lightning concurrency degree and set memory usage
 	// and pre-allocate memory usage for worker.
 	bc.MemRoot.RefreshConsumption()
@@ -44,7 +45,12 @@ func (bc *litBackendCtx) Register(jobID, indexID int64, schemaName, tableName st
 		}
 
 		mgr := backend.MakeEngineManager(bc.backend)
-		cfg := generateLocalEngineConfig(jobID, schemaName, tableName)
+		cfg, err := generateLocalEngineConfig(bc.cfg, tableID, schemaName, tableName, tikvCodec)
+		if err != nil {
+			logutil.BgLogger().Warn(LitErrGenLocalEngineFail, zap.Int64("job ID", jobID),
+				zap.Int64("index ID", indexID), zap.Error(err))
+			return nil, errors.Trace(err)
+		}
 		openedEn, err := mgr.OpenEngine(bc.ctx, cfg, tableName, int32(indexID))
 		if err != nil {
 			logutil.BgLogger().Warn(LitErrCreateEngineFail, zap.Int64("job ID", jobID),

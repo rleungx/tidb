@@ -360,10 +360,10 @@ func (tr *TableImporter) importEngines(pCtx context.Context, rc *Controller, cp 
 	// be finished already.
 
 	handleDataEngineThisRun := false
+	estimateDataSize := estimateDataSize(tr.tableMeta, tr.tableInfo, true, tr.logger)
 	idxEngineCfg := &backend.EngineConfig{
-		TableInfo:     tr.tableInfo,
-		TableMeta:     tr.tableMeta,
-		IsIndexEngine: true,
+		TableInfo:         tr.tableInfo,
+		EstimatedDataSize: estimateDataSize,
 	}
 	if indexEngineCp.Status < checkpoints.CheckpointStatusClosed {
 		handleDataEngineThisRun = true
@@ -550,10 +550,10 @@ func (tr *TableImporter) preprocessEngine(
 	defer cancel()
 	// all data has finished written, we can close the engine directly.
 	if cp.Status >= checkpoints.CheckpointStatusAllWritten {
+		estimateDataSize := estimateDataSize(tr.tableMeta, tr.tableInfo, false, tr.logger)
 		engineCfg := &backend.EngineConfig{
-			TableInfo:     tr.tableInfo,
-			TableMeta:     tr.tableMeta,
-			IsIndexEngine: false,
+			TableInfo:         tr.tableInfo,
+			EstimatedDataSize: estimateDataSize,
 		}
 		closedEngine, err := rc.engineMgr.UnsafeCloseEngine(ctx, engineCfg, tr.tableName, engineID)
 		// If any error occurred, recycle worker immediately
@@ -584,10 +584,10 @@ func (tr *TableImporter) preprocessEngine(
 	}
 
 	logTask := tr.logger.With(zap.Int32("engineNumber", engineID)).Begin(zap.InfoLevel, "encode kv data and write")
+	estimateDataSize := estimateDataSize(tr.tableMeta, tr.tableInfo, false, tr.logger)
 	dataEngineCfg := &backend.EngineConfig{
-		TableInfo:     tr.tableInfo,
-		TableMeta:     tr.tableMeta,
-		IsIndexEngine: false,
+		TableInfo:         tr.tableInfo,
+		EstimatedDataSize: estimateDataSize,
 	}
 	if !tr.tableMeta.IsRowOrdered {
 		dataEngineCfg.Local.Compact = true
@@ -1572,4 +1572,29 @@ func getDDLJobIDByQuery(ctx context.Context, db *sql.DB, wantQuery string) (int6
 		}
 	}
 	return 0, errors.Trace(rows.Err())
+}
+
+func estimateDataSize(tblMeta *mydump.MDTableMeta, tblInfo *checkpoints.TidbTableInfo, isIndexEngine bool, logger log.Logger) int64 {
+	if tblMeta == nil || tblInfo == nil {
+		// if we can't get table meta or table info, we can't estimate data size.
+		return 0
+	}
+	if isIndexEngine && len(tblInfo.Core.Indices) == 0 {
+		return 0
+	}
+
+	totalSize := int64(0)
+	for _, dataFile := range tblMeta.DataFiles {
+		totalSize += dataFile.FileMeta.RealSize
+	}
+	if tblMeta.IndexRatio > 1 {
+		totalSize = int64(float64(totalSize) * tblMeta.IndexRatio)
+	}
+	logger.Info("estimate data size",
+		zap.Int64("estimatedDataSize", totalSize),
+		zap.String("db", tblInfo.DB),
+		zap.String("table", tblInfo.Name),
+		zap.Bool("IsIndexEngine", isIndexEngine),
+	)
+	return totalSize
 }
