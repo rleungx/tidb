@@ -23,6 +23,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/domain"
+	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/terror"
 	"github.com/pingcap/tidb/session"
 	storeerr "github.com/pingcap/tidb/store/driver/error"
@@ -73,6 +74,7 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	se.SetSessionManager(h.sm)
+	ctx = kv.WithInternalSourceType(ctx, kv.InternalTxnOthers)
 	rs, err := se.ExecuteInternal(ctx, "SELECT variable_name FROM mysql.tidb LIMIT 1")
 	if err != nil {
 		return
