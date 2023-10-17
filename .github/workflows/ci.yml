@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  TiDB-Check:
+  tidb-cse-check:
     runs-on: self-hosted
     env:
       GITHUB_TOKEN: ${{ secrets.GIT_ACTION_BOT }}
@@ -46,7 +46,7 @@ jobs:
         run: |
           make check
 
-  TiDB-Build:
+  tidb-cse-build:
     runs-on: self-hosted
     env:
       GITHUB_TOKEN: ${{ secrets.GIT_ACTION_BOT }}

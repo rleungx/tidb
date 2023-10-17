@@ -1,0 +1,32 @@
+name: TiDB-CSE
+on:
+  pull_request:
+    branches: release-7.1-keyspace
+    types:
+      - opened
+      - reopened
+      - labeled
+      - unlabeled
+permissions:
+  contents: read
+jobs:
+  # Must choose one of the two labels: 'serverless-only' or 'not-serverless-only'.
+  label_check:
+    runs-on: self-hosted
+    steps:
+      - name: Check PR Labels
+        run: |
+          label_count=0
+          labels=$(echo '${{ toJson(github.event.pull_request.labels) }}' | jq -r '.[] | .name')
+          for label in $labels
+          do
+            if [[ "$label" == "serverless-only" || "$label" == "not-serverless-only" ]]; then
+              label_count=$((label_count + 1))
+            fi
+          done
+          if [[ "$label_count" -eq 1 ]]; then
+            echo "Merge is allowed"
+          else
+            echo "Merge is not allowed. Please choose one of the two labels: 'serverless-only' or 'not-serverless-only'."
+            exit 1
+          fi
