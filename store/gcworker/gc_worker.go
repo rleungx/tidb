@@ -1553,7 +1553,7 @@ func (w *GCWorker) legacyResolveKeyspaceLocks(ctx context.Context, txnLeftBound 
 // getTryResolveLocksTS gets the TryResolveLocksTS
 // that is defined as `now() - gcTryResolveLocksIntervalFromNow`.
 func (w *GCWorker) getTryResolveLocksTS() (uint64, error) {
-	now, err := w.tikvStore.CurrentTimestamp(kv.GlobalTxnScope)
+	now, err := getTsFromPD(w.store, w.tikvStore)
 	if err != nil {
 		return 0, err
 	}
