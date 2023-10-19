@@ -455,7 +455,7 @@ func (b *Backend) loadDataBuild(ctx context.Context, engine *engine, splitSize, 
 }
 
 func (b *Backend) loadDataGetStates(ctx context.Context, engine *engine) (*LoadDataStates, error) {
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d", b.workerAddr, engine.clusterID, engine.ts)
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d", engine.addr, engine.clusterID, engine.ts)
 	data, err := sendRequest(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -478,7 +478,7 @@ func (b *Backend) CleanupEngine(ctx context.Context, engineUUID uuid.UUID) error
 }
 
 func (b *Backend) loadDataCleanUp(ctx context.Context, engine *engine) error {
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d", b.workerAddr, engine.clusterID, engine.ts)
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d", engine.addr, engine.clusterID, engine.ts)
 	_, err := sendRequest(ctx, "DELETE", url, nil)
 	if err != nil {
 		return err

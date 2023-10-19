@@ -223,6 +223,7 @@ type Config struct {
 	KeyspaceName               string                  `toml:"keyspace-name" json:"keyspace-name"`
 	IsBranch                   bool                    `toml:"is-branch" json:"is-branch"`
 	TiKVAPIServiceAddr         string                  `toml:"tikv-api-service-addr" json:"tikv-api-service-addr"`
+	EnableFastReorgCheckpoint  bool                    `toml:"enable-fast-reorg-checkpoint" json:"enable-fast-reorg-checkpoint"`
 	Log                        Log                     `toml:"log" json:"log"`
 	Instance                   Instance                `toml:"instance" json:"instance"`
 	Security                   Security                `toml:"security" json:"security"`

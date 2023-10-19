@@ -26,6 +26,7 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl/ingest"
 	sess "github.com/pingcap/tidb/ddl/internal/session"
 	"github.com/pingcap/tidb/distsql"
@@ -336,7 +337,7 @@ func overwriteReorgInfoFromGlobalCheckpoint(w *worker, sess *sess.Session, job *
 	bc, ok := ingest.LitBackCtxMgr.Load(job.ID)
 	if ok {
 		// We create the checkpoint manager here because we need to wait for the reorg meta to be initialized.
-		if bc.GetCheckpointManager() == nil {
+		if bc.GetCheckpointManager() == nil && config.GetGlobalConfig().EnableFastReorgCheckpoint {
 			mgr, err := ingest.NewCheckpointManager(w.ctx, bc, w.sessPool, job.ID, reorgInfo.currElement.ID)
 			if err != nil {
 				logutil.BgLogger().Warn("[ddl-ingest] create checkpoint manager failed", zap.Error(err))
