@@ -750,7 +750,6 @@ type FileRouteRule struct {
 
 // TikvImporter is the config for tikv-importer.
 type TikvImporter struct {
-	// Deprecated: only used to keep the compatibility.
 	Addr                    string                       `toml:"addr" json:"addr"`
 	Backend                 string                       `toml:"backend" json:"backend"`
 	OnDuplicate             string                       `toml:"on-duplicate" json:"on-duplicate"`

@@ -80,10 +80,14 @@ type LocalWriterConfig struct {
 
 // EngineConfig defines configuration used for open engine
 type EngineConfig struct {
+	// EngineID is the ID of the engine
+	EngineID int32
 	// TableInfo is the corresponding tidb table info
 	TableInfo *checkpoints.TidbTableInfo
 	// local backend specified configuration
 	Local LocalEngineConfig
+	// TaskID is the ID of the current import job, it shounld not change when retrying
+	TaskID int64
 	// KeepSortDir indicates whether to keep the temporary sort directory
 	// when opening the engine, instead of removing it.
 	KeepSortDir bool
@@ -218,6 +222,7 @@ func (be EngineManager) OpenEngine(ctx context.Context, config *EngineConfig,
 	tag, engineUUID := MakeUUID(tableName, engineID)
 	logger := makeLogger(log.FromContext(ctx), tag, engineUUID)
 
+	config.EngineID = engineID
 	if err := be.backend.OpenEngine(ctx, config, engineUUID); err != nil {
 		return nil, err
 	}

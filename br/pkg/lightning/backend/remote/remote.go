@@ -56,28 +56,31 @@ import (
 	Remote load data worker API:
 
 	1. init task:
-		POST /load_data?cluster_id=%d&start_ts=%d&commit_ts=%d
+		POST /load_data?cluster_id=%d&task_id=%s&start_ts=%d&commit_ts=%d
 
 	2. put chunk:
-		PUT /load_data?cluster_id=%d&start_ts=%d&chunk_id=%d
+		PUT /load_data?cluster_id=%d&task_id=%s&chunk_id=%d
 
 		key_len(2) + key(key_len) + val_len(4) + value(val_len)
 		key_len(2) + key(key_len) + val_len(4) + value(val_len)
 		...
 
 	3. build task:
-		POST /load_data?cluster_id=%d&start_ts=%d&build=true&compression=zstd&split_size=%d&split_keys=%d
+		POST /load_data?cluster_id=%d&task_id=%s&build=true&compression=zstd&split_size=%d&split_keys=%d
 
 	4. get task states:
-		GET /load_data?cluster_id=%d&start_ts=%d
+		GET /load_data?cluster_id=%d&task_id=%s
 
 		{"canceled": false, "finished": false, "error": "", "created-files": 10, "ingested-regions": 3}
 
 	5. clean up task:
-		DELETE /load_data?cluster_id=%d&start_ts=%d
+		DELETE /load_data?cluster_id=%d&task_id=%s
 */
 
-const maxDuplicateBatchSize = 4 << 20
+const (
+	maxDuplicateBatchSize = 4 << 20
+	taskExitsMsg          = "task exists"
+)
 
 // LoadDataStates is json data that returned by remote server GET API.
 type LoadDataStates struct {
@@ -259,16 +262,19 @@ func (b *Backend) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, eng
 		return err
 	}
 	ts := oracle.ComposeTS(physical, logical)
+
+	loadDataTaskID := genLoadDataTaskID(cfg)
 	e, _ := b.engines.LoadOrStore(engineUUID, &engine{
-		tbl:       cfg.TableInfo,
-		addr:      b.workerAddr,
-		clusterID: b.pdCtl.GetPDClient().GetClusterID(ctx),
-		ts:        ts,
+		loadDataTaskID: loadDataTaskID,
+		ts:             ts,
+		tbl:            cfg.TableInfo,
+		addr:           b.workerAddr,
+		clusterID:      b.pdCtl.GetPDClient().GetClusterID(ctx),
 	})
 	engine := e.(*engine)
-	if engine.ts == ts {
+	if engine.loadDataTaskID == loadDataTaskID {
 		// newly created engine.
-		err = b.loadDataInit(engine, cfg.EstimatedDataSize)
+		err := b.loadDataInit(ctx, engine, cfg.EstimatedDataSize)
 		if err != nil {
 			b.engines.Delete(engineUUID)
 			return err
@@ -277,18 +283,18 @@ func (b *Backend) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, eng
 	return nil
 }
 
-func (b *Backend) loadDataInit(engine *engine, dataSize int64) error {
+func (b *Backend) loadDataInit(ctx context.Context, engine *engine, dataSize int64) error {
 	for {
 		url := fmt.Sprintf(
-			"%s/load_data?cluster_id=%d&start_ts=%d&commit_ts=%d&data_size=%d",
+			"%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d&commit_ts=%d&data_size=%d",
 			engine.addr,
 			engine.clusterID,
+			engine.loadDataTaskID,
 			engine.ts,
 			engine.ts+1,
 			dataSize,
 		)
 		client := &http.Client{
-			// disable redirect, we will handle redirect manually.
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -299,11 +305,20 @@ func (b *Backend) loadDataInit(engine *engine, dataSize int64) error {
 		}
 		if resp.StatusCode == http.StatusFound {
 			engine.addr = strings.TrimSuffix(resp.Header.Get("Location"), "/load_data")
-			b.logger.Info("redirect to load_data worker", zap.String("worker addr", engine.addr))
+			b.logger.Info("redirect to loadData worker",
+				zap.String("loadDataTaskID", engine.loadDataTaskID),
+				zap.String("worker addr", engine.addr))
 			continue
 		}
 		if resp.StatusCode != http.StatusOK {
-			msg, _ := io.ReadAll(resp.Body)
+			msg, err := io.ReadAll(resp.Body)
+			// If the task exists, we can continue to import data.
+			if err == nil && strings.TrimSpace(string(msg)) == taskExitsMsg {
+				b.logger.Info("loadData task has inited in load_data worker",
+					zap.String("loadDataTask", engine.loadDataTaskID),
+					zap.String("worker addr", engine.addr))
+				return nil
+			}
 			return errors.Errorf("failed to open engine %s, msg: %s", resp.Status, string(msg))
 		}
 		return nil
@@ -337,8 +352,8 @@ func (b *Backend) ImportEngine(ctx context.Context, engineUUID uuid.UUID, region
 				return err
 			}
 			if states.Canceled {
-				b.logger.Error("loadData canceled", zap.Uint64("start_ts", engine.ts), zap.String("error", states.Error))
-				return errors.Errorf("load data canceled, start_ts:%d, error:%s", engine.ts, states.Error)
+				b.logger.Error("loadData canceled", zap.String("loadDataTaskID", engine.loadDataTaskID), zap.String("error", states.Error))
+				return errors.Errorf("load data canceled, loadDataTaskID:%s, error:%s", engine.loadDataTaskID, states.Error)
 			} else if states.Finished {
 				if states.hasDuplicateEntries() {
 					err = b.handleDuplicateEntries(ctx, engine, states)
@@ -351,7 +366,7 @@ func (b *Backend) ImportEngine(ctx context.Context, engineUUID uuid.UUID, region
 				b.logger.Info("loadData finished",
 					zap.String("db", engine.tbl.DB),
 					zap.String("table", engine.tbl.Name),
-					zap.Uint64("start_ts", engine.ts),
+					zap.String("loadDataTaskID", engine.loadDataTaskID),
 					zap.Int64("write_bytes", writeBytes))
 				return nil
 			} else {
@@ -359,7 +374,7 @@ func (b *Backend) ImportEngine(ctx context.Context, engineUUID uuid.UUID, region
 					"loadData states",
 					zap.String("db", engine.tbl.DB),
 					zap.String("table", engine.tbl.Name),
-					zap.Uint64("start_ts", engine.ts),
+					zap.String("loadDataTaskID", engine.loadDataTaskID),
 					zap.Int("created_files", states.CreatedFiles),
 					zap.Int("ingested_regions", states.IngestedRegions))
 			}
@@ -440,8 +455,8 @@ func sendRequest(ctx context.Context, method, url string, body io.Reader) ([]byt
 
 func (b *Backend) loadDataBuild(ctx context.Context, engine *engine, splitSize, splitKeys int64) error {
 	maxChunkID := engine.chunkID.Load()
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d&build=true&compression=zstd&split_size=%d&split_keys=%d",
-		engine.addr, engine.clusterID, engine.ts, splitSize, splitKeys)
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d&build=true&compression=zstd&split_size=%d&split_keys=%d",
+		engine.addr, engine.clusterID, engine.loadDataTaskID, engine.ts, splitSize, splitKeys)
 	chunkIDs := make([]uint64, 0, maxChunkID)
 	for i := uint64(1); i <= maxChunkID; i++ {
 		chunkIDs = append(chunkIDs, i)
@@ -455,7 +470,7 @@ func (b *Backend) loadDataBuild(ctx context.Context, engine *engine, splitSize, 
 }
 
 func (b *Backend) loadDataGetStates(ctx context.Context, engine *engine) (*LoadDataStates, error) {
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d", engine.addr, engine.clusterID, engine.ts)
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d", engine.addr, engine.clusterID, engine.loadDataTaskID, engine.ts)
 	data, err := sendRequest(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -478,7 +493,7 @@ func (b *Backend) CleanupEngine(ctx context.Context, engineUUID uuid.UUID) error
 }
 
 func (b *Backend) loadDataCleanUp(ctx context.Context, engine *engine) error {
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d", engine.addr, engine.clusterID, engine.ts)
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d", engine.addr, engine.clusterID, engine.loadDataTaskID, engine.ts)
 	_, err := sendRequest(ctx, "DELETE", url, nil)
 	if err != nil {
 		return err
@@ -537,12 +552,13 @@ func (b *Backend) getEngine(engineUUID uuid.UUID) (*engine, error) {
 }
 
 type engine struct {
-	ts         uint64
-	tbl        *checkpoints.TidbTableInfo
-	addr       string
-	clusterID  uint64
-	chunkID    atomic.Uint64
-	writeBytes atomic.Int64
+	loadDataTaskID string
+	ts             uint64
+	tbl            *checkpoints.TidbTableInfo
+	addr           string
+	clusterID      uint64
+	chunkID        atomic.Uint64
+	writeBytes     atomic.Int64
 }
 
 func (e *engine) allocChunkID() uint64 {
@@ -586,7 +602,7 @@ func (w *client) AppendRows(
 func (w *client) addChunk(ctx context.Context) error {
 	// The chunkID must be unique in a task, it doesn't need to be autoincrement.
 	chunkID := w.e.allocChunkID()
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&start_ts=%d&chunk_id=%d", w.e.addr, w.e.clusterID, w.e.ts, chunkID)
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d&chunk_id=%d", w.e.addr, w.e.clusterID, w.e.loadDataTaskID, w.e.ts, chunkID)
 	// TODO: retry
 	_, err := sendRequest(ctx, "PUT", url, bytes.NewReader(w.buf))
 	if err != nil {
@@ -694,4 +710,14 @@ func (b *Backend) setupReportWRU(ctx context.Context, keyspaceID uint32, keyspac
 // GetDupeController returns a new dupe controller.
 func (b *Backend) GetDupeController(dupeConcurrency int, errorMgr *errormanager.ErrorManager) *local.DupeController {
 	return local.NewDupeController(dupeConcurrency, errorMgr, nil, b.tikvCli, b.tikvCodec, b.duplicateDB, b.keyAdapter, nil, false)
+}
+
+func genLoadDataTaskID(cfg *backend.EngineConfig) string {
+	// cfg.EngineID is int32, engineID = -1 means it's a index engine,
+	// In order to generate a task id without a negative sign, we use abs(cfg.EngineID).
+	engineID := cfg.EngineID
+	if engineID < 0 {
+		engineID = -engineID
+	}
+	return fmt.Sprintf("%d-%d-%d", cfg.TaskID, cfg.TableInfo.ID, cfg.EngineID)
 }

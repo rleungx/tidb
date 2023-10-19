@@ -362,6 +362,7 @@ func (tr *TableImporter) importEngines(pCtx context.Context, rc *Controller, cp 
 	handleDataEngineThisRun := false
 	estimateDataSize := estimateDataSize(tr.tableMeta, tr.tableInfo, true, tr.logger)
 	idxEngineCfg := &backend.EngineConfig{
+		TaskID:            rc.cfg.TaskID,
 		TableInfo:         tr.tableInfo,
 		EstimatedDataSize: estimateDataSize,
 	}
@@ -552,6 +553,7 @@ func (tr *TableImporter) preprocessEngine(
 	if cp.Status >= checkpoints.CheckpointStatusAllWritten {
 		estimateDataSize := estimateDataSize(tr.tableMeta, tr.tableInfo, false, tr.logger)
 		engineCfg := &backend.EngineConfig{
+			TaskID:            rc.cfg.TaskID,
 			TableInfo:         tr.tableInfo,
 			EstimatedDataSize: estimateDataSize,
 		}
@@ -586,6 +588,7 @@ func (tr *TableImporter) preprocessEngine(
 	logTask := tr.logger.With(zap.Int32("engineNumber", engineID)).Begin(zap.InfoLevel, "encode kv data and write")
 	estimateDataSize := estimateDataSize(tr.tableMeta, tr.tableInfo, false, tr.logger)
 	dataEngineCfg := &backend.EngineConfig{
+		TaskID:            rc.cfg.TaskID,
 		TableInfo:         tr.tableInfo,
 		EstimatedDataSize: estimateDataSize,
 	}
