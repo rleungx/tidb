@@ -140,11 +140,12 @@ type MPPDispatchRequest struct {
 	IsRoot  bool        // root task returns data to tidb directly.
 	Timeout uint64      // If task is assigned but doesn't receive a connect request during timeout, the task should be destroyed.
 	// SchemaVer is for any schema-ful storage (like tiflash) to validate schema correctness if necessary.
-	SchemaVar  int64
-	StartTs    uint64
-	MppQueryID MPPQueryID
-	ID         int64 // identify a single task
-	State      MppTaskStates
+	SchemaVar         int64
+	StartTs           uint64
+	MppQueryID        MPPQueryID
+	ID                int64 // identify a single task
+	State             MppTaskStates
+	ResourceGroupName string
 }
 
 // MPPClient accepts and processes mpp requests.

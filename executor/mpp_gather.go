@@ -26,6 +26,7 @@ import (
 	"github.com/pingcap/tidb/parser/model"
 	plannercore "github.com/pingcap/tidb/planner/core"
 	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
@@ -94,6 +95,10 @@ func (e *MPPGather) appendMPPDispatchReq(pf *plannercore.Fragment) error {
 	} else {
 		dagReq.EncodeType = tipb.EncodeType_TypeChunk
 	}
+	rgName := e.base().ctx.GetSessionVars().ResourceGroupName
+	if !variable.EnableResourceControl.Load() {
+		rgName = ""
+	}
 	for _, mppTask := range pf.ExchangeSender.Tasks {
 		if mppTask.PartitionTableIDs != nil {
 			err = updateExecutorTableID(context.Background(), dagReq.RootExecutor, true, mppTask.PartitionTableIDs)
@@ -116,17 +121,19 @@ func (e *MPPGather) appendMPPDispatchReq(pf *plannercore.Fragment) error {
 			zap.String("plan", plannercore.ToString(pf.ExchangeSender)),
 			zap.Int64("mpp-version", mppTask.MppVersion.ToInt64()),
 			zap.String("exchange-compression-mode", pf.ExchangeSender.CompressionMode.Name()),
+			zap.String("ResourceGroup", rgName),
 		)
 		req := &kv.MPPDispatchRequest{
-			Data:       pbData,
-			Meta:       mppTask.Meta,
-			ID:         mppTask.ID,
-			IsRoot:     pf.IsRoot,
-			Timeout:    10,
-			SchemaVar:  e.is.SchemaMetaVersion(),
-			StartTs:    e.startTS,
-			MppQueryID: mppTask.MppQueryID,
-			State:      kv.MppTaskReady,
+			Data:              pbData,
+			Meta:              mppTask.Meta,
+			ID:                mppTask.ID,
+			IsRoot:            pf.IsRoot,
+			Timeout:           10,
+			SchemaVar:         e.is.SchemaMetaVersion(),
+			StartTs:           e.startTS,
+			MppQueryID:        mppTask.MppQueryID,
+			State:             kv.MppTaskReady,
+			ResourceGroupName: rgName,
 		}
 		e.mppReqs = append(e.mppReqs, req)
 	}

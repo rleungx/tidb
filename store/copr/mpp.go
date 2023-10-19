@@ -243,8 +243,9 @@ func (m *mppIterator) handleDispatchReq(ctx context.Context, bo *Backoffer, req 
 
 	// meta for current task.
 	taskMeta := &mpp.TaskMeta{StartTs: req.StartTs, QueryTs: req.MppQueryID.QueryTs, LocalQueryId: req.MppQueryID.LocalQueryID, TaskId: req.ID, ServerId: req.MppQueryID.ServerID,
-		Address:    req.Meta.GetAddress(),
-		MppVersion: m.mppVersion.ToInt64(),
+		Address:           req.Meta.GetAddress(),
+		MppVersion:        m.mppVersion.ToInt64(),
+		ResourceGroupName: req.ResourceGroupName,
 	}
 
 	mppReq := &mpp.DispatchTaskRequest{
@@ -358,8 +359,13 @@ func (m *mppIterator) handleDispatchReq(ctx context.Context, bo *Backoffer, req 
 func (m *mppIterator) cancelMppTasks() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if len(m.tasks) == 0 {
+		logutil.BgLogger().Debug("ignore cancel task because mppIterator.tasks is empty")
+		return
+	}
 	killReq := &mpp.CancelTaskRequest{
-		Meta: &mpp.TaskMeta{StartTs: m.startTs, QueryTs: m.mppQueryID.QueryTs, LocalQueryId: m.mppQueryID.LocalQueryID, ServerId: m.mppQueryID.ServerID, MppVersion: m.mppVersion.ToInt64()},
+		Meta: &mpp.TaskMeta{StartTs: m.startTs, QueryTs: m.mppQueryID.QueryTs, LocalQueryId: m.mppQueryID.LocalQueryID, ServerId: m.mppQueryID.ServerID, MppVersion: m.mppVersion.ToInt64(), ResourceGroupName: m.tasks[0].ResourceGroupName},
 	}
 
 	wrappedReq := tikvrpc.NewRequest(tikvrpc.CmdMPPCancel, killReq, kvrpcpb.Context{})
@@ -403,12 +409,13 @@ func (m *mppIterator) establishMPPConns(bo *Backoffer, req *kv.MPPDispatchReques
 	connReq := &mpp.EstablishMPPConnectionRequest{
 		SenderMeta: taskMeta,
 		ReceiverMeta: &mpp.TaskMeta{
-			StartTs:      req.StartTs,
-			QueryTs:      m.mppQueryID.QueryTs,
-			LocalQueryId: m.mppQueryID.LocalQueryID,
-			ServerId:     m.mppQueryID.ServerID,
-			MppVersion:   m.mppVersion.ToInt64(),
-			TaskId:       -1,
+			StartTs:           req.StartTs,
+			QueryTs:           m.mppQueryID.QueryTs,
+			LocalQueryId:      m.mppQueryID.LocalQueryID,
+			ServerId:          m.mppQueryID.ServerID,
+			MppVersion:        m.mppVersion.ToInt64(),
+			TaskId:            -1,
+			ResourceGroupName: req.ResourceGroupName,
 		},
 	}
 
