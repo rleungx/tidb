@@ -20,6 +20,7 @@ import (
 	"math"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
@@ -44,6 +45,7 @@ import (
 	utilhint "github.com/pingcap/tidb/util/hint"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/mathutil"
+	"github.com/pingcap/tidb/util/sem"
 	"github.com/pingcap/tidb/util/set"
 	"github.com/pingcap/tidb/util/tracing"
 	"github.com/pingcap/tipb/go-tipb"
@@ -176,7 +178,10 @@ func CheckPrivilege(activeRoles []*auth.RoleIdentity, pm privilege.Manager, vs [
 			if v.err == nil {
 				return ErrPrivilegeCheckFail.GenWithStackByArgs(v.privilege.String())
 			}
-			return errmsg.WithInvisibleTableErrTag(v.err)
+			if sem.IsEnabled() && sem.IsInvisibleTable(strings.ToLower(v.db), strings.ToLower(v.table)) {
+				return errmsg.WithInvisibleTableErrTag(v.err)
+			}
+			return v.err
 		}
 	}
 	return nil

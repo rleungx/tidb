@@ -652,7 +652,10 @@ func (e *ShowExec) fetchShowColumns(ctx context.Context) error {
 	checker := privilege.GetPrivilegeManager(e.ctx)
 	activeRoles := e.ctx.GetSessionVars().ActiveRoles
 	if checker != nil && e.ctx.GetSessionVars().User != nil && !checker.RequestVerification(activeRoles, e.DBName.O, tb.Meta().Name.O, "", mysql.InsertPriv|mysql.SelectPriv|mysql.UpdatePriv|mysql.ReferencesPriv) {
-		return errmsg.WithInvisibleTableErrTag(e.tableAccessDenied("SELECT", tb.Meta().Name.O))
+		if sem.IsEnabled() && sem.IsInvisibleTable(e.DBName.L, tb.Meta().Name.L) {
+			return errmsg.WithInvisibleTableErrTag(e.tableAccessDenied("SELECT", tb.Meta().Name.O))
+		}
+		return e.tableAccessDenied("SELECT", tb.Meta().Name.O)
 	}
 
 	var cols []*table.Column
