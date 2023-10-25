@@ -621,6 +621,10 @@ func (s *Server) registerConn(conn *clientConn) bool {
 
 // onConn runs in its own goroutine, handles queries from this connection.
 func (s *Server) onConn(conn *clientConn) {
+	if s.cfg.StandByMode {
+		standby.UpdateLastActive(time.Now())
+	}
+
 	// init the connInfo
 	_, _, err := conn.PeerHost("", false)
 	if err != nil {
