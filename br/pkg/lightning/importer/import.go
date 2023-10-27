@@ -1479,7 +1479,8 @@ func (rc *Controller) importTables(ctx context.Context) (finalErr error) {
 	// output error summary
 	defer rc.outpuErrorSummary()
 
-	if rc.cfg.TikvImporter.DuplicateResolution != config.DupeResAlgNone {
+	// For local backend, we will check duplicate key in tikv, so we need to pause GC to avoid data loss.
+	if rc.cfg.TikvImporter.DuplicateResolution != config.DupeResAlgNone && isLocalBackend(rc.cfg) {
 		subCtx, cancel := context.WithCancel(ctx)
 		exitCh, err := rc.keepPauseGCForDupeRes(subCtx)
 		if err != nil {
