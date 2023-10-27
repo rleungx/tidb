@@ -302,7 +302,7 @@ func main() {
 		err = checkTempStorageQuota()
 		mainErrHandler(err)
 	}
-	err = setupLog()
+	err = setupLog(keyspaceID)
 	mainErrHandler(err)
 	_, err = setupExtensions()
 	mainErrHandler(err)
@@ -982,9 +982,9 @@ func setGlobalVars() error {
 	return nil
 }
 
-func setupLog() error {
+func setupLog(keyspaceID uint32) error {
 	cfg := config.GetGlobalConfig()
-	err := logutil.InitLogger(cfg.Log.ToLogConfig(), keyspace.WrapZapcoreWithKeyspace())
+	err := logutil.InitLogger(cfg.Log.ToLogConfig(), keyspace.WrapZapcoreWithKeyspace(keyspaceID))
 	if err != nil {
 		return err
 	}
