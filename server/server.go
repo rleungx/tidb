@@ -804,6 +804,19 @@ func (s *Server) ShowProcessList() map[uint64]*util.ProcessInfo {
 	return rs
 }
 
+// GetClientCapabilityList returns all client capability.
+func (s *Server) GetClientCapabilityList() map[uint64]uint32 {
+	s.rwlock.RLock()
+	defer s.rwlock.RUnlock()
+	rs := make(map[uint64]uint32)
+	for id, client := range s.clients {
+		if client.ctx.Session != nil {
+			rs[id] = client.capability
+		}
+	}
+	return rs
+}
+
 // GetUserProcessList returns all process info that are created by user.
 func (s *Server) GetUserProcessList() map[uint64]*util.ProcessInfo {
 	s.rwlock.RLock()

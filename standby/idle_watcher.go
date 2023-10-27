@@ -43,6 +43,8 @@ func UpdateLastActive(t time.Time) {
 type sessionManager interface {
 	ConnectionCount() int
 	GetUserProcessList() map[uint64]*util.ProcessInfo
+	GetClientCapabilityList() map[uint64]uint32
+	KillAllConnections()
 }
 
 // StartWatchLastActive watches `lastActive` and exits the process if it is not updated for a long time.
@@ -62,12 +64,21 @@ func StartWatchLastActive(sm sessionManager, maxIdleSecs int) {
 						processCount++
 					}
 				}
+				var clientInteractiveCount int
+				for _, c := range sm.GetClientCapabilityList() {
+					if c&mysql.ClientInteractive > 0 {
+						clientInteractiveCount++
+					}
+				}
 				logutil.BgLogger().Info("connection idle for too long",
 					zap.Int("max-idle-seconds", maxIdleSecs),
 					zap.Int("connection-count", connCount),
-					zap.Int("process-count", processCount))
+					zap.Int("process-count", processCount),
+					zap.Int("client-interactive-count", clientInteractiveCount))
 
-				if connCount == 0 || processCount == 0 {
+				if (connCount == 0 || processCount == 0) && clientInteractiveCount == 0 {
+					// insure no active connections due to skip grace wait, exit.
+					sm.KillAllConnections()
 					signal.TiDBExit()
 				}
 			}
