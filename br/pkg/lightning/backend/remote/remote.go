@@ -713,11 +713,5 @@ func (b *Backend) GetDupeController(dupeConcurrency int, errorMgr *errormanager.
 }
 
 func genLoadDataTaskID(cfg *backend.EngineConfig) string {
-	// cfg.EngineID is int32, engineID = -1 means it's a index engine,
-	// In order to generate a task id without a negative sign, we use abs(cfg.EngineID).
-	engineID := cfg.EngineID
-	if engineID < 0 {
-		engineID = -engineID
-	}
 	return fmt.Sprintf("%d-%d-%d", cfg.TaskID, cfg.TableInfo.ID, cfg.EngineID)
 }
