@@ -167,15 +167,25 @@ func NewRemoteBackend(
 		return nil, common.ErrCreateKVClient.Wrap(err).GenWithStackByArgs()
 	}
 
-	keyspace := pdCliForTiKV.GetCodec().GetKeyspace()
+	httpClient := http.DefaultClient
+	if tlsConfig := tls.TLSConfig(); tlsConfig != nil {
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: tlsConfig,
+			},
+		}
+	}
+
+	ks := pdCliForTiKV.GetCodec().GetKeyspace()
 	remote := &Backend{
 		workerAddr:       cfg.TikvImporter.Addr,
 		pdCtl:            pdCtl,
 		tls:              tls,
 		pdAddr:           cfg.TiDB.PdAddr,
-		keyspace:         keyspace,
+		keyspace:         ks,
 		logger:           log.FromContext(ctx),
 		reportWriteBytes: func(int64) {},
+		httpClient:       httpClient,
 
 		tikvCodec:          tikvCodec,
 		tikvCli:            tikvCli,
@@ -214,6 +224,7 @@ type Backend struct {
 	engines          sync.Map
 	logger           log.Logger
 	reportWriteBytes func(int64)
+	httpClient       *http.Client
 
 	tikvCodec          tikvclient.Codec
 	duplicateDB        *pebble.DB
@@ -294,10 +305,9 @@ func (b *Backend) loadDataInit(ctx context.Context, engine *engine, dataSize int
 			engine.ts+1,
 			dataSize,
 		)
-		client := &http.Client{
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
+		client := *b.httpClient
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
 		}
 		resp, err := client.Post(url, "application/json", nil)
 		if err != nil {
@@ -436,13 +446,13 @@ func (b *Backend) handleDuplicateEntries(ctx context.Context, engine *engine, st
 	return nil
 }
 
-func sendRequest(ctx context.Context, method, url string, body io.Reader) ([]byte, error) {
+func sendRequest(ctx context.Context, httpClient *http.Client, method, url string, body io.Reader) ([]byte, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, errors.Errorf("failed to create request %s", url)
 	}
 	req.WithContext(ctx)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, errors.Errorf("failed to send request %s", url)
 	}
@@ -465,13 +475,13 @@ func (b *Backend) loadDataBuild(ctx context.Context, engine *engine, splitSize, 
 	if err != nil {
 		return err
 	}
-	_, err = sendRequest(ctx, "POST", url, bytes.NewReader(jsonData))
+	_, err = sendRequest(ctx, b.httpClient, "POST", url, bytes.NewReader(jsonData))
 	return err
 }
 
 func (b *Backend) loadDataGetStates(ctx context.Context, engine *engine) (*LoadDataStates, error) {
 	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d", engine.addr, engine.clusterID, engine.loadDataTaskID, engine.ts)
-	data, err := sendRequest(ctx, "GET", url, nil)
+	data, err := sendRequest(ctx, b.httpClient, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -494,7 +504,7 @@ func (b *Backend) CleanupEngine(ctx context.Context, engineUUID uuid.UUID) error
 
 func (b *Backend) loadDataCleanUp(ctx context.Context, engine *engine) error {
 	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d", engine.addr, engine.clusterID, engine.loadDataTaskID, engine.ts)
-	_, err := sendRequest(ctx, "DELETE", url, nil)
+	_, err := sendRequest(ctx, b.httpClient, "DELETE", url, nil)
 	if err != nil {
 		return err
 	}
@@ -539,6 +549,8 @@ func (b *Backend) LocalWriter(_ context.Context, _ *backend.LocalWriterConfig, e
 	client := &client{
 		e:        engine,
 		keyspace: b.keyspace,
+
+		httpClient: b.httpClient,
 	}
 	return client, nil
 }
@@ -570,6 +582,8 @@ type client struct {
 	e        *engine
 	buf      []byte
 	keyspace []byte
+
+	httpClient *http.Client
 }
 
 const batchSize int = 8 * 1024 * 1024
@@ -604,7 +618,7 @@ func (w *client) addChunk(ctx context.Context) error {
 	chunkID := w.e.allocChunkID()
 	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d&chunk_id=%d", w.e.addr, w.e.clusterID, w.e.loadDataTaskID, w.e.ts, chunkID)
 	// TODO: retry
-	_, err := sendRequest(ctx, "PUT", url, bytes.NewReader(w.buf))
+	_, err := sendRequest(ctx, w.httpClient, "PUT", url, bytes.NewReader(w.buf))
 	if err != nil {
 		return err
 	}
