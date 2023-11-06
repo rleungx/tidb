@@ -241,6 +241,7 @@ func NewParquetParser(
 		columnMetas:    columnMetas,
 		logger:         log.FromContext(ctx),
 		readSeekCloser: wrapper,
+		ctx:            ctx,
 	}, nil
 }
 
