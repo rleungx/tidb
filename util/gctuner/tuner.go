@@ -39,9 +39,19 @@ const (
 	defaultMinGCPercent uint32 = 100
 )
 
+// MaxGCPercent get the max cost of memory.
+func MaxGCPercent() uint32 {
+	return maxGCPercent.Load()
+}
+
 // SetMaxGCPercent sets the max cost of memory.
 func SetMaxGCPercent(percent uint32) {
 	maxGCPercent.Store(percent)
+}
+
+// MinGCPercent get the min cost of memory.
+func MinGCPercent() uint32 {
+	return minGCPercent.Load()
 }
 
 // SetMinGCPercent sets the max cost of memory.
