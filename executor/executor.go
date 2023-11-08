@@ -66,6 +66,7 @@ import (
 	"github.com/pingcap/tidb/util/mathutil"
 	"github.com/pingcap/tidb/util/memory"
 	"github.com/pingcap/tidb/util/resourcegrouptag"
+	"github.com/pingcap/tidb/util/sem"
 	"github.com/pingcap/tidb/util/syncutil"
 	"github.com/pingcap/tidb/util/topsql"
 	topsqlstate "github.com/pingcap/tidb/util/topsql/state"
@@ -493,13 +494,16 @@ func (e *ShowDDLExec) Next(ctx context.Context, req *chunk.Chunk) error {
 		}
 	}
 
-	serverInfo, err := infosync.GetServerInfoByID(ctx, e.ddlOwnerID)
-	if err != nil {
-		return err
-	}
+	serverAddress := variable.DefHostname + ":4000"
+	if !sem.IsEnabled() {
+		serverInfo, err := infosync.GetServerInfoByID(ctx, e.ddlOwnerID)
+		if err != nil {
+			return err
+		}
 
-	serverAddress := serverInfo.IP + ":" +
-		strconv.FormatUint(uint64(serverInfo.Port), 10)
+		serverAddress = serverInfo.IP + ":" +
+			strconv.FormatUint(uint64(serverInfo.Port), 10)
+	}
 
 	req.AppendInt64(0, e.ddlInfo.SchemaVer)
 	req.AppendString(1, e.ddlOwnerID)
