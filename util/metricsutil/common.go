@@ -99,7 +99,11 @@ func RegisterMetricsForBR(pdAddrs []string, keyspaceName string) error {
 // RegisterMetricsWithKeyspaceMeta register metrics with const label if keyspaceMeta set.
 func RegisterMetricsWithKeyspaceMeta(keyspaceMeta *keyspacepb.KeyspaceMeta) error {
 	if keyspaceMeta != nil {
-		metrics.SetConstLabels("keyspace_id", fmt.Sprint(keyspaceMeta.GetId()))
+		metrics.SetConstLabels(
+			"keyspace_id", fmt.Sprint(keyspaceMeta.GetId()),
+			"tenant_id", metrics.ServerlessTenantID,
+			"cluster_id", metrics.ServerlessClusterID,
+			"project_id", metrics.ServerlessProjectID)
 	}
 
 	metrics.InitMetrics()
