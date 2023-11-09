@@ -221,7 +221,7 @@ func main() {
 	defer close(quit)
 	serverless.StartMemoryScaler(quit)
 
-	var keyspaceMeta *keyspacepb.KeyspaceMeta
+	// If running standby mode, overwrite the keyspace config and error handlers.
 	if config.GetGlobalConfig().StandByMode {
 		activateRequest := standby.StartStandby(
 			config.GetGlobalConfig().Status.StatusHost,
@@ -237,36 +237,15 @@ func main() {
 				terror.MustNil(err)
 			}
 		}
-		// load keyspace and set metric labels.
-		cfg := config.GetGlobalConfig()
-		if strings.ToLower(cfg.Store) == "tikv" {
-			etcdAddrs, _, _, err := tikvconfig.ParsePath("tikv://" + cfg.Path)
-			mainErrHandler(err)
-			pdCli, err := pd.NewClientWithAPIContext(context.Background(), keyspace.BuildAPIContext(cfg.KeyspaceName), etcdAddrs, pd.SecurityOption{
-				CAPath:   cfg.Security.ClusterSSLCA,
-				CertPath: cfg.Security.ClusterSSLCert,
-				KeyPath:  cfg.Security.ClusterSSLKey,
-			},
-				pd.WithCustomTimeoutOption(time.Duration(cfg.PDClient.PDServerTimeout)*time.Second),
-				pd.WithInitMetricsOption(false),
-			)
-			mainErrHandler(err)
-			keyspaceMeta, err = pdCli.LoadKeyspace(context.TODO(), activateRequest.KeyspaceName)
-			mainErrHandler(err)
-
-			metrics.SetServerlessLabels(keyspaceMeta.Config["serverless_tenant_id"],
-				keyspaceMeta.Config["serverless_project_id"],
-				keyspaceMeta.Config["serverless_cluster_id"])
-			log.Info("serverless cluster info loaded",
-				zap.String("tenant-id", metrics.ServerlessTenantID),
-				zap.String("project-id", metrics.ServerlessProjectID),
-				zap.String("cluster-id", metrics.ServerlessClusterID),
-			)
-			pdCli.Close()
-		}
+	} else {
+		// If not set keyspace in config, try to get keyspace name from env and update config.
+		keyspace.GetKeyspaceNameBySettings()
 	}
 
 	err := registerStores()
+	mainErrHandler(err)
+	// load keyspace and set metric labels.
+	keyspaceMeta, err := getServerlessInfo()
 	mainErrHandler(err)
 
 	var keyspaceID uint32
@@ -395,6 +374,46 @@ func main() {
 	terror.MustNil(svr.Run())
 	<-exited
 	syncLog()
+}
+
+func getServerlessInfo() (*keyspacepb.KeyspaceMeta, error) {
+	// load keyspace and set metric labels.
+	cfg := config.GetGlobalConfig()
+	if keyspace.IsKeyspaceNameEmpty(cfg.KeyspaceName) || strings.ToLower(cfg.Store) != "tikv" {
+		return nil, nil
+	}
+
+	log.Info("serverless cluster info loading...", zap.Any("keyspace", cfg.KeyspaceName))
+	etcdAddrs, _, _, err := tikvconfig.ParsePath("tikv://" + cfg.Path)
+	if err != nil {
+		return nil, err
+	}
+	pdCli, err := pd.NewClientWithAPIContext(context.Background(), keyspace.BuildAPIContext(cfg.KeyspaceName), etcdAddrs, pd.SecurityOption{
+		CAPath:   cfg.Security.ClusterSSLCA,
+		CertPath: cfg.Security.ClusterSSLCert,
+		KeyPath:  cfg.Security.ClusterSSLKey,
+	},
+		pd.WithCustomTimeoutOption(time.Duration(cfg.PDClient.PDServerTimeout)*time.Second),
+		pd.WithInitMetricsOption(false),
+	)
+	if err != nil {
+		return nil, err
+	}
+	keyspaceMeta, err := pdCli.LoadKeyspace(context.TODO(), cfg.KeyspaceName)
+	if err != nil {
+		return nil, err
+	}
+
+	metrics.SetServerlessLabels(keyspaceMeta.Config["serverless_tenant_id"],
+		keyspaceMeta.Config["serverless_project_id"],
+		keyspaceMeta.Config["serverless_cluster_id"])
+	log.Info("serverless cluster info loaded",
+		zap.String("tenant-id", metrics.ServerlessTenantID),
+		zap.String("project-id", metrics.ServerlessProjectID),
+		zap.String("cluster-id", metrics.ServerlessClusterID),
+	)
+	pdCli.Close()
+	return keyspaceMeta, nil
 }
 
 func checkSafePointVersion(keyspaceMeta *keyspacepb.KeyspaceMeta) {
