@@ -80,7 +80,7 @@ func (s *tikvSnapshot) IterReverse(k kv.Key) (kv.Iterator, error) {
 		return s.interceptor.OnIterReverse(NewSnapshot(s.KVSnapshot), k)
 	}
 
-	scanner, err := s.KVSnapshot.IterReverse(k)
+	scanner, err := s.KVSnapshot.IterReverse(k, nil)
 	if err != nil {
 		return nil, derr.ToTiDBErr(err)
 	}

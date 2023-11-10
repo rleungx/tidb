@@ -119,6 +119,10 @@ type StmtRecord struct {
 	SumBackoffTimes      int64               `json:"sum_backoff_times"`
 	BackoffTypes         map[string]int      `json:"backoff_types"`
 	AuthUsers            map[string]struct{} `json:"auth_users"`
+	// RU
+	WRU float64 `json:"wru"`
+	RRU float64 `json:"rru"`
+	RU  float64 `json:"ru"`
 	// Other
 	SumMem               int64         `json:"sum_mem"`
 	MaxMem               int64         `json:"max_mem"`
@@ -413,6 +417,11 @@ func (r *StmtRecord) Add(info *stmtsummary.StmtExecInfo) {
 	r.SumPDTotal += time.Duration(atomic.LoadInt64(&info.TiKVExecDetails.WaitPDRespDuration))
 	r.SumBackoffTotal += time.Duration(atomic.LoadInt64(&info.TiKVExecDetails.BackoffDuration))
 	r.SumWriteSQLRespTotal += info.StmtExecDetails.WriteSQLRespDuration
+	if info.RUDetails != nil {
+		r.WRU += info.RUDetails.WRU()
+		r.RRU += info.RUDetails.RRU()
+		r.RU += info.RUDetails.WRU() + info.RUDetails.RRU()
+	}
 }
 
 // Merge merges the statistics of another StmtRecord to this StmtRecord.

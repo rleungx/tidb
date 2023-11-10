@@ -42,12 +42,11 @@ import (
 type ExplainExec struct {
 	baseExecutor
 
-	explain        *core.Explain
-	analyzeExec    Executor
-	executed       bool
-	ruRuntimeStats *clientutil.RURuntimeStats
-	rows           [][]string
-	cursor         int
+	explain     *core.Explain
+	analyzeExec Executor
+	executed    bool
+	rows        [][]string
+	cursor      int
 }
 
 // Open implements the Executor Open interface.
@@ -134,8 +133,10 @@ func (e *ExplainExec) executeAnalyzeExec(ctx context.Context) (err error) {
 	}
 	// Register the RU runtime stats to the runtime stats collection after the analyze executor has been executed.
 	if e.analyzeExec != nil && e.executed {
-		if coll := e.ctx.GetSessionVars().StmtCtx.RuntimeStatsColl; coll != nil {
-			coll.RegisterStats(e.explain.TargetPlan.ID(), &ruRuntimeStats{e.ruRuntimeStats})
+		ruDetailsRaw := ctx.Value(clientutil.RUDetailsCtxKey)
+		if coll := e.ctx.GetSessionVars().StmtCtx.RuntimeStatsColl; coll != nil && ruDetailsRaw != nil {
+			ruDetails := ruDetailsRaw.(*clientutil.RUDetails).Clone()
+			coll.RegisterStats(e.explain.TargetPlan.ID(), &ruRuntimeStats{ruDetails})
 		}
 	}
 	return err
@@ -316,16 +317,16 @@ func getHeapProfile() (fileName string, err error) {
 	return fileName, nil
 }
 
-// ruRuntimeStats is a wrapper of clientutil.RURuntimeStats,
+// ruRuntimeStats is a wrapper of clientutil.RUDetails,
 // which implements the RuntimeStats interface.
 type ruRuntimeStats struct {
-	*clientutil.RURuntimeStats
+	*clientutil.RUDetails
 }
 
 // String implements the RuntimeStats interface.
 func (e *ruRuntimeStats) String() string {
-	if e.RURuntimeStats != nil {
-		return fmt.Sprintf("RU:%f", e.RURuntimeStats.RRU()+e.RURuntimeStats.WRU())
+	if e.RUDetails != nil {
+		return fmt.Sprintf("RU:%f", e.RUDetails.RRU()+e.RUDetails.WRU())
 	}
 	return ""
 }
@@ -333,8 +334,8 @@ func (e *ruRuntimeStats) String() string {
 // Clone implements the RuntimeStats interface.
 func (e *ruRuntimeStats) Clone() execdetails.RuntimeStats {
 	newRs := &ruRuntimeStats{}
-	if e.RURuntimeStats != nil {
-		newRs.RURuntimeStats = e.RURuntimeStats.Clone()
+	if e.RUDetails != nil {
+		newRs.RUDetails = e.RUDetails.Clone()
 	}
 	return newRs
 }
@@ -345,12 +346,12 @@ func (e *ruRuntimeStats) Merge(other execdetails.RuntimeStats) {
 	if !ok {
 		return
 	}
-	if tmp.RURuntimeStats != nil {
-		if e.RURuntimeStats == nil {
-			e.RURuntimeStats = tmp.RURuntimeStats.Clone()
+	if tmp.RUDetails != nil {
+		if e.RUDetails == nil {
+			e.RUDetails = tmp.RUDetails.Clone()
 			return
 		}
-		e.RURuntimeStats.Merge(tmp.RURuntimeStats)
+		e.RUDetails.Merge(tmp.RUDetails)
 	}
 }
 

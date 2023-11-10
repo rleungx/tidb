@@ -1849,6 +1849,11 @@ func (a *ExecStmt) SummaryStmt(succ bool) {
 	if tikvExecDetailRaw != nil {
 		tikvExecDetail = *(tikvExecDetailRaw.(*util.ExecDetails))
 	}
+	ruDetails := util.NewRUDetails()
+	ruDetailsRaw := a.GoCtx.Value(util.RUDetailsCtxKey)
+	if ruDetailsRaw != nil {
+		ruDetails = ruDetailsRaw.(*util.RUDetails).Clone()
+	}
 
 	if stmtCtx.WaitLockLeaseTime > 0 {
 		if execDetail.BackoffSleep == nil {
@@ -1900,6 +1905,7 @@ func (a *ExecStmt) SummaryStmt(succ bool) {
 		StmtExecDetails:     stmtDetail,
 		ResultRows:          resultRows,
 		TiKVExecDetails:     tikvExecDetail,
+		RUDetails:           ruDetails,
 		Prepared:            a.isPreparedStmt,
 		KeyspaceName:        keyspaceName,
 		KeyspaceID:          keyspaceID,

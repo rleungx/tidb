@@ -109,7 +109,7 @@ func (m *memBuffer) Iter(k kv.Key, upperBound kv.Key) (kv.Iterator, error) {
 // If k is nil, the returned iterator will be positioned at the last key.
 // TODO: Add lower bound limit
 func (m *memBuffer) IterReverse(k kv.Key) (kv.Iterator, error) {
-	it, err := m.MemDB.IterReverse(k)
+	it, err := m.MemDB.IterReverse(k, nil)
 	return &tikvIterator{Iterator: it}, derr.ToTiDBErr(err)
 }
 
