@@ -2523,6 +2523,7 @@ func (cc *clientConn) upgradeToTLS(tlsConfig *tls.Config) error {
 	if err := tlsConn.Handshake(); err != nil {
 		return err
 	}
+	cc.setConn(tlsConn)
 	state := tlsConn.ConnectionState()
 	cc.tlsConn = &state
 	return nil
