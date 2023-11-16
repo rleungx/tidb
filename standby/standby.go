@@ -16,14 +16,17 @@ package standby
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/signal"
 	"go.uber.org/zap"
@@ -138,13 +141,27 @@ func StartStandby(host string, port uint, timeout uint) ActivateRequest {
 	// handle health
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"status":"standby"}`)) })
 	server = &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", host, port),
 		Handler: mux,
 	}
 	activationTimeout = timeout
 	logutil.BgLogger().Info("tidb-server is now running as standby, waiting for activation...", zap.String("addr", server.Addr))
 	go func() {
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+		l, err := net.Listen("tcp", addr)
+		if err != nil {
+			logutil.BgLogger().Warn("failed to listen", zap.Error(err))
+			os.Exit(1)
+		}
+		clusterSecurity := config.GetGlobalConfig().Security.ClusterSecurity()
+		tlsConfig, err := clusterSecurity.ToTLSConfig()
+		if err != nil {
+			logutil.BgLogger().Warn("failed to get tls config", zap.Error(err))
+			os.Exit(1)
+		}
+		if tlsConfig != nil {
+			l = tls.NewListener(l, tlsConfig)
+		}
+		if err := server.Serve(l); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logutil.BgLogger().Warn("failed to start tidb-server as standby", zap.Error(err))
 			os.Exit(1)
 		}
