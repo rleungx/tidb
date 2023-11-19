@@ -14,7 +14,7 @@ permissions:
 jobs:
   # Must choose one of the two labels: 'serverless-only' or 'not-serverless-only'.
   label_check:
-    runs-on: self-hosted
+    runs-on: x64
     steps:
       - name: Check PR Labels
         run: |
