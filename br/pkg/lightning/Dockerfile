@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Builder image
-FROM golang:1.20.5-bullseye as builder
+FROM golang:1.21-bullseye as builder
 
 RUN apt install -y wget make git gcc && mkdir -p /go/src/github.com/pingcap/tidb
 

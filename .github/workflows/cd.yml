@@ -166,3 +166,56 @@ jobs:
         run: |
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  build-arm64:
+    name: Build ARM64 Image
+    runs-on: arm64
+    env:
+      TIDB_VERSION: v7.1.1-serverless
+      TIDB_GIT_BRANCH: release-7.1-serverless
+    steps:
+      - name: Build and Push Images
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: "linux/arm64"
+          push: true
+          secrets: |
+            GIT_AUTH_TOKEN=${{ secrets.GIT_ACTION_BOT }}
+          build-args: |
+            GITHUB_TOKEN=${{ secrets.GIT_ACTION_BOT }}
+          tags: hub.pingcap.net/sunxiaoguang/serverless/tidb:${{ github.sha }}-arm64
+
+  build-amd64:
+    name: Build AMD64 Image
+    runs-on: amd64
+    env:
+      TIDB_VERSION: v7.1.1-serverless
+      TIDB_GIT_BRANCH: release-7.1-serverless
+    steps:
+      - name: Build and Push Images
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: "linux/amd64"
+          push: true
+          secrets: |
+            GIT_AUTH_TOKEN=${{ secrets.GIT_ACTION_BOT }}
+          build-args: |
+            GITHUB_TOKEN=${{ secrets.GIT_ACTION_BOT }}
+          tags: hub.pingcap.net/sunxiaoguang/serverless/tidb:${{ github.sha }}-amd64
+  multi-arch:
+    name: Create Multi-Architecture Image
+    runs-on: amd64
+    needs: ["build-arm64", "build-amd64"]
+    steps:
+      - name: create-manifest
+        run: |
+          docker manifest create hub.pingcap.net/sunxiaoguang/serverless/tidb:${{ github.sha }} \
+          --amend hub.pingcap.net/sunxiaoguang/serverless/tidb:${{ github.sha }}-amd64 \
+          --amend hub.pingcap.net/sunxiaoguang/serverless/tidb:${{ github.sha }}-arm64
+      - name: push-manifest
+        run: |
+          docker manifest push hub.pingcap.net/sunxiaoguang/serverless/tidb:${{ github.sha }}
