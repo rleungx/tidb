@@ -45,6 +45,7 @@ import (
 	"github.com/pingcap/tidb/util/intest"
 	"github.com/pingcap/tidb/util/logutil"
 	utilparser "github.com/pingcap/tidb/util/parser"
+	"github.com/pingcap/tidb/util/sem"
 	"github.com/pingcap/tidb/util/topsql"
 	"go.uber.org/zap"
 )
@@ -687,6 +688,12 @@ func handleStmtHints(hints []*ast.TableOptimizerHint) (stmtHints stmtctx.StmtHin
 	setVars := make(map[string]string)
 	setVarsOffs := make([]int, 0, len(hints))
 	for i, hint := range hints {
+		if sem.IsEnabled() {
+			if warn := sem.IsRestrictedHint(hint.HintName.L); warn != nil {
+				warns = append(warns, warn)
+			}
+			continue
+		}
 		switch hint.HintName.L {
 		case "memory_quota":
 			hintOffs[hint.HintName.L] = i
@@ -720,11 +727,11 @@ func handleStmtHints(hints []*ast.TableOptimizerHint) (stmtHints stmtctx.StmtHin
 
 			// Not all session variables are permitted for use with SET_VAR
 			sysVar := variable.GetSysVar(setVarHint.VarName)
-			if sysVar == nil {
+			if sysVar == nil || (sem.IsEnabled() && sem.IsInvisibleSysVar(sysVar.Name)) {
 				warns = append(warns, core.ErrUnresolvedHintName.GenWithStackByArgs(setVarHint.VarName, hint.HintName.String()))
 				continue
 			}
-			if !sysVar.IsHintUpdatable {
+			if !sysVar.IsHintUpdatable || (sem.IsEnabled() && sem.IsReadOnlySysVar(sysVar.Name)) {
 				warns = append(warns, core.ErrNotHintUpdatable.GenWithStackByArgs(setVarHint.VarName))
 				continue
 			}

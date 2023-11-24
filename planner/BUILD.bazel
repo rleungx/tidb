@@ -26,6 +26,7 @@ go_library(
         "//util/intest",
         "//util/logutil",
         "//util/parser",
+        "//util/sem",
         "//util/topsql",
         "@com_github_pingcap_errors//:errors",
         "@com_github_pingcap_failpoint//:failpoint",
