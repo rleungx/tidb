@@ -253,8 +253,9 @@ func TestGetLock(t *testing.T) {
 	cfg.PessimisticTxn.MaxRetryCount = 2048
 	config.StoreGlobalConfig(cfg)
 
+	err := tk.ExecToErr("SET GLOBAL tidb_lock_unchanged_keys = true")
 	// No timeout specified
-	err := tk.ExecToErr("SELECT get_lock('testlock')")
+	err = tk.ExecToErr("SELECT get_lock('testlock')")
 	require.Error(t, err)
 	terr := errors.Cause(err).(*terror.Error)
 	require.Equal(t, errors.ErrCode(mysql.ErrWrongParamcountToNativeFct), terr.Code())

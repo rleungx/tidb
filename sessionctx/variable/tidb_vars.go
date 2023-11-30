@@ -1351,7 +1351,7 @@ const (
 	DefTiDBEnableFastCheckTable                       = true
 	DefRuntimeFilterType                              = "IN"
 	DefRuntimeFilterMode                              = "OFF"
-	DefTiDBLockUnchangedKeys                          = true
+	DefTiDBLockUnchangedKeys                          = false
 	DefTiDBEnableRemoteCoprocessor                    = false
 )
 
