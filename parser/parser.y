@@ -83,6 +83,7 @@ import (
 	array             "ARRAY"
 	as                "AS"
 	asc               "ASC"
+	async             "ASYNC"
 	between           "BETWEEN"
 	bigIntType        "BIGINT"
 	binaryType        "BINARY"
@@ -1448,6 +1449,7 @@ import (
 	AttributesOpt                          "Attributes options"
 	AllColumnsOrPredicateColumnsOpt        "all columns or predicate columns option"
 	StatsOptionsOpt                        "Stats options"
+	SyncOptions                            "Sync Options"
 	DryRunOptions                          "Dry run options"
 	OptionalShardColumn                    "Optional shard column"
 	SpOptInout                             "Optional procedure param type"
@@ -14303,13 +14305,14 @@ TableLockList:
  * Split a SQL on a column. Used for bulk delete that doesn't need ACID.
  *******************************************************************/
 NonTransactionalDMLStmt:
-	"BATCH" OptionalShardColumn "LIMIT" NUM DryRunOptions ShardableStmt
+	"BATCH" OptionalShardColumn "LIMIT" NUM SyncOptions DryRunOptions ShardableStmt
 	{
 		$$ = &ast.NonTransactionalDMLStmt{
-			DryRun:      $5.(int),
+			Sync:        $5.(int),
+			DryRun:      $6.(int),
 			ShardColumn: $2.(*ast.ColumnName),
 			Limit:       getUint64FromNUM($4),
-			DMLStmt:     $6.(ast.ShardableDMLStmt),
+			DMLStmt:     $7.(ast.ShardableDMLStmt),
 		}
 	}
 
@@ -14318,6 +14321,15 @@ ShardableStmt:
 |	UpdateStmt
 |	InsertIntoStmt
 |	ReplaceIntoStmt
+
+SyncOptions:
+	{
+		$$ = ast.Sync
+	}
+|	"ASYNC"
+	{
+		$$ = ast.Async
+	}
 
 DryRunOptions:
 	{

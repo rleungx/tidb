@@ -507,6 +507,7 @@ func createStoreAndDomain(keyspaceName string) (kv.Storage, *domain.Domain, erro
 	if err != nil {
 		return nil, nil, err
 	}
+	session.RegisterBatchDisttask(storage) // need register before disttask manager init
 	copr.GlobalMPPFailedStoreProber.Run()
 	err = infosync.CheckTiKVVersion(storage, *semver.New(versioninfo.TiKVMinVersion))
 	if err != nil {
