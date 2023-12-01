@@ -105,7 +105,8 @@ const (
 	defaultCSVDataCharacterSet       = "binary"
 	defaultCSVDataInvalidCharReplace = utf8.RuneError
 
-	defaultMaxSourceDataSize = 25 * 1024 * 1024 * 1024 // 25GB
+	defaultMaxSourceDataSize       = 25 * 1024 * 1024 * 1024  // 25GB
+	defaultMaxSourceDataSizeForVip = 256 * 1024 * 1024 * 1024 // 256GB
 )
 
 var (
@@ -687,7 +688,8 @@ type MydumperRuntime struct {
 	// Changing the default value will result in increased parsing time. Non-compatible characters do not cause an increase in error.
 	DataInvalidCharReplace string `toml:"data-invalid-char-replace" json:"data-invalid-char-replace"`
 	// MaxSourceDataSize is the maximum size of the source data to be processed, in bytes.
-	MaxSourceDataSize int64 `toml:"max-source-data-size" json:"max-source-data-size"`
+	MaxSourceDataSize       int64 `toml:"max-source-data-size" json:"max-source-data-size"`
+	MaxSourceDataSizeForVip int64 `toml:"max-source-data-size-for-vip" json:"max-source-data-size-for-vip"`
 }
 
 // AllIgnoreColumns is a slice of IgnoreColumns.
@@ -968,12 +970,13 @@ func NewConfig() *Config {
 				EscapedBy:         `\`,
 				TrimLastSep:       false,
 			},
-			StrictFormat:           false,
-			MaxRegionSize:          MaxRegionSize,
-			Filter:                 GetDefaultFilter(),
-			DataCharacterSet:       defaultCSVDataCharacterSet,
-			DataInvalidCharReplace: string(defaultCSVDataInvalidCharReplace),
-			MaxSourceDataSize:      defaultMaxSourceDataSize,
+			StrictFormat:            false,
+			MaxRegionSize:           MaxRegionSize,
+			Filter:                  GetDefaultFilter(),
+			DataCharacterSet:        defaultCSVDataCharacterSet,
+			DataInvalidCharReplace:  string(defaultCSVDataInvalidCharReplace),
+			MaxSourceDataSize:       defaultMaxSourceDataSize,
+			MaxSourceDataSizeForVip: defaultMaxSourceDataSize,
 		},
 		TikvImporter: TikvImporter{
 			Backend:                 "",
