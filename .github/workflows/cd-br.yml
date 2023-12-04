@@ -168,6 +168,8 @@ jobs:
     name: Build ARM64 Image
     runs-on: arm64
     steps:
+      - name: Check out Code
+        uses: actions/checkout@v2
       - name: Build and Push Images
         uses: docker/build-push-action@v2
         with:
@@ -184,6 +186,8 @@ jobs:
     name: Build AMD64 Image
     runs-on: amd64
     steps:
+      - name: Check out Code
+        uses: actions/checkout@v2
       - name: Build and Push Images
         uses: docker/build-push-action@v2
         with:
