@@ -71,20 +71,22 @@ const (
 	// ...
 	// serverlessVersion30 adds 7.1 executors that's incompatible with tiflash 6.5 to pushdown_blacklist.
 	serverlessVersion30 = 30
+	// serverlessVersion31 change `tidb_replica_read` to `leader`.
+	serverlessVersion31 = 31
 )
 
 const (
 	// defaultMaxExecutionTime is the max execution time for serverless.
 	defaultMaxExecutionTime = int(30 * time.Minute / time.Millisecond)
-)
+	// defaultReplicaRead is the default value of replica read.
+	defaultReplicaRead = "leader"
 
-const (
 	branchBootstrapStateVar = "branch_bootstrap_state"
 )
 
 // currentServerlessVersion is defined as a variable, so we can modify its value for testing.
 // please make sure this is the largest version
-var currentServerlessVersion int64 = serverlessVersion30
+var currentServerlessVersion int64 = serverlessVersion31
 
 var bootstrapServerlessVersion = []func(Session, int64){
 	upgradeToServerlessVer2,
@@ -103,6 +105,7 @@ var bootstrapServerlessVersion = []func(Session, int64){
 	upgradeToServerlessVer15,
 	upgradeToServerlessVer17,
 	upgradeToServerlessVer30,
+	upgradeToServerlessVer31,
 }
 
 // updateServerlessVersion updates serverless version variable in mysql.TiDB table.
@@ -439,6 +442,13 @@ func upgradeToServerlessVer30(s Session, ver int64) {
 	)
 }
 
+func upgradeToServerlessVer31(s Session, ver int64) {
+	if ver >= serverlessVersion31 {
+		return
+	}
+	mustExecute(s, "set @@global.tidb_replica_read=%?", defaultReplicaRead)
+}
+
 // Serverless bootstrap procedures.
 // NOTE: The following methods will only be executed once at doDMLWorks during TiDB Bootstrap,
 // therefore any modification of it requires addition to the serverless version upgrade function above
@@ -487,6 +497,9 @@ func bootstrapServerlessVariables(s Session) {
 	// TODO: remove this after the next cse upgrade to 7.1
 	mustExecute(s, `INSERT HIGH_PRIORITY INTO %n.%n VALUES(%?, %?) ON DUPLICATE KEY UPDATE VARIABLE_VALUE=%?`,
 		mysql.SystemDB, mysql.GlobalVariablesTable, variable.TiDBPessimisticTransactionFairLocking, variable.Off, variable.Off,
+	)
+	mustExecute(s, `INSERT HIGH_PRIORITY INTO %n.%n VALUES(%?, %?) ON DUPLICATE KEY UPDATE VARIABLE_VALUE=%?`,
+		mysql.SystemDB, mysql.GlobalVariablesTable, variable.TiDBReplicaRead, defaultReplicaRead, defaultReplicaRead,
 	)
 }
 

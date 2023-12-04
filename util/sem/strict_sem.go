@@ -254,6 +254,7 @@ func strictModeReadOnlySysVar(varNameInLower string) bool {
 		variable.ValidatePasswordEnable,
 		// TODO: remove this after the next cse upgrade to 7.1
 		variable.TiDBPessimisticTransactionFairLocking,
+		variable.TiDBReplicaRead,
 		// The following variables contain sensitive information, so we mask them when enabling sem and
 		// mark them as read-only.
 		variable.DataDir:
