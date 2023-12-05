@@ -55,6 +55,35 @@ var (
 
 var activateCh = make(chan struct{}, 1)
 
+// KeyspaceMismatch is the response body when the keyspace name in http request
+// does not match the local keyspace name.
+type KeyspaceMismatch struct {
+	Remote string `json:"remote"`
+	Local  string `json:"local"`
+}
+
+func keyspaceChecker(next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		remote := r.URL.Query().Get("keyspace")
+		local := config.GetGlobalKeyspaceName()
+		if remote != local {
+			w.WriteHeader(http.StatusPreconditionFailed)
+			mismatch := KeyspaceMismatch{
+				Remote: remote,
+				Local:  local,
+			}
+			body, err := json.Marshal(mismatch)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Write(body)
+			return
+		}
+		next.ServeHTTP(w, r)
+	}
+}
+
 // Handler returns a handler to query tidb pool status or activate or exit the tidb server.
 func Handler() *http.ServeMux {
 	mux := http.NewServeMux()
@@ -112,14 +141,14 @@ func Handler() *http.ServeMux {
 			statusHandler(w, r)
 		}
 	})
-	mux.HandleFunc("/tidb-pool/exit", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/tidb-pool/exit", keyspaceChecker(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logutil.BgLogger().Info("receiving exit signal, exit after 2s...")
 		w.WriteHeader(http.StatusOK)
 		go func() {
 			time.Sleep(exitWaitDuration)
 			signal.TiDBExit()
 		}()
-	})
+	})))
 	return mux
 }
 
