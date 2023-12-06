@@ -58,10 +58,13 @@ func StartWatchLastActive(sm sessionManager, maxIdleSecs int) {
 			last := atomic.LoadInt64(&lastActive)
 			if time.Now().Unix()-last > int64(maxIdleSecs) {
 				connCount := sm.ConnectionCount()
-				var processCount int
+				var processCount, inTransCount int
 				for _, p := range sm.GetUserProcessList() {
 					if p.Command != mysql.ComSleep { // ignore sleep sessions (waiting for client query).
 						processCount++
+					}
+					if p.State&mysql.ServerStatusInTrans > 0 {
+						inTransCount++
 					}
 				}
 				var clientInteractiveCount int
@@ -74,9 +77,10 @@ func StartWatchLastActive(sm sessionManager, maxIdleSecs int) {
 					zap.Int("max-idle-seconds", maxIdleSecs),
 					zap.Int("connection-count", connCount),
 					zap.Int("process-count", processCount),
+					zap.Int("inTrans-count", inTransCount),
 					zap.Int("client-interactive-count", clientInteractiveCount))
 
-				if (connCount == 0 || processCount == 0) && clientInteractiveCount == 0 {
+				if (connCount == 0 || processCount == 0) && inTransCount == 0 && clientInteractiveCount == 0 {
 					// insure no active connections due to skip grace wait, exit.
 					sm.KillAllConnections()
 					signal.TiDBExit()
