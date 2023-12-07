@@ -35,9 +35,9 @@ var (
 	ServerlessTiDBReleaseVersionFixed = "v7.1.1-serverless"
 
 	// ServerVersion is the version information of this tidb-server in MySQL's format.
-	ServerVersion = fmt.Sprintf("5.7.25-TiDB-%s", TiDBReleaseVersionFixed)
+	ServerVersion = fmt.Sprintf("5.7.28-TiDB-%s", TiDBReleaseVersionFixed)
 
-	ServerlessServerVersion = fmt.Sprintf("5.7.25-TiDB-%s", ServerlessTiDBReleaseVersionFixed)
+	ServerlessServerVersion = fmt.Sprintf("5.7.28-TiDB-%s", ServerlessTiDBReleaseVersionFixed)
 )
 
 // Header information.
