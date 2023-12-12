@@ -29,6 +29,7 @@ import (
 	tidbutil "github.com/pingcap/tidb/util"
 	disttaskutil "github.com/pingcap/tidb/util/disttask"
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/pingcap/tidb/util/serverless/tidbworker"
 	"github.com/pingcap/tidb/util/syncutil"
 	"go.uber.org/zap"
 )
@@ -413,7 +414,7 @@ func (d *dispatcher) processNormalFlow(gTask *proto.Task) (err error) {
 	}
 
 	// Generate all available TiDB nodes for this global tasks.
-	serverNodes, err1 := GenerateSchedulerNodes(d.ctx)
+	serverNodes, err1 := GenerateSchedulerNodes(d.ctx, gTask.ID)
 	if err1 != nil {
 		return err1
 	}
@@ -444,7 +445,11 @@ func GetEligibleInstance(serverNodes []*infosync.ServerInfo, pos int) (string, e
 }
 
 // GenerateSchedulerNodes generate a eligible TiDB nodes.
-func GenerateSchedulerNodes(ctx context.Context) ([]*infosync.ServerInfo, error) {
+func GenerateSchedulerNodes(ctx context.Context, gTaskID int64) ([]*infosync.ServerInfo, error) {
+	// Return placeholder nodes according to setting if tidb worker for ddl is enabled.
+	if tidbworker.IsDDLMaster() {
+		return tidbworker.SchedulerNodes(gTaskID), nil
+	}
 	serverInfos, err := infosync.GetAllServerInfo(ctx)
 	if err != nil {
 		return nil, err
@@ -484,6 +489,10 @@ func (d *dispatcher) GetAllSchedulerIDs(ctx context.Context, gTaskID int64) ([]s
 }
 
 func matchServerInfo(serverInfos map[string]*infosync.ServerInfo, schedulerID string) bool {
+	// return true if tidb worker is enabled and the schedulerID is a worker ID.
+	if tidbworker.IsDDLMaster() || tidbworker.IsDDLWorker() {
+		return tidbworker.IsWorkerExecID(schedulerID)
+	}
 	for _, serverInfo := range serverInfos {
 		serverID := disttaskutil.GenerateExecID(serverInfo.IP, serverInfo.Port)
 		if serverID == schedulerID {

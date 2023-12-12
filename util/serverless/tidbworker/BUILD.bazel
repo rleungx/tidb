@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//config",
         "//ddl/util",
+        "//domain/infosync",
         "//sessionctx",
         "@com_github_pingcap_errors//:errors",
         "@com_github_pingcap_log//:log",

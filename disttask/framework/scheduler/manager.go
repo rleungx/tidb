@@ -116,6 +116,7 @@ func (b *ManagerBuilder) BuildManager(ctx context.Context, id string, taskTable 
 // Start starts the Manager.
 func (m *Manager) Start() {
 	m.wg.Add(1)
+	logutil.BgLogger().Info("[tidb-worker] start tidb worker manager", zap.String("id", m.id))
 	go func() {
 		defer m.wg.Done()
 		m.fetchAndHandleRunnableTasks(m.ctx)

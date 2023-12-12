@@ -30,6 +30,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/pingcap/tidb/util/serverless/tidbworker"
 	"github.com/pingcap/tidb/util/sqlexec"
 	"github.com/tikv/client-go/v2/util"
 	"go.uber.org/zap"
@@ -381,12 +382,32 @@ func (stm *TaskManager) UpdateGlobalTaskAndAddSubTasks(gTask *proto.Task, subtas
 			subtaskState = proto.TaskStateRevertPending
 		}
 
+		// Recycle the DDL worker when the global task is in one of the terminal state.
+		if tidbworker.IsDDLMaster() || tidbworker.IsDDLWorker() {
+			switch gTask.State {
+			case proto.TaskStateSucceed, proto.TaskStateFailed, proto.TaskStateReverted, proto.TaskStateRevertFailed:
+				err = tidbworker.GlobalTiDBWorkerManager.RecycleDDL(stm.ctx, gTask.ID)
+			}
+		}
+
 		for _, subtask := range subtasks {
 			// TODO: insert subtasks in batch
 			_, err = execSQL(stm.ctx, se, "insert into mysql.tidb_background_subtask(task_key, exec_id, meta, state, type, checkpoint) values (%?, %?, %?, %?, %?, %?)",
 				gTask.ID, subtask.SchedulerID, subtask.Meta, subtaskState, proto.Type2Int(subtask.Type), []byte{})
 			if err != nil {
 				return err
+			}
+			if tidbworker.IsDDLMaster() {
+				err = tidbworker.GlobalTiDBWorkerManager.RegisterDDL(
+					stm.ctx,
+					gTask.Key,
+					gTask.ID,
+					subtask.TaskID,
+					subtask.SchedulerID,
+				)
+				if err != nil {
+					return err
+				}
 			}
 		}
 

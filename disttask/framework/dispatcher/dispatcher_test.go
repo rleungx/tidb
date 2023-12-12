@@ -69,7 +69,7 @@ func TestGetInstance(t *testing.T) {
 	// test no server
 	mockedAllServerInfos := map[string]*infosync.ServerInfo{}
 	require.NoError(t, failpoint.Enable("github.com/pingcap/tidb/domain/infosync/mockGetAllServerInfo", makeFailpointRes(mockedAllServerInfos)))
-	serverNodes, err := dispatcher.GenerateSchedulerNodes(ctx)
+	serverNodes, err := dispatcher.GenerateSchedulerNodes(ctx, 0)
 	instanceID, _ := dispatcher.GetEligibleInstance(serverNodes, 0)
 	require.Lenf(t, instanceID, 0, "instanceID:%d", instanceID)
 	require.EqualError(t, err, "not found instance")
@@ -95,7 +95,7 @@ func TestGetInstance(t *testing.T) {
 		},
 	}
 	require.NoError(t, failpoint.Enable("github.com/pingcap/tidb/domain/infosync/mockGetAllServerInfo", makeFailpointRes(mockedAllServerInfos)))
-	serverNodes, err = dispatcher.GenerateSchedulerNodes(ctx)
+	serverNodes, err = dispatcher.GenerateSchedulerNodes(ctx, 0)
 	require.NoError(t, err)
 	mockInstanceIDs := []string{}
 	instanceID, err = dispatcher.GetEligibleInstance(serverNodes, 0)

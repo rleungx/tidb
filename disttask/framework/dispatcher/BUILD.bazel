@@ -19,6 +19,7 @@ go_library(
         "//util",
         "//util/disttask",
         "//util/logutil",
+        "//util/serverless/tidbworker",
         "//util/syncutil",
         "@com_github_pingcap_errors//:errors",
         "@com_github_stretchr_testify//mock",

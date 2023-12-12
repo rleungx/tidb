@@ -12,6 +12,7 @@ go_library(
         "//sessionctx",
         "//util/chunk",
         "//util/logutil",
+        "//util/serverless/tidbworker",
         "//util/sqlexec",
         "@com_github_ngaut_pools//:pools",
         "@com_github_pingcap_errors//:errors",

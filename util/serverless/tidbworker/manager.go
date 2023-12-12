@@ -103,3 +103,18 @@ func (m *manager) RecycleGCV2(ctx context.Context, safePoint uint64) error {
 func (m *manager) Role() string {
 	return m.role
 }
+
+func (m *manager) RegisterDDL(ctx context.Context, taskKey string, gTaskID, subTaskID int64, execID string) error {
+	log.Info("[tidb-worker] register a DDL task to worker service",
+		zap.String("task-key", taskKey),
+		zap.Int64("global-task-id", gTaskID),
+		zap.Int64("subtask-id", subTaskID),
+		zap.String("exec-id", execID),
+	)
+	return m.client.RegisterDDL(ctx, taskKey, gTaskID, subTaskID, execID)
+}
+
+func (m *manager) RecycleDDL(ctx context.Context, gTaskID int64) error {
+	log.Info("[tidb-worker] recycle a DDL task from worker service", zap.Int64("global-task-id", gTaskID))
+	return m.client.RecycleDDL(ctx, gTaskID)
+}

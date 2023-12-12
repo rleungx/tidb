@@ -65,7 +65,7 @@ func (h *litBackfillFlowHandle) ProcessNormalFlow(_ context.Context, _ dispatche
 	if tblInfo.Partition == nil {
 		switch gTask.Step {
 		case proto.StepOne:
-			serverNodes, err := dispatcher.GenerateSchedulerNodes(d.ctx)
+			serverNodes, err := dispatcher.GenerateSchedulerNodes(d.ctx, gTask.ID)
 			if err != nil {
 				return nil, err
 			}

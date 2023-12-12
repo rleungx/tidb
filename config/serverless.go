@@ -16,7 +16,13 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
+)
+
+const (
+	// EnvVarExecID is the overwritten execID of the ddl worker.
+	EnvVarExecID = "EXEC_ID"
 )
 
 // BootstrapControl contains ratelimit configuration options.
@@ -48,10 +54,15 @@ type TiDBWorker struct {
 	Enable bool `toml:"enable" json:"enable"`
 	// Role indicates the role of the TiDB worker.
 	Role string `toml:"role" json:"role"`
-	// Image specifies the desired image of the TiDB worker.
+	// TidbPool specifies pool of the tidb worker.
 	TidbPool string `toml:"tidb-pool" json:"tidb-pool"`
 	// RegistryAddr specifies the address of the TiDB worker service.
 	RegistryAddr string `toml:"registry-addr" json:"registry-addr"`
+	// DDLWorkerCount specifies the desired number of DDL workers.
+	// It only applies when TiDB is running as master.
+	DDLWorkerCount int `toml:"ddl-worker-count" json:"ddl-worker-count"`
+	// ExecID specifies execID when TiDB is running as ddl worker.
+	ExecID string `toml:"exec-id" json:"exec-id"`
 }
 
 const (
@@ -61,6 +72,8 @@ const (
 	RoleGCWorker = "gc"
 	// RoleGCV2Worker is the role for GCV2 worker.
 	RoleGCV2Worker = "gcv2"
+	// RoleDDLWorker is the role for DDL worker.
+	RoleDDLWorker = "ddl"
 )
 
 // defaultTiDBWorker creates a new TiDBWorker.
@@ -96,6 +109,13 @@ func (w *TiDBWorker) Valid(c *Config) error {
 		}
 		// Disable DDL when running as GCV2 worker.
 		c.Instance.TiDBEnableDDL.Store(false)
+	case RoleDDLWorker:
+		// Skip running GC worker on DDL worker.
+		c.SkipGCWorker = true
+		// Overwrite execID if its set in env.
+		if execID := os.Getenv(EnvVarExecID); execID != "" {
+			w.ExecID = execID
+		}
 	default:
 		return fmt.Errorf("invalid tidb worker role %s", w.Role)
 	}
