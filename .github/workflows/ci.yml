@@ -31,7 +31,7 @@ jobs:
       - name: setup go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.20"
+          go-version-file: ./go.mod
           cache-dependency-path: ./go.sum
         env:
           GOPRIVATE: "github.com/tidbcloud,github.com/pingcap/dbaas"
@@ -63,7 +63,7 @@ jobs:
       - name: setup go
         uses: actions/setup-go@v4
         with:
-          go-version: "1.20"
+          go-version-file: ./go.mod
           cache-dependency-path: ./go.sum
         env:
           GOPRIVATE: "github.com/tidbcloud,github.com/pingcap/dbaas"
