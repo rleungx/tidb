@@ -76,6 +76,8 @@ type LocalWriterConfig struct {
 	IsKVSorted bool
 	// only needed for tidb backend, can omit for local backend
 	TableName string
+	// is a index of the chunks for this LocalWriter
+	LocalWriterID int
 }
 
 // EngineConfig defines configuration used for open engine
@@ -222,7 +224,6 @@ func (be EngineManager) OpenEngine(ctx context.Context, config *EngineConfig,
 	tag, engineUUID := MakeUUID(tableName, engineID)
 	logger := makeLogger(log.FromContext(ctx), tag, engineUUID)
 
-	config.EngineID = engineID
 	if err := be.backend.OpenEngine(ctx, config, engineUUID); err != nil {
 		return nil, err
 	}

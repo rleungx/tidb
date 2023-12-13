@@ -157,7 +157,7 @@ type DBStore struct {
 
 // Config is the configuration.
 type Config struct {
-	TaskID int64 `toml:"-" json:"id"`
+	TaskID int64 `toml:"id" json:"id"`
 
 	App  Lightning `toml:"lightning" json:"lightning"`
 	TiDB DBStore   `toml:"tidb" json:"tidb"`

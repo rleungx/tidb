@@ -59,31 +59,37 @@ import (
 		POST /load_data?cluster_id=%d&task_id=%s&start_ts=%d&commit_ts=%d
 
 	2. put chunk:
-		PUT /load_data?cluster_id=%d&task_id=%s&chunk_id=%d
+		PUT /load_data?cluster_id=%d&task_id=%s&writer_id=%d&chunk_id=%d
 
 		key_len(2) + key(key_len) + val_len(4) + value(val_len)
 		key_len(2) + key(key_len) + val_len(4) + value(val_len)
 		...
 
-	3. build task:
+	3. flush:
+		POST /load_data?cluster_id=%d&task_id=%s&flush=true
+
+	4. build task:
 		POST /load_data?cluster_id=%d&task_id=%s&build=true&compression=zstd&split_size=%d&split_keys=%d
 
-	4. get task states:
+	5. get task states:
 		GET /load_data?cluster_id=%d&task_id=%s
 
 		{"canceled": false, "finished": false, "error": "", "created-files": 10, "ingested-regions": 3}
 
-	5. clean up task:
+	6. clean up task:
 		DELETE /load_data?cluster_id=%d&task_id=%s
 */
 
 const (
 	maxDuplicateBatchSize = 4 << 20
 	taskExitsMsg          = "task exists"
+	sleepDuration         = 1 * time.Second
+	retryCount            = 60
 )
 
 // LoadDataStates is json data that returned by remote server GET API.
 type LoadDataStates struct {
+	TaskID          string `json:"task-id"`
 	Canceled        bool   `json:"canceled"`
 	Finished        bool   `json:"finished"`
 	Error           string `json:"error"`
@@ -91,6 +97,28 @@ type LoadDataStates struct {
 	IngestedRegions int    `json:"ingested-regions"`
 
 	DuplicateEntries []duplicateEntry `json:"duplicated-entries"`
+}
+
+// PutChunkResult is json data that returned by remote server PUT API.
+type PutChunkResult struct {
+	FlushedChunkID uint64 `json:"flushed-chunk-id"`
+	HandledChunkID uint64 `json:"handled-chunk-id"`
+	Canceled       bool   `json:"canceled"`
+	Finished       bool   `json:"finished"`
+	Error          string `json:"error"`
+}
+
+// FlushResult is json data that returned by remote server POST API.
+type FlushResult struct {
+	FlushedChunkIDs map[uint64]uint64 `json:"flushed-chunk-ids"`
+	Canceled        bool              `json:"canceled"`
+	Finished        bool              `json:"finished"`
+	Error           string            `json:"error"`
+}
+
+type writerState struct {
+	FlushedChunkID uint64 `json:"flushed-chunk-id"`
+	HandledChunkID uint64 `json:"handled-chunk-id"`
 }
 
 type duplicateEntry struct {
@@ -276,11 +304,16 @@ func (b *Backend) OpenEngine(ctx context.Context, cfg *backend.EngineConfig, eng
 
 	loadDataTaskID := genLoadDataTaskID(cfg)
 	e, _ := b.engines.LoadOrStore(engineUUID, &engine{
+		ctx:            ctx,
+		logger:         log.With(zap.String("loadDataTaskID", loadDataTaskID)),
 		loadDataTaskID: loadDataTaskID,
 		ts:             ts,
 		tbl:            cfg.TableInfo,
 		addr:           b.workerAddr,
 		clusterID:      b.pdCtl.GetPDClient().GetClusterID(ctx),
+		writers:        map[uint64]*client{},
+		httpClient:     b.httpClient,
+		backend:        b,
 	})
 	engine := e.(*engine)
 	if engine.loadDataTaskID == loadDataTaskID {
@@ -337,7 +370,49 @@ func (b *Backend) loadDataInit(ctx context.Context, engine *engine, dataSize int
 
 // CloseEngine closes backend engine by uuid.
 func (b *Backend) CloseEngine(ctx context.Context, cfg *backend.EngineConfig, engineUUID uuid.UUID) error {
-	return nil
+	engine, err := b.getEngine(engineUUID)
+	if err != nil {
+		exist, err := b.checkLoadDataTask(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		if !exist {
+			return fmt.Errorf("engine %s not found", genLoadDataTaskID(cfg))
+		}
+		b.logger.Info("not found engine, open a new one")
+		err = b.OpenEngine(ctx, cfg, engineUUID)
+		if err != nil {
+			return err
+		}
+		engine, err = b.getEngine(engineUUID)
+		if err != nil {
+			b.logger.Warn("failed to open a new engine", zap.Error(err))
+			return err
+		}
+	}
+
+	return engine.flush(ctx)
+}
+
+func (b *Backend) checkLoadDataTask(ctx context.Context, cfg *backend.EngineConfig) (bool, error) {
+	clusterID := b.pdCtl.GetPDClient().GetClusterID(ctx)
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d", b.workerAddr, clusterID)
+	data, err := sendRequest(ctx, b.httpClient, "GET", url, nil)
+	if err != nil {
+		return false, err
+	}
+	tasks := []LoadDataStates{}
+	err = json.Unmarshal(data, &tasks)
+	if err != nil {
+		return false, err
+	}
+	taskID := genLoadDataTaskID(cfg)
+	for _, task := range tasks {
+		if task.TaskID == taskID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // ImportEngine imports an engine to TiKV.
@@ -386,7 +461,8 @@ func (b *Backend) ImportEngine(ctx context.Context, engineUUID uuid.UUID, region
 					zap.String("table", engine.tbl.Name),
 					zap.String("loadDataTaskID", engine.loadDataTaskID),
 					zap.Int("created_files", states.CreatedFiles),
-					zap.Int("ingested_regions", states.IngestedRegions))
+					zap.Int("ingested_regions", states.IngestedRegions),
+				)
 			}
 		}
 	}
@@ -446,51 +522,64 @@ func (b *Backend) handleDuplicateEntries(ctx context.Context, engine *engine, st
 	return nil
 }
 
-func sendRequest(ctx context.Context, httpClient *http.Client, method, url string, body io.Reader) ([]byte, error) {
-	req, err := http.NewRequest(method, url, body)
-	if err != nil {
-		return nil, errors.Errorf("failed to create request %s", url)
+func sendRequest(ctx context.Context, httpClient *http.Client, method, url string, data []byte) ([]byte, error) {
+	var (
+		resp *http.Response
+		err  error
+	)
+	retry := retryCount
+	for retry > 0 {
+		resp, err = func() (*http.Response, error) {
+			body := bytes.NewReader(data)
+			req, err := http.NewRequest(method, url, body)
+			if err != nil {
+				return nil, errors.Errorf("failed to create request %s", url)
+			}
+			req.WithContext(ctx)
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				return nil, errors.Errorf("failed to send request %s", url)
+			}
+			if resp.StatusCode != http.StatusOK {
+				return nil, errors.Errorf("failed to send request %s, status %s", url, resp.Status)
+			}
+			return resp, nil
+		}()
+		if err == nil {
+			defer resp.Body.Close()
+			break
+		}
+
+		// sleep for a while between each retry
+		time.Sleep(sleepDuration)
+		retry -= 1
 	}
-	req.WithContext(ctx)
-	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, errors.Errorf("failed to send request %s", url)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("failed to send request %s, status %s", url, resp.Status)
+		return nil, err
 	}
 	return io.ReadAll(resp.Body)
 }
 
 func (b *Backend) loadDataBuild(ctx context.Context, engine *engine, splitSize, splitKeys int64) error {
-	maxChunkID := engine.chunkID.Load()
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d&build=true&compression=zstd&split_size=%d&split_keys=%d",
-		engine.addr, engine.clusterID, engine.loadDataTaskID, engine.ts, splitSize, splitKeys)
-	chunkIDs := make([]uint64, 0, maxChunkID)
-	for i := uint64(1); i <= maxChunkID; i++ {
-		chunkIDs = append(chunkIDs, i)
-	}
-	jsonData, err := json.Marshal(chunkIDs)
-	if err != nil {
-		return err
-	}
-	_, err = sendRequest(ctx, b.httpClient, "POST", url, bytes.NewReader(jsonData))
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&build=true&compression=zstd&split_size=%d&split_keys=%d",
+		engine.addr, engine.clusterID, engine.loadDataTaskID, splitSize, splitKeys)
+
+	_, err := sendRequest(ctx, b.httpClient, "POST", url, nil)
 	return err
 }
 
 func (b *Backend) loadDataGetStates(ctx context.Context, engine *engine) (*LoadDataStates, error) {
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d", engine.addr, engine.clusterID, engine.loadDataTaskID, engine.ts)
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s", engine.addr, engine.clusterID, engine.loadDataTaskID)
 	data, err := sendRequest(ctx, b.httpClient, "GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
-	states := new(LoadDataStates)
-	err = json.Unmarshal(data, states)
+	state := new(LoadDataStates)
+	err = json.Unmarshal(data, state)
 	if err != nil {
 		return nil, err
 	}
-	return states, nil
+	return state, nil
 }
 
 // CleanupEngine cleanup the engine and reclaim the space.
@@ -503,12 +592,9 @@ func (b *Backend) CleanupEngine(ctx context.Context, engineUUID uuid.UUID) error
 }
 
 func (b *Backend) loadDataCleanUp(ctx context.Context, engine *engine) error {
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d", engine.addr, engine.clusterID, engine.loadDataTaskID, engine.ts)
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s", engine.addr, engine.clusterID, engine.loadDataTaskID)
 	_, err := sendRequest(ctx, b.httpClient, "DELETE", url, nil)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // FlushEngine ensures all KV pairs written to an open engine has been
@@ -518,12 +604,17 @@ func (b *Backend) loadDataCleanUp(ctx context.Context, engine *engine) error {
 // This method is only relevant for local backend, and is no-op for all
 // other backends.
 func (b *Backend) FlushEngine(ctx context.Context, engineUUID uuid.UUID) error {
-	return nil
+	engine, err := b.getEngine(engineUUID)
+	if err != nil {
+		return err
+	}
+	return engine.flush(ctx)
 }
 
 // FlushAllEngines performs FlushEngine on all opened engines. This is a
 // very expensive operation and should only be used in some rare situation
 // (e.g. preparing to resolve a disk quota violation).
+// This method is only relevant for local backend, and is no-op for remote backend.
 func (b *Backend) FlushAllEngines(ctx context.Context) error {
 	return nil
 }
@@ -541,17 +632,31 @@ func (b *Backend) ResetEngine(ctx context.Context, engineUUID uuid.UUID) error {
 }
 
 // LocalWriter obtains a thread-local EngineWriter for writing rows into the given engine.
-func (b *Backend) LocalWriter(_ context.Context, _ *backend.LocalWriterConfig, engineUUID uuid.UUID) (backend.EngineWriter, error) {
+func (b *Backend) LocalWriter(_ context.Context, cfg *backend.LocalWriterConfig, engineUUID uuid.UUID) (backend.EngineWriter, error) {
 	engine, err := b.getEngine(engineUUID)
 	if err != nil {
 		return nil, err
 	}
-	client := &client{
-		e:        engine,
-		keyspace: b.keyspace,
-
-		httpClient: b.httpClient,
+	localWriterID := uint64(cfg.LocalWriterID)
+	_, ok := engine.writers[localWriterID]
+	if ok {
+		return nil, errors.Errorf("local writer %d already exists", localWriterID)
 	}
+
+	chunksCache, err := newChunkCache(engine.loadDataTaskID, localWriterID)
+	if err != nil {
+		return nil, err
+	}
+	client := &client{
+		e:           engine,
+		writerID:    localWriterID,
+		keyspace:    b.keyspace,
+		nextChunkID: 1,
+		httpClient:  b.httpClient,
+		state:       &writerState{},
+		chunksCache: chunksCache,
+	}
+	engine.writers[localWriterID] = client
 	return client, nil
 }
 
@@ -564,26 +669,110 @@ func (b *Backend) getEngine(engineUUID uuid.UUID) (*engine, error) {
 }
 
 type engine struct {
+	ctx            context.Context
+	logger         log.Logger
 	loadDataTaskID string
 	ts             uint64
 	tbl            *checkpoints.TidbTableInfo
+	writers        map[uint64]*client
 	addr           string
 	clusterID      uint64
 	chunkID        atomic.Uint64
 	writeBytes     atomic.Int64
+	httpClient     *http.Client
+	backend        *Backend
 }
 
-func (e *engine) allocChunkID() uint64 {
-	return e.chunkID.Add(1)
+func (e *engine) flush(ctx context.Context) error {
+	for _, writer := range e.writers {
+		err := writer.addChunk(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	for {
+		url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&flush=true",
+			e.addr, e.clusterID, e.loadDataTaskID)
+
+		data, err := sendRequest(ctx, e.httpClient, "POST", url, nil)
+		if err != nil {
+			e.logger.Error("failed to flush", zap.Error(err))
+			return err
+		}
+
+		flushRes := new(FlushResult)
+		err = json.Unmarshal(data, &flushRes)
+		if err != nil {
+			e.logger.Error("failed to unmarshal flushed chunks", zap.Error(err))
+			return err
+		}
+
+		if flushRes.Canceled || flushRes.Error != "" {
+			e.logger.Error("failed to flush",
+				zap.Bool("canceled", flushRes.Canceled),
+				zap.String("error", flushRes.Error))
+			return errors.Errorf("failed to flush, canceled: %t, error: %s",
+				flushRes.Canceled, flushRes.Error)
+		}
+
+		if flushRes.Finished {
+			e.logger.Info("loadData finished")
+			return nil
+		}
+
+		succeed := true
+		// make sure all chunks are flushed
+		for id, writer := range e.writers {
+			flushedChunkID, ok := flushRes.FlushedChunkIDs[id]
+			if ok && flushedChunkID == writer.lastChunkID() {
+				// writer's all chunks are flushed
+				continue
+			}
+
+			succeed = false
+			// writer's chunks are not flushed, chunks were lost after the remote worker restarting, so put again.
+			e.logger.Warn("writer's chunks are not flushed, retry to put chunk",
+				zap.Uint64("writerID", id),
+				zap.Uint64("flushedChunkID", flushRes.FlushedChunkIDs[id]),
+				zap.Uint64("lastChunkID", writer.lastChunkID()),
+				zap.Any("state", writer.state),
+			)
+			_, err := writer.flushed(ctx)
+			if err != nil {
+				return err
+			}
+		}
+		if succeed {
+			break
+		}
+	}
+
+	for writerID, writer := range e.writers {
+		err := writer.chunksCache.cleanAll()
+		if err != nil {
+			e.logger.Warn("failed to clean chunks cache", zap.Error(err), zap.Uint64("writerID", writerID))
+		}
+	}
+	return nil
+}
+
+// chunk is a unit of data that send to remote worker.
+type chunk struct {
+	id   uint64
+	data []byte
 }
 
 // client define a local writer that send KV pairs to remote worker.
 type client struct {
-	e        *engine
-	buf      []byte
-	keyspace []byte
-
-	httpClient *http.Client
+	e           *engine
+	writerID    uint64
+	buf         []byte
+	keyspace    []byte
+	state       *writerState
+	nextChunkID uint64
+	httpClient  *http.Client
+	chunksCache *chunkCache
 }
 
 const batchSize int = 8 * 1024 * 1024
@@ -613,18 +802,113 @@ func (w *client) AppendRows(
 	return nil
 }
 
+func (w *client) handlePutChunkResult(ctx context.Context, putChunkRes *PutChunkResult, expectChunkID uint64) error {
+	if putChunkRes.Canceled {
+		return errors.Errorf("failed to put chunk, canceled: %t, finished: %t, error: %s",
+			putChunkRes.Canceled, putChunkRes.Finished, putChunkRes.Error)
+	}
+
+	if putChunkRes.HandledChunkID != expectChunkID {
+		w.e.logger.Info("remote worker may restart, retry to put chunk",
+			zap.Uint64("writerID", w.writerID),
+			zap.Uint64("expectChunkID", expectChunkID),
+			zap.Uint64("handledChunkID", putChunkRes.HandledChunkID),
+			zap.Uint64("FlushedChunkID", putChunkRes.FlushedChunkID),
+			zap.String("error", putChunkRes.Error))
+
+		nextChunkID := putChunkRes.HandledChunkID + 1
+		for nextChunkID <= expectChunkID {
+			url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&writer_id=%d&chunk_id=%d",
+				w.e.addr, w.e.clusterID, w.e.loadDataTaskID, w.writerID, nextChunkID)
+
+			buf, err := w.chunksCache.get(nextChunkID)
+			if err != nil {
+				return err
+			}
+			w.e.logger.Info("retry to put chunk",
+				zap.Uint64("writerID", w.writerID),
+				zap.Uint64("chunkID", nextChunkID))
+			data, err := sendRequest(ctx, w.httpClient, "PUT", url, buf)
+			if err != nil {
+				return err
+			}
+			putChunkRes = new(PutChunkResult)
+			err = json.Unmarshal(data, putChunkRes)
+			if err != nil {
+				return err
+			}
+			nextChunkID = putChunkRes.HandledChunkID + 1
+		}
+	}
+
+	lastFlushedChunkID := w.state.FlushedChunkID + 1
+	for lastFlushedChunkID <= putChunkRes.FlushedChunkID {
+		err := w.chunksCache.clean(lastFlushedChunkID)
+		if err != nil {
+			w.e.logger.Info("failed to clean chunk cache", zap.Error(err), zap.Uint64("chunkID", lastFlushedChunkID), zap.Uint64("writerID", w.writerID))
+		}
+		lastFlushedChunkID += 1
+	}
+
+	w.state = &writerState{
+		FlushedChunkID: putChunkRes.FlushedChunkID,
+		HandledChunkID: putChunkRes.HandledChunkID,
+	}
+	return nil
+}
+
+func (w *client) lastChunkID() uint64 {
+	return w.nextChunkID - 1
+}
+
 func (w *client) addChunk(ctx context.Context) error {
-	// The chunkID must be unique in a task, it doesn't need to be autoincrement.
-	chunkID := w.e.allocChunkID()
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&start_ts=%d&chunk_id=%d", w.e.addr, w.e.clusterID, w.e.loadDataTaskID, w.e.ts, chunkID)
-	// TODO: retry
-	_, err := sendRequest(ctx, w.httpClient, "PUT", url, bytes.NewReader(w.buf))
+	if len(w.buf) == 0 {
+		// nothing to do
+		return nil
+	}
+
+	// The chunkID must be unique in a task, it should be autoincrement.
+	newChunkID := w.nextChunkID
+	w.nextChunkID += 1
+
+	data := w.buf
+	w.buf = w.buf[:0]
+
+	if newChunkID <= w.state.FlushedChunkID {
+		w.e.logger.Info("skip to put chunk", zap.Uint64("chunkID", newChunkID),
+			zap.Uint64("handledChunkID", w.state.HandledChunkID),
+			zap.Uint64("flushedChunkID", w.state.FlushedChunkID),
+			zap.Uint64("writerID", w.writerID))
+		return nil
+	}
+
+	// cache chunk data
+	err := w.chunksCache.put(newChunkID, data)
 	if err != nil {
 		return err
 	}
-	w.e.writeBytes.Add(int64(len(w.buf)))
-	w.buf = w.buf[:0]
-	return nil
+	if newChunkID <= w.state.HandledChunkID {
+		w.e.logger.Info("skip to put chunk", zap.Uint64("chunkID", newChunkID),
+			zap.Uint64("handledChunkID", w.state.HandledChunkID),
+			zap.Uint64("flushedChunkID", w.state.FlushedChunkID),
+			zap.Uint64("writerID", w.writerID))
+		return nil
+	}
+
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&writer_id=%d&chunk_id=%d",
+		w.e.addr, w.e.clusterID, w.e.loadDataTaskID, w.writerID, newChunkID)
+
+	data, err = sendRequest(ctx, w.httpClient, "PUT", url, data)
+	if err != nil {
+		return err
+	}
+	putChunkRes := new(PutChunkResult)
+	err = json.Unmarshal(data, putChunkRes)
+	if err != nil {
+		return err
+	}
+
+	return w.handlePutChunkResult(ctx, putChunkRes, newChunkID)
 }
 
 func (w *client) IsSynced() bool {
@@ -635,18 +919,49 @@ func (w *client) Close(ctx context.Context) (backend.ChunkFlushStatus, error) {
 	if len(w.buf) > 0 {
 		err := w.addChunk(ctx)
 		if err != nil {
-			return status(false), err
+			return w, err
 		}
 	}
-	return status(true), nil
+	w.buf = nil
+	return w, nil
 }
 
-type status bool
-
-func (s status) Flushed() bool {
-	return bool(s)
+func (w *client) Flushed() bool {
+	flushed, err := w.flushed(w.e.ctx)
+	if err != nil {
+		w.e.logger.Error("failed to check flushed", zap.Error(err))
+	}
+	return flushed
 }
 
+func (w *client) flushed(ctx context.Context) (bool, error) {
+	if w.state.FlushedChunkID == w.nextChunkID-1 {
+		return true, nil
+	}
+
+	lastChunkID := w.nextChunkID - 1
+	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&writer_id=%d&chunk_id=%d",
+		w.e.addr, w.e.clusterID, w.e.loadDataTaskID, w.writerID, lastChunkID)
+
+	data, err := sendRequest(ctx, w.httpClient, "PUT", url, nil)
+	if err != nil {
+		return false, err
+	}
+	state := new(PutChunkResult)
+	err = json.Unmarshal(data, state)
+	if err != nil {
+		return false, err
+	}
+
+	err = w.handlePutChunkResult(ctx, state, lastChunkID)
+	if err != nil {
+		return false, err
+	}
+
+	return w.state.FlushedChunkID == w.nextChunkID-1, nil
+}
+
+// TODO: pushdown remote worker
 func newRemoteRequestInfo(writeBytes, replicaNumber int64) remoteRequestInfo {
 	return remoteRequestInfo{
 		writeBytes:    writeBytes,

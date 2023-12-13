@@ -99,7 +99,7 @@ var (
 	compactConcurrency = 4
 )
 
-func generateLocalEngineConfig(cfg *lightning.Config, tblID int64, jobID int64, dbName, tbName string, tikvCodec tikv.Codec) (*backend.EngineConfig, error) {
+func generateLocalEngineConfig(cfg *lightning.Config, tblID, indexID, jobID int64, dbName, tbName string, tikvCodec tikv.Codec) (*backend.EngineConfig, error) {
 	var (
 		estimatedDataSize int64
 		err               error
@@ -152,7 +152,8 @@ func generateLocalEngineConfig(cfg *lightning.Config, tblID int64, jobID int64, 
 	}
 
 	return &backend.EngineConfig{
-		TaskID: jobID,
+		EngineID: int32(indexID),
+		TaskID:   jobID,
 		Local: backend.LocalEngineConfig{
 			Compact:            true,
 			CompactThreshold:   int64(compactMemory),

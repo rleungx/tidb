@@ -45,7 +45,7 @@ func (bc *litBackendCtx) Register(jobID, indexID, tableID int64, schemaName, tab
 		}
 
 		mgr := backend.MakeEngineManager(bc.backend)
-		cfg, err := generateLocalEngineConfig(bc.cfg, jobID, tableID, schemaName, tableName, tikvCodec)
+		cfg, err := generateLocalEngineConfig(bc.cfg, tableID, indexID, jobID, schemaName, tableName, tikvCodec)
 		if err != nil {
 			logutil.BgLogger().Warn(LitErrGenLocalEngineFail, zap.Int64("job ID", jobID),
 				zap.Int64("index ID", indexID), zap.Error(err))

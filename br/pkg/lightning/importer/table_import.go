@@ -362,6 +362,7 @@ func (tr *TableImporter) importEngines(pCtx context.Context, rc *Controller, cp 
 	handleDataEngineThisRun := false
 	estimateDataSize := estimateDataSize(tr.tableMeta, tr.tableInfo, true, tr.logger)
 	idxEngineCfg := &backend.EngineConfig{
+		EngineID:          common.IndexEngineID,
 		TaskID:            rc.cfg.TaskID,
 		TableInfo:         tr.tableInfo,
 		EstimatedDataSize: estimateDataSize,
@@ -553,6 +554,7 @@ func (tr *TableImporter) preprocessEngine(
 	if cp.Status >= checkpoints.CheckpointStatusAllWritten {
 		estimateDataSize := estimateDataSize(tr.tableMeta, tr.tableInfo, false, tr.logger)
 		engineCfg := &backend.EngineConfig{
+			EngineID:          engineID,
 			TaskID:            rc.cfg.TaskID,
 			TableInfo:         tr.tableInfo,
 			EstimatedDataSize: estimateDataSize,
@@ -580,14 +582,11 @@ func (tr *TableImporter) preprocessEngine(
 	hasAutoIncrementAutoID := common.TableHasAutoRowID(tr.tableInfo.Core) &&
 		tr.tableInfo.Core.AutoRandomBits == 0 && tr.tableInfo.Core.ShardRowIDBits == 0 &&
 		tr.tableInfo.Core.Partition == nil
-	dataWriterCfg := &backend.LocalWriterConfig{
-		IsKVSorted: hasAutoIncrementAutoID,
-		TableName:  tr.tableName,
-	}
 
 	logTask := tr.logger.With(zap.Int32("engineNumber", engineID)).Begin(zap.InfoLevel, "encode kv data and write")
 	estimateDataSize := estimateDataSize(tr.tableMeta, tr.tableInfo, false, tr.logger)
 	dataEngineCfg := &backend.EngineConfig{
+		EngineID:          engineID,
 		TaskID:            rc.cfg.TaskID,
 		TableInfo:         tr.tableInfo,
 		EstimatedDataSize: estimateDataSize,
@@ -650,7 +649,7 @@ ChunkLoop:
 		checkFlushLock.Lock()
 		finished := 0
 		for _, c := range flushPendingChunks {
-			if c.indexStatus.Flushed() && c.dataStatus.Flushed() {
+			if c.dataStatus.Flushed() && c.indexStatus.Flushed() {
 				chunkCpChan <- c.chunkCp
 				finished++
 			} else {
@@ -691,13 +690,19 @@ ChunkLoop:
 			}
 		}
 
+		dataWriterCfg := &backend.LocalWriterConfig{
+			IsKVSorted:    hasAutoIncrementAutoID,
+			TableName:     tr.tableName,
+			LocalWriterID: chunkIndex,
+		}
+
 		dataWriter, err := dataEngine.LocalWriter(ctx, dataWriterCfg)
 		if err != nil {
 			setError(err)
 			break
 		}
 
-		indexWriter, err := indexEngine.LocalWriter(ctx, &backend.LocalWriterConfig{TableName: tr.tableName})
+		indexWriter, err := indexEngine.LocalWriter(ctx, &backend.LocalWriterConfig{TableName: tr.tableName, LocalWriterID: chunkIndex})
 		if err != nil {
 			_, _ = dataWriter.Close(ctx)
 			setError(err)
@@ -797,10 +802,10 @@ ChunkLoop:
 		return nil
 	}
 
-	// in local mode, this check-point make no sense, because we don't do flush now,
+	// in physical mode, this check-point make no sense, because we don't do flush now,
 	// so there may be data lose if exit at here. So we don't write this checkpoint
 	// here like other mode.
-	if !isLocalBackend(rc.cfg) {
+	if !isPhysicalBackend(rc.cfg) {
 		if saveCpErr := rc.saveStatusCheckpoint(ctx, tr.tableName, engineID, err, checkpoints.CheckpointStatusAllWritten); saveCpErr != nil {
 			return nil, errors.Trace(firstErr(err, saveCpErr))
 		}
@@ -823,7 +828,7 @@ ChunkLoop:
 	closedDataEngine, err := dataEngine.Close(ctx)
 	// For local backend, if checkpoint is enabled, we must flush index engine to avoid data loss.
 	// this flush action impact up to 10% of the performance, so we only do it if necessary.
-	if err == nil && rc.cfg.Checkpoint.Enable && isLocalBackend(rc.cfg) {
+	if err == nil && rc.cfg.Checkpoint.Enable && isPhysicalBackend(rc.cfg) {
 		if err = indexEngine.Flush(ctx); err != nil {
 			return nil, errors.Trace(err)
 		}
