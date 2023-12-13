@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.3
 # Copyright 2022 PingCAP, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,6 +20,8 @@ RUN apt install -y wget make git gcc && mkdir -p /go/src/github.com/pingcap/tidb
 
 WORKDIR /go/src/github.com/pingcap/tidb
 
+ENV GOMODCACHE=/go/cache
+
 # Cache dependencies
 COPY go.mod .
 COPY go.sum .
@@ -35,17 +38,22 @@ ENV REGISTER_METRICS_INIT=false
 ENV TIDB_VERSION=v7.1.1-serverless
 ENV TIDB_GIT_BRANCH=release-7.1-serverless
 
-RUN GO111MODULE=on go mod download
+RUN --mount=type=cache,target=/go/cache \
+    GO111MODULE=on go mod download
 
 # Build real binaries
 COPY . .
-RUN make
+RUN --mount=type=cache,target=/go/cache \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    make \
+    && cp /go/src/github.com/pingcap/tidb/bin/tidb-server /tidb-server
+
 
 # Executable image
 FROM debian:bullseye-slim
 RUN apt update && apt install -y bash curl netcat dumb-init && rm /bin/sh && ln -s /bin/bash /bin/sh && apt-get clean
 
-COPY --from=builder /go/src/github.com/pingcap/tidb/bin/tidb-server /tidb-server
+COPY --from=builder /tidb-server /tidb-server
 
 WORKDIR /
 
