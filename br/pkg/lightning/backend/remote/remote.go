@@ -724,8 +724,8 @@ func (e *engine) flush(ctx context.Context) error {
 		succeed := true
 		// make sure all chunks are flushed
 		for id, writer := range e.writers {
-			flushedChunkID, ok := flushRes.FlushedChunkIDs[id]
-			if ok && flushedChunkID == writer.lastChunkID() {
+			flushedChunkID := flushRes.FlushedChunkIDs[id]
+			if flushedChunkID == writer.lastChunkID() {
 				// writer's all chunks are flushed
 				continue
 			}
