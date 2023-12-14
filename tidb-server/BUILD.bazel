@@ -48,6 +48,7 @@ go_library(
         "//util/logutil",
         "//util/memory",
         "//util/metricsutil",
+        "//util/pdapi",
         "//util/printer",
         "//util/sem",
         "//util/serverless",

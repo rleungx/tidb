@@ -15,7 +15,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -74,6 +76,7 @@ import (
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/memory"
 	"github.com/pingcap/tidb/util/metricsutil"
+	"github.com/pingcap/tidb/util/pdapi"
 	"github.com/pingcap/tidb/util/printer"
 	"github.com/pingcap/tidb/util/sem"
 	"github.com/pingcap/tidb/util/serverless"
@@ -321,7 +324,8 @@ func main() {
 	keyspaceName := keyspace.GetKeyspaceNameBySettings()
 
 	// If safe point v2 etcd path exists, config.EnableSafePointV2 must be true
-	checkSafePointVersion(keyspaceMeta)
+	err = checkSafePointVersion(keyspaceMeta)
+	mainErrHandler(err)
 
 	resourcemanager.InstanceResourceManager.Start()
 	storage, dom, err := createStoreAndDomain(keyspaceName)
@@ -416,13 +420,63 @@ func getServerlessInfo() (*keyspacepb.KeyspaceMeta, error) {
 	return keyspaceMeta, nil
 }
 
-func checkSafePointVersion(keyspaceMeta *keyspacepb.KeyspaceMeta) {
-	if keyspaceMeta != nil && keyspaceMeta.Config[gcutil.SafePointVersion] == config.SafePointV2 && !config.GetGlobalConfig().EnableSafePointV2 {
+// KeyspaceSavePointVersion represents parameters needed to modify target keyspace's configs.
+type KeyspaceSavePointVersion struct {
+	Config struct {
+		SafePointVersion string `json:"safe_point_version,omitempty"`
+	} `json:"config"`
+}
+
+// UpdateKeyspaceSafePointVersion is used to update the setting of keyspace safe point version.
+func UpdateKeyspaceSafePointVersion(ctx context.Context, keyspaceName string, safePointVersion string) error {
+	cfg := config.GetGlobalConfig()
+	etcdAddrs, _, _, err := tikvconfig.ParsePath("tikv://" + cfg.Path)
+	if err != nil {
+		return err
+	}
+
+	url := fmt.Sprintf(pdapi.KeyspaceConfig, keyspaceName)
+
+	input := KeyspaceSavePointVersion{}
+	input.Config.SafePointVersion = safePointVersion
+	j, err := json.Marshal(input)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	_, err = infosync.DoRequest(ctx, "UpdateKeyspaceSavePointVersion", etcdAddrs, url, "PATCH", bytes.NewReader(j))
+	return err
+}
+
+func checkSafePointVersion(keyspaceMeta *keyspacepb.KeyspaceMeta) error {
+	if keyspaceMeta == nil {
+		return nil
+	}
+
+	// If safe point version in PD keyspace config is not v2.
+	if keyspaceMeta.Config[gcutil.SafePointVersion] != config.SafePointV2 {
+		// Tidb config safe point version v2. Update safe point version in PD keyspace config to v2.
+		if config.GetGlobalConfig().EnableSafePointV2 {
+			ctx := context.Background()
+			err := UpdateKeyspaceSafePointVersion(ctx, keyspaceMeta.GetName(), config.SafePointV2)
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+
+	// If safe point version in PD keyspace config is v2,
+	// TiDB config safe point version is not v2.
+	// Set the enable safe point v2 in tidb config is true.
+	if !config.GetGlobalConfig().EnableSafePointV2 {
 		logutil.BgLogger().Warn("Safe point v2 etcd path exists, config.EnableSafePointV2 must be true.")
 		config.UpdateGlobal(func(c *config.Config) {
 			c.EnableSafePointV2 = true
 		})
 	}
+
+	return nil
 }
 
 func syncLog() {

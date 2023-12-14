@@ -15,7 +15,6 @@
 package infosync
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -459,7 +458,8 @@ func MustGetTiFlashProgress(tableID int64, replicaCount uint64, tiFlashStores *m
 	return progress, nil
 }
 
-func doRequest(ctx context.Context, apiName string, addrs []string, route, method string, body io.Reader) ([]byte, error) {
+// DoRequest request PD API by route.
+func DoRequest(ctx context.Context, apiName string, addrs []string, route, method string, body io.Reader) ([]byte, error) {
 	var err error
 	var req *http.Request
 	var res *http.Response
@@ -1413,31 +1413,4 @@ func SetPDScheduleConfig(ctx context.Context, config map[string]interface{}) err
 		return errors.Trace(err)
 	}
 	return is.scheduleManager.SetPDScheduleConfig(ctx, config)
-}
-
-// KeyspaceSavePointVersion represents parameters needed to modify target keyspace's configs.
-type KeyspaceSavePointVersion struct {
-	Config struct {
-		SafePointVersion string `json:"safe_point_version,omitempty"`
-	} `json:"config"`
-}
-
-// UpdateKeyspaceSavePointVersion is used to update the setting of keyspace safe point version.
-func UpdateKeyspaceSavePointVersion(ctx context.Context, keyspaceName string, safePointVersion string) error {
-	is, err := getGlobalInfoSyncer()
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	url := fmt.Sprintf(pdapi.KeyspaceConfig, keyspaceName)
-
-	input := KeyspaceSavePointVersion{}
-	input.Config.SafePointVersion = safePointVersion
-	j, err := json.Marshal(input)
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	_, err = doRequest(ctx, "UpdateKeyspaceSavePointVersion", is.etcdCli.Endpoints(), url, "PATCH", bytes.NewReader(j))
-	return err
 }

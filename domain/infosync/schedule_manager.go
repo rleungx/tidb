@@ -39,7 +39,7 @@ type PDScheduleManager struct {
 
 // GetPDScheduleConfig get schedule config from pd
 func (sm *PDScheduleManager) GetPDScheduleConfig(ctx context.Context) (map[string]interface{}, error) {
-	ret, err := doRequest(ctx, "GetPDSchedule", sm.etcdCli.Endpoints(), path.Join(pdapi.Config, "schedule"), "GET", nil)
+	ret, err := DoRequest(ctx, "GetPDSchedule", sm.etcdCli.Endpoints(), path.Join(pdapi.Config, "schedule"), "GET", nil)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -59,7 +59,7 @@ func (sm *PDScheduleManager) SetPDScheduleConfig(ctx context.Context, config map
 		return err
 	}
 
-	_, err = doRequest(ctx, "SetPDSchedule", sm.etcdCli.Endpoints(), path.Join(pdapi.Config, "schedule"), "POST", bytes.NewReader(configJSON))
+	_, err = DoRequest(ctx, "SetPDSchedule", sm.etcdCli.Endpoints(), path.Join(pdapi.Config, "schedule"), "POST", bytes.NewReader(configJSON))
 	if err != nil {
 		return errors.Trace(err)
 	}

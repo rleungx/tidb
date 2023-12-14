@@ -461,13 +461,6 @@ func (w *GCWorker) leaderTick(ctx context.Context) error {
 		return nil
 	}
 
-	if w.isKeyspaceInGCSafePointV2() {
-		keyspaceName := config.GetGlobalKeyspaceName()
-		err = infosync.UpdateKeyspaceSavePointVersion(ctx, keyspaceName, config.SafePointV2)
-		if err != nil {
-			return errors.Trace(err)
-		}
-	}
 	ok, safePoint, err := w.prepare(ctx)
 	if err != nil {
 		metrics.GCJobFailureCounter.WithLabelValues("prepare").Inc()
