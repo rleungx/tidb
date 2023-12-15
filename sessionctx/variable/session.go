@@ -1463,6 +1463,9 @@ type SessionVars struct {
 	// The RemoteCoprocessorAddr must be configured in the config file first.
 	EnableRemoteCoprocessor bool
 
+	// EnableAsyncIndexCreation controls whether to enable async index creation.
+	EnableAsyncIndexCreation bool
+
 	// TiFlashComputeDispatchPolicy indicates how to dipatch task to tiflash_compute nodes.
 	// Only for disaggregated-tiflash mode.
 	TiFlashComputeDispatchPolicy tiflashcompute.DispatchPolicy

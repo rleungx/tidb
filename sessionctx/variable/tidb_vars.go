@@ -277,6 +277,10 @@ const (
 
 	// TiDBEnableRemoteCoprocessor indicates whether to enable remote coprocessor.
 	TiDBEnableRemoteCoprocessor = "tidb_enable_remote_coprocessor"
+
+	// TiDBEnableAsyncIndexCreation indicates whether to enable async index creation.
+	// If set to true, index creation will be non-blocking and returns immediately in the cli.
+	TiDBEnableAsyncIndexCreation = "tidb_enable_async_index_creation"
 )
 
 // TiDB system variable names that both in session and global scope.
@@ -1353,6 +1357,7 @@ const (
 	DefRuntimeFilterMode                              = "OFF"
 	DefTiDBLockUnchangedKeys                          = false
 	DefTiDBEnableRemoteCoprocessor                    = false
+	DefTiDBEnableAsyncIndexCreation                   = false
 )
 
 // Process global variables.

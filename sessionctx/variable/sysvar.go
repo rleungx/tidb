@@ -2480,6 +2480,10 @@ var defaultSysVars = []*SysVar{
 		s.EnableRemoteCoprocessor = TiDBOptOn(val)
 		return nil
 	}},
+	{Scope: ScopeSession, Name: TiDBEnableAsyncIndexCreation, Value: BoolToOnOff(DefTiDBEnableAsyncIndexCreation), Type: TypeBool, SetSession: func(s *SessionVars, val string) error {
+		s.EnableAsyncIndexCreation = TiDBOptOn(val)
+		return nil
+	}},
 	{Scope: ScopeGlobal | ScopeSession, Name: TiFlashComputeDispatchPolicy, Value: string(DefTiFlashComputeDispatchPolicy), Type: TypeStr, SetSession: setTiFlashComputeDispatchPolicy,
 		SetGlobal: func(ctx context.Context, vars *SessionVars, s string) error {
 			return setTiFlashComputeDispatchPolicy(vars, s)

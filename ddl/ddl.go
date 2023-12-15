@@ -1053,6 +1053,15 @@ func (d *ddl) DoDDLJob(ctx sessionctx.Context, job *model.Job) error {
 
 	// Notice worker that we push a new job and wait the job done.
 	d.asyncNotifyWorker(d.ddlJobCh, addingDDLJobConcurrent, job.ID, job.Type.String())
+
+	// If enabled async add index, return immediately.
+	if job.Type == model.ActionAddIndex && sessVars.EnableAsyncIndexCreation {
+		logutil.BgLogger().Info("[ddl] start DDL job asynchronously", zap.String("job", job.String()), zap.String("query", job.Query))
+		msg := fmt.Sprintf("DDL job %d added to the queue", job.ID)
+		sessVars.StmtCtx.SetMessage(msg)
+		return nil
+	}
+
 	logutil.BgLogger().Info("[ddl] start DDL job", zap.String("job", job.String()), zap.String("query", job.Query))
 
 	var historyJob *model.Job
