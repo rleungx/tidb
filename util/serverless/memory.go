@@ -186,8 +186,8 @@ func (ms *MemoryScaler) Run() {
 				} else {
 					lastIncreseFailed = time.Now()
 				}
-			} else if limit != minMemoryLimit && time.Since(lastIncrease) > time.Minute && stats.HeapInuse < limit/2 {
-				limit /= 2
+			} else if limit != minMemoryLimit && time.Since(lastIncrease) > time.Minute && stats.Sys-stats.HeapReleased < limit/2 {
+				limit = limit * 2 / 3
 				if limit < minMemoryLimit {
 					limit = minMemoryLimit
 				}
