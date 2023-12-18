@@ -35,6 +35,11 @@ type manager struct {
 	role   string
 }
 
+const (
+	// TaskTypeDDL is the type of ddl background task.
+	TaskTypeDDL = "ddl"
+)
+
 // InitManager initialize the global TiDB worker manager with the given backend.
 func InitManager(ctx context.Context, keyspaceName string, cfg config.TiDBWorker) (err error) {
 	once.Do(func() {
@@ -104,17 +109,18 @@ func (m *manager) Role() string {
 	return m.role
 }
 
-func (m *manager) RegisterDDL(ctx context.Context, taskKey string, gTaskID, subTaskID int64, execID string) error {
-	log.Info("[tidb-worker] register a DDL task to worker service",
+func (m *manager) RegisterBgTask(ctx context.Context, taskType, taskKey string, gTaskID, subTaskID int64, execID string) error {
+	log.Info("[tidb-worker] register a background task to worker service",
 		zap.String("task-key", taskKey),
+		zap.String("task-type", taskType),
 		zap.Int64("global-task-id", gTaskID),
 		zap.Int64("subtask-id", subTaskID),
 		zap.String("exec-id", execID),
 	)
-	return m.client.RegisterDDL(ctx, taskKey, gTaskID, subTaskID, execID)
+	return m.client.RegisterBgTask(ctx, taskType, taskKey, gTaskID, subTaskID, execID)
 }
 
-func (m *manager) RecycleDDL(ctx context.Context, gTaskID int64) error {
-	log.Info("[tidb-worker] recycle a DDL task from worker service", zap.Int64("global-task-id", gTaskID))
-	return m.client.RecycleDDL(ctx, gTaskID)
+func (m *manager) RecycleBgTask(ctx context.Context, gTaskID int64) error {
+	log.Info("[tidb-worker] recycle a background task from worker service", zap.Int64("global-task-id", gTaskID))
+	return m.client.RecycleBgTask(ctx, gTaskID)
 }

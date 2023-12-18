@@ -386,7 +386,7 @@ func (stm *TaskManager) UpdateGlobalTaskAndAddSubTasks(gTask *proto.Task, subtas
 		if tidbworker.IsDDLMaster() || tidbworker.IsDDLWorker() {
 			switch gTask.State {
 			case proto.TaskStateSucceed, proto.TaskStateFailed, proto.TaskStateReverted, proto.TaskStateRevertFailed:
-				err = tidbworker.GlobalTiDBWorkerManager.RecycleDDL(stm.ctx, gTask.ID)
+				err = tidbworker.GlobalTiDBWorkerManager.RecycleBgTask(stm.ctx, gTask.ID)
 			}
 		}
 
@@ -398,8 +398,9 @@ func (stm *TaskManager) UpdateGlobalTaskAndAddSubTasks(gTask *proto.Task, subtas
 				return err
 			}
 			if tidbworker.IsDDLMaster() {
-				err = tidbworker.GlobalTiDBWorkerManager.RegisterDDL(
+				err = tidbworker.GlobalTiDBWorkerManager.RegisterBgTask(
 					stm.ctx,
+					tidbworker.TaskTypeDDL,
 					gTask.Key,
 					gTask.ID,
 					subtask.TaskID,
