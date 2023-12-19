@@ -90,7 +90,7 @@ jobs:
         with:
           registry: hub.pingcap.net
           username: "robot$keyspace+cdbot"
-          password: ${{ secrets.HARBOR_KEYSPACE_TOKEN }}  
+          password: ${{ secrets.HARBOR_KEYSPACE_TOKEN }}
       - name: set-additional-tags
         if: ${{ github.ref == 'refs/heads/release-7.1-keyspace' && github.event_name == 'push' }}
         run: |
