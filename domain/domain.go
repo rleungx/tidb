@@ -1373,7 +1373,7 @@ func (do *Domain) InitDistTaskLoop(ctx context.Context) error {
 	// Overwrite scheduler id for DDL worker.
 	// Use config to check since tidb worker manager may get initialized after.
 	workerConfig := config.GetGlobalConfig().TiDBWorker
-	if workerConfig.Enable && workerConfig.Role == config.RoleDDLWorker && workerConfig.DDLWorkerCount > 0 {
+	if workerConfig.Enable && workerConfig.Role == config.RoleDDLWorker {
 		serverID = config.GetGlobalConfig().TiDBWorker.ExecID
 	}
 	if serverID == "" {
