@@ -403,7 +403,7 @@ func (stm *TaskManager) UpdateGlobalTaskAndAddSubTasks(gTask *proto.Task, subtas
 					tidbworker.TaskWorkerType(gTask.Type),
 					gTask.Key,
 					gTask.ID,
-					subtask.TaskID,
+					subtask.ID,
 					subtask.SchedulerID,
 				)
 				if err != nil {
