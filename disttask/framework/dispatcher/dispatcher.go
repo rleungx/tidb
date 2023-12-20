@@ -56,7 +56,7 @@ type Dispatch interface {
 	// Start enables dispatching and monitoring mechanisms.
 	Start()
 	// GetAllSchedulerIDs gets handles the task's all available instances.
-	GetAllSchedulerIDs(ctx context.Context, gTaskID int64) ([]string, error)
+	GetAllSchedulerIDs(ctx context.Context, task *proto.Task) ([]string, error)
 	// Stop stops the dispatcher.
 	Stop()
 }
@@ -64,7 +64,7 @@ type Dispatch interface {
 // TaskHandle provides the interface for operations needed by task flow handles.
 type TaskHandle interface {
 	// GetAllSchedulerIDs gets handles the task's all scheduler instances.
-	GetAllSchedulerIDs(ctx context.Context, gTaskID int64) ([]string, error)
+	GetAllSchedulerIDs(ctx context.Context, task *proto.Task) ([]string, error)
 }
 
 func (d *dispatcher) getRunningGTaskCnt() int {
@@ -351,7 +351,7 @@ func (d *dispatcher) processErrFlow(gTask *proto.Task, receiveErr [][]byte) erro
 		return err
 	}
 
-	instanceIDs, err := d.GetAllSchedulerIDs(d.ctx, gTask.ID)
+	instanceIDs, err := d.GetAllSchedulerIDs(d.ctx, gTask)
 	if err != nil {
 		logutil.BgLogger().Warn("get global task's all instances failed", zap.Error(err))
 		return err
@@ -414,7 +414,7 @@ func (d *dispatcher) processNormalFlow(gTask *proto.Task) (err error) {
 	}
 
 	// Generate all available TiDB nodes for this global tasks.
-	serverNodes, err1 := GenerateSchedulerNodes(d.ctx, gTask.ID)
+	serverNodes, err1 := GenerateSchedulerNodes(d.ctx, gTask.Type, gTask.ID)
 	if err1 != nil {
 		return err1
 	}
@@ -445,10 +445,10 @@ func GetEligibleInstance(serverNodes []*infosync.ServerInfo, pos int) (string, e
 }
 
 // GenerateSchedulerNodes generate a eligible TiDB nodes.
-func GenerateSchedulerNodes(ctx context.Context, gTaskID int64) ([]*infosync.ServerInfo, error) {
-	// Return placeholder nodes according to setting if tidb worker for ddl is enabled.
-	if tidbworker.IsDDLMaster() {
-		return tidbworker.SchedulerNodes(gTaskID), nil
+func GenerateSchedulerNodes(ctx context.Context, taskType string, gTaskID int64) ([]*infosync.ServerInfo, error) {
+	// Return placeholder nodes according to setting if tidb worker for ddl/batch is enabled.
+	if tidbworker.IsBgTaskMaster() {
+		return tidbworker.SchedulerNodes(tidbworker.TaskWorkerType(taskType), gTaskID), nil
 	}
 	serverInfos, err := infosync.GetAllServerInfo(ctx)
 	if err != nil {
@@ -466,7 +466,7 @@ func GenerateSchedulerNodes(ctx context.Context, gTaskID int64) ([]*infosync.Ser
 }
 
 // GetAllSchedulerIDs gets all the scheduler IDs.
-func (d *dispatcher) GetAllSchedulerIDs(ctx context.Context, gTaskID int64) ([]string, error) {
+func (d *dispatcher) GetAllSchedulerIDs(ctx context.Context, task *proto.Task) ([]string, error) {
 	serverInfos, err := infosync.GetAllServerInfo(ctx)
 	if err != nil {
 		return nil, err
@@ -475,23 +475,23 @@ func (d *dispatcher) GetAllSchedulerIDs(ctx context.Context, gTaskID int64) ([]s
 		return nil, nil
 	}
 
-	schedulerIDs, err := d.taskMgr.GetSchedulerIDsByTaskID(gTaskID)
+	schedulerIDs, err := d.taskMgr.GetSchedulerIDsByTaskID(task.ID)
 	if err != nil {
 		return nil, err
 	}
 	ids := make([]string, 0, len(schedulerIDs))
 	for _, id := range schedulerIDs {
-		if ok := matchServerInfo(serverInfos, id); ok {
+		if ok := matchServerInfo(serverInfos, id, task); ok {
 			ids = append(ids, id)
 		}
 	}
 	return ids, nil
 }
 
-func matchServerInfo(serverInfos map[string]*infosync.ServerInfo, schedulerID string) bool {
+func matchServerInfo(serverInfos map[string]*infosync.ServerInfo, schedulerID string, task *proto.Task) bool {
 	// return true if tidb worker is enabled and the schedulerID is a worker ID.
-	if tidbworker.IsDDLMaster() || tidbworker.IsDDLWorker() {
-		return tidbworker.IsWorkerExecID(schedulerID)
+	if tidbworker.IsBgTaskMaster() || tidbworker.IsDDLWorker() || tidbworker.IsBatchWorker() {
+		return tidbworker.IsWorkerExecID(schedulerID, tidbworker.TaskWorkerType(task.Type))
 	}
 	for _, serverInfo := range serverInfos {
 		serverID := disttaskutil.GenerateExecID(serverInfo.IP, serverInfo.Port)

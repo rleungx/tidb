@@ -61,6 +61,9 @@ type TiDBWorker struct {
 	// DDLWorkerCount specifies the desired number of DDL workers.
 	// It only applies when TiDB is running as master.
 	DDLWorkerCount int `toml:"ddl-worker-count" json:"ddl-worker-count"`
+	// BatchWorkerCount specifies the desired number of batch workers.
+	// It only applies when TiDB is running as master.
+	BatchWorkerCount int `toml:"batch-worker-count" json:"batch-worker-count"`
 	// ExecID specifies execID when TiDB is running as ddl worker.
 	ExecID string `toml:"exec-id" json:"exec-id"`
 }
@@ -74,6 +77,8 @@ const (
 	RoleGCV2Worker = "gcv2"
 	// RoleDDLWorker is the role for DDL worker.
 	RoleDDLWorker = "ddl"
+	// RoleBatchWorker is the role for batch worker.
+	RoleBatchWorker = "batch"
 )
 
 // defaultTiDBWorker creates a new TiDBWorker.
@@ -109,7 +114,7 @@ func (w *TiDBWorker) Valid(c *Config) error {
 		}
 		// Disable DDL when running as GCV2 worker.
 		c.Instance.TiDBEnableDDL.Store(false)
-	case RoleDDLWorker:
+	case RoleDDLWorker, RoleBatchWorker:
 		// Skip running GC worker on DDL worker.
 		c.SkipGCWorker = true
 		// Overwrite execID if its set in env.

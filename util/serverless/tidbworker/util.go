@@ -30,9 +30,9 @@ func IsMaster() bool {
 	return GlobalTiDBWorkerManager != nil && GlobalTiDBWorkerManager.Role() == config.RoleMaster
 }
 
-// IsDDLMaster returns whether the current TiDB should dispatch DDL Worker
-func IsDDLMaster() bool {
-	return IsMaster() && config.GetGlobalConfig().TiDBWorker.DDLWorkerCount > 0
+// IsBgTaskMaster returns whether the current TiDB is of role bg job master.
+func IsBgTaskMaster() bool {
+	return GlobalTiDBWorkerManager != nil && (config.GetGlobalConfig().TiDBWorker.DDLWorkerCount > 0 || config.GetGlobalConfig().TiDBWorker.BatchWorkerCount > 0)
 }
 
 // IsGCWorker returns whether the current TiDB is a GC worker.
@@ -50,14 +50,27 @@ func IsDDLWorker() bool {
 	return GlobalTiDBWorkerManager != nil && GlobalTiDBWorkerManager.Role() == config.RoleDDLWorker
 }
 
+// IsBatchWorker returns whether the current TiDB is a batch worker.
+func IsBatchWorker() bool {
+	return GlobalTiDBWorkerManager != nil && GlobalTiDBWorkerManager.Role() == config.RoleBatchWorker
+}
+
 // SchedulerNodes generate scheduler nodes according to tidb worker config instead of current
 // cluster topology.
-func SchedulerNodes(gTaskID int64) []*infosync.ServerInfo {
-	nodeCount := config.GetGlobalConfig().TiDBWorker.DDLWorkerCount
+func SchedulerNodes(workerType string, gTaskID int64) []*infosync.ServerInfo {
+	var nodeCount int
+	switch workerType {
+	case WorkerTypeDDL:
+		nodeCount = config.GetGlobalConfig().TiDBWorker.DDLWorkerCount
+	case WorkerTypeBatch:
+		nodeCount = config.GetGlobalConfig().TiDBWorker.BatchWorkerCount
+	default:
+		return nil
+	}
 	nodes := make([]*infosync.ServerInfo, nodeCount)
 	for i := 0; i < nodeCount; i++ {
 		nodes[i] = &infosync.ServerInfo{
-			IP:   workerIDPrefix + strconv.FormatInt(gTaskID, 10),
+			IP:   workerIDPrefix + workerType + "-" + strconv.FormatInt(gTaskID, 10),
 			Port: uint(i),
 		}
 	}
@@ -65,6 +78,7 @@ func SchedulerNodes(gTaskID int64) []*infosync.ServerInfo {
 }
 
 // IsWorkerExecID checks whether the execID belongs to a tidb worker.
-func IsWorkerExecID(execID string) bool {
-	return len(execID) > len(workerIDPrefix) && execID[:len(workerIDPrefix)] == workerIDPrefix
+func IsWorkerExecID(execID, workerType string) bool {
+	prefix := workerIDPrefix + workerType + "-"
+	return len(execID) > len(prefix) && execID[:len(prefix)] == prefix
 }

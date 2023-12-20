@@ -1376,6 +1376,9 @@ func (do *Domain) InitDistTaskLoop(ctx context.Context) error {
 	if workerConfig.Enable && workerConfig.Role == config.RoleDDLWorker {
 		serverID = config.GetGlobalConfig().TiDBWorker.ExecID
 	}
+	if workerConfig.Enable && workerConfig.Role == config.RoleBatchWorker {
+		serverID = config.GetGlobalConfig().TiDBWorker.ExecID
+	}
 	if serverID == "" {
 		errMsg := fmt.Sprintf("TiDB node ID( = %s ) not found in available TiDB nodes list", do.ddl.GetID())
 		return errors.New(errMsg)

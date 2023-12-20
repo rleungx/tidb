@@ -139,7 +139,7 @@ func HandleNonTransactionalDML(ctx context.Context, stmt *ast.NonTransactionalDM
 	return buildExecuteResults(ctx, jobs, se.GetSessionVars().BatchSize.MaxChunkSize, se.GetSessionVars().EnableRedactLog)
 }
 
-const batchJobType = "batchJob"
+const batchJobType = "batch"
 const batchJobConcurrency = 16
 
 type batchJobMeta struct {

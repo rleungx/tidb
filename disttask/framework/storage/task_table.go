@@ -383,7 +383,7 @@ func (stm *TaskManager) UpdateGlobalTaskAndAddSubTasks(gTask *proto.Task, subtas
 		}
 
 		// Recycle the DDL worker when the global task is in one of the terminal state.
-		if tidbworker.IsDDLMaster() || tidbworker.IsDDLWorker() {
+		if tidbworker.IsBgTaskMaster() || tidbworker.IsDDLWorker() || tidbworker.IsBatchWorker() {
 			switch gTask.State {
 			case proto.TaskStateSucceed, proto.TaskStateFailed, proto.TaskStateReverted, proto.TaskStateRevertFailed:
 				err = tidbworker.GlobalTiDBWorkerManager.RecycleBgTask(stm.ctx, gTask.ID)
@@ -397,10 +397,10 @@ func (stm *TaskManager) UpdateGlobalTaskAndAddSubTasks(gTask *proto.Task, subtas
 			if err != nil {
 				return err
 			}
-			if tidbworker.IsDDLMaster() {
+			if tidbworker.IsBgTaskMaster() {
 				err = tidbworker.GlobalTiDBWorkerManager.RegisterBgTask(
 					stm.ctx,
-					tidbworker.TaskTypeDDL,
+					tidbworker.TaskWorkerType(gTask.Type),
 					gTask.Key,
 					gTask.ID,
 					subtask.TaskID,

@@ -36,9 +36,23 @@ type manager struct {
 }
 
 const (
-	// TaskTypeDDL is the type of ddl background task.
-	TaskTypeDDL = "ddl"
+	// WorkerTypeDDL is the type of ddl background task.
+	WorkerTypeDDL = "ddl"
+	// WorkerTypeBatch is the type of batch background task.
+	WorkerTypeBatch = "batch"
 )
+
+// TaskWorkerType converts the task type in global to the type of TiDB worker.
+func TaskWorkerType(taskType string) string {
+	switch taskType {
+	case "backfill":
+		return WorkerTypeDDL
+	case "batch":
+		return WorkerTypeBatch
+	default:
+		return ""
+	}
+}
 
 // InitManager initialize the global TiDB worker manager with the given backend.
 func InitManager(ctx context.Context, keyspaceName string, cfg config.TiDBWorker) (err error) {

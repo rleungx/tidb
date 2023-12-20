@@ -17,6 +17,7 @@ package dispatcher
 import (
 	"context"
 
+	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -26,8 +27,8 @@ type MockHandle struct {
 }
 
 // GetAllSchedulerIDs implements the Handle.GetAllSchedulerIDs interface.
-func (m *MockHandle) GetAllSchedulerIDs(ctx context.Context, gTaskID int64) ([]string, error) {
-	args := m.Called(ctx, gTaskID)
+func (m *MockHandle) GetAllSchedulerIDs(ctx context.Context, task *proto.Task) ([]string, error) {
+	args := m.Called(ctx, task.ID)
 	if args.Error(1) != nil {
 		return nil, args.Error(1)
 	}
