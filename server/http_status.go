@@ -284,7 +284,7 @@ func (s *Server) startHTTPServer() {
 
 	serverMux := http.NewServeMux()
 	if s.cfg.StandByMode {
-		serverMux.Handle("/tidb-pool/", standby.Handler())
+		serverMux.Handle("/tidb-pool/", standby.Handler(s))
 	}
 	serverMux.Handle("/", router)
 

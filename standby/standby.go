@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/signal"
 	"go.uber.org/zap"
@@ -42,6 +43,13 @@ const (
 // ActivateRequest is the request body for activating the tidb server.
 type ActivateRequest struct {
 	KeyspaceName string `json:"keyspace_name"`
+}
+
+type sessionManager interface {
+	ConnectionCount() int
+	GetUserProcessList() map[uint64]*util.ProcessInfo
+	GetClientCapabilityList() map[uint64]uint32
+	KillAllConnections()
 }
 
 var (
@@ -85,7 +93,7 @@ func keyspaceChecker(next http.Handler) http.HandlerFunc {
 }
 
 // Handler returns a handler to query tidb pool status or activate or exit the tidb server.
-func Handler() *http.ServeMux {
+func Handler(sm sessionManager) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/tidb-pool/status", statusHandler)
 	mux.HandleFunc("/tidb-pool/activate", func(w http.ResponseWriter, r *http.Request) {
@@ -142,12 +150,12 @@ func Handler() *http.ServeMux {
 		}
 	})
 	mux.HandleFunc("/tidb-pool/exit", keyspaceChecker(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logutil.BgLogger().Info("receiving exit signal, exit after 2s...")
+		logutil.BgLogger().Info("receiving exit request, may exit after kill all connections...")
+		if sm != nil {
+			sm.KillAllConnections()
+		}
 		w.WriteHeader(http.StatusOK)
-		go func() {
-			time.Sleep(exitWaitDuration)
-			signal.TiDBExit()
-		}()
+		signal.TiDBExit()
 	})))
 	return mux
 }
@@ -164,7 +172,7 @@ var server *http.Server
 
 // StartStandby starts a http server to listen and wait for activation signal.
 func StartStandby(host string, port uint, timeout uint) ActivateRequest {
-	mux := Handler()
+	mux := Handler(nil)
 	// handle liveness probe.
 	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
 	// handle health

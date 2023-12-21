@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/pingcap/tidb/parser/mysql"
-	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/signal"
 	"go.uber.org/zap"
@@ -38,13 +37,6 @@ func UpdateLastActive(t time.Time) {
 			return
 		}
 	}
-}
-
-type sessionManager interface {
-	ConnectionCount() int
-	GetUserProcessList() map[uint64]*util.ProcessInfo
-	GetClientCapabilityList() map[uint64]uint32
-	KillAllConnections()
 }
 
 // StartWatchLastActive watches `lastActive` and exits the process if it is not updated for a long time.
