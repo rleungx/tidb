@@ -19,6 +19,8 @@ import (
 
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/domain/infosync"
+	"github.com/pingcap/tidb/util/logutil"
+	"go.uber.org/zap"
 )
 
 const (
@@ -31,8 +33,20 @@ func IsMaster() bool {
 }
 
 // IsBgTaskMaster returns whether the current TiDB is of role bg job master.
-func IsBgTaskMaster() bool {
-	return GlobalTiDBWorkerManager != nil && (config.GetGlobalConfig().TiDBWorker.DDLWorkerCount > 0 || config.GetGlobalConfig().TiDBWorker.BatchWorkerCount > 0)
+func IsBgTaskMaster(taskType string) bool {
+	// Check if the current TiDB has worker enabled.
+	if GlobalTiDBWorkerManager == nil {
+		return false
+	}
+	switch TaskWorkerType(taskType) {
+	case WorkerTypeDDL:
+		return config.GetGlobalConfig().TiDBWorker.DDLWorkerCount > 0
+	case WorkerTypeBatch:
+		return config.GetGlobalConfig().TiDBWorker.BatchWorkerCount > 0
+	default:
+		logutil.BgLogger().Warn("[tidb-worker] unsupported task type for tidb worker", zap.String("task-type", taskType))
+	}
+	return false
 }
 
 // IsGCWorker returns whether the current TiDB is a GC worker.
@@ -43,16 +57,6 @@ func IsGCWorker() bool {
 // IsGCV2Worker returns whether the current TiDB is a GCV2 worker.
 func IsGCV2Worker() bool {
 	return GlobalTiDBWorkerManager != nil && GlobalTiDBWorkerManager.Role() == config.RoleGCV2Worker
-}
-
-// IsDDLWorker returns whether the current TiDB is a DDL worker.
-func IsDDLWorker() bool {
-	return GlobalTiDBWorkerManager != nil && GlobalTiDBWorkerManager.Role() == config.RoleDDLWorker
-}
-
-// IsBatchWorker returns whether the current TiDB is a batch worker.
-func IsBatchWorker() bool {
-	return GlobalTiDBWorkerManager != nil && GlobalTiDBWorkerManager.Role() == config.RoleBatchWorker
 }
 
 // SchedulerNodes generate scheduler nodes according to tidb worker config instead of current

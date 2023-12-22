@@ -10,6 +10,7 @@ go_library(
         "//kv",
         "//parser/terror",
         "//sessionctx",
+        "//sessionctx/variable",
         "//util/chunk",
         "//util/logutil",
         "//util/serverless/tidbworker",

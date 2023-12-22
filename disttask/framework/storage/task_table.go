@@ -28,6 +28,7 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/terror"
 	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/serverless/tidbworker"
@@ -383,7 +384,7 @@ func (stm *TaskManager) UpdateGlobalTaskAndAddSubTasks(gTask *proto.Task, subtas
 		}
 
 		// Recycle the DDL worker when the global task is in one of the terminal state.
-		if tidbworker.IsBgTaskMaster() || tidbworker.IsDDLWorker() || tidbworker.IsBatchWorker() {
+		if variable.EnableDistTask.Load() && tidbworker.IsBgTaskMaster(gTask.Type) {
 			switch gTask.State {
 			case proto.TaskStateSucceed, proto.TaskStateFailed, proto.TaskStateReverted, proto.TaskStateRevertFailed:
 				err = tidbworker.GlobalTiDBWorkerManager.RecycleBgTask(stm.ctx, gTask.ID)
@@ -397,13 +398,23 @@ func (stm *TaskManager) UpdateGlobalTaskAndAddSubTasks(gTask *proto.Task, subtas
 			if err != nil {
 				return err
 			}
-			if tidbworker.IsBgTaskMaster() {
+			if variable.EnableDistTask.Load() && tidbworker.IsBgTaskMaster(gTask.Type) {
+				// Get subtaskID
+				rs, err := execSQL(stm.ctx, se, "select @@last_insert_id")
+				if err != nil {
+					return err
+				}
+				subTaskID, err := strconv.ParseInt(rs[0].GetString(0), 10, 64)
+				if err != nil {
+					return err
+				}
+				// Register background task
 				err = tidbworker.GlobalTiDBWorkerManager.RegisterBgTask(
 					stm.ctx,
 					tidbworker.TaskWorkerType(gTask.Type),
 					gTask.Key,
 					gTask.ID,
-					subtask.ID,
+					subTaskID,
 					subtask.SchedulerID,
 				)
 				if err != nil {

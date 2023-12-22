@@ -447,7 +447,7 @@ func GetEligibleInstance(serverNodes []*infosync.ServerInfo, pos int) (string, e
 // GenerateSchedulerNodes generate a eligible TiDB nodes.
 func GenerateSchedulerNodes(ctx context.Context, taskType string, gTaskID int64) ([]*infosync.ServerInfo, error) {
 	// Return placeholder nodes according to setting if tidb worker for ddl/batch is enabled.
-	if tidbworker.IsBgTaskMaster() {
+	if variable.EnableDistTask.Load() && tidbworker.IsBgTaskMaster(taskType) {
 		return tidbworker.SchedulerNodes(tidbworker.TaskWorkerType(taskType), gTaskID), nil
 	}
 	serverInfos, err := infosync.GetAllServerInfo(ctx)
@@ -490,7 +490,7 @@ func (d *dispatcher) GetAllSchedulerIDs(ctx context.Context, task *proto.Task) (
 
 func matchServerInfo(serverInfos map[string]*infosync.ServerInfo, schedulerID string, task *proto.Task) bool {
 	// return true if tidb worker is enabled and the schedulerID is a worker ID.
-	if tidbworker.IsBgTaskMaster() || tidbworker.IsDDLWorker() || tidbworker.IsBatchWorker() {
+	if variable.EnableDistTask.Load() && tidbworker.IsBgTaskMaster(task.Type) {
 		return tidbworker.IsWorkerExecID(schedulerID, tidbworker.TaskWorkerType(task.Type))
 	}
 	for _, serverInfo := range serverInfos {

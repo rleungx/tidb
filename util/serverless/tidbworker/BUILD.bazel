@@ -14,6 +14,7 @@ go_library(
         "//ddl/util",
         "//domain/infosync",
         "//sessionctx",
+        "//util/logutil",
         "@com_github_pingcap_errors//:errors",
         "@com_github_pingcap_log//:log",
         "@com_github_tidbcloud_aws_shared_provider_pkg_tidbworker_client//:client",
