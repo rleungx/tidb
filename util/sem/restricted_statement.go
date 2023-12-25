@@ -24,8 +24,7 @@ import (
 	"github.com/pingcap/tidb/util/dbterror"
 )
 
-// cloudAdminName is the username of cloud_admin.
-const cloudAdminName = "cloud_admin"
+var restrictedUsers = []string{"cloud_admin", "root"}
 
 // IsRestrictedStatement checks if the statement is allowed to execute.
 func IsRestrictedStatement(stmt ast.Node) error {
@@ -34,6 +33,22 @@ func IsRestrictedStatement(stmt ast.Node) error {
 		return nil
 	}
 	return strictModeRestrictedStatement(stmt)
+}
+
+// isRestrictedUser checks if the username is forbidden from rename or drop.
+func isRestrictedUser(userName, hostname string) bool {
+	splitUserName := strings.SplitN(userName, ".", 2)
+	userPrefix := keyspace.GetKeyspaceNameBySettings()
+	// Do not check if keyspace prefix unset or if requested user does not have the correct prefix.
+	if userPrefix == "" || len(splitUserName) != 2 || splitUserName[0] != userPrefix || hostname != "%" {
+		return false
+	}
+	for _, restrictedUser := range restrictedUsers {
+		if splitUserName[1] == restrictedUser {
+			return true
+		}
+	}
+	return false
 }
 
 // strictModeRestrictedStatement checks if the statement is a restricted under enhanced sem,
@@ -159,7 +174,6 @@ func verifySimple(stmt ast.Node) error {
 		*ast.RollbackStmt,
 		*ast.CreateUserStmt,
 		*ast.AlterUserStmt,
-		*ast.DropUserStmt,
 		*ast.SetPwdStmt,
 		*ast.SetSessionStatesStmt,
 		*ast.KillStmt,
@@ -174,14 +188,18 @@ func verifySimple(stmt ast.Node) error {
 		*ast.NonTransactionalDMLStmt,
 		*ast.UseStmt:
 		return nil
-	// Renaming "cloud_admin@%" is not allowed.
-	case *ast.RenameUserStmt:
-		cloudAdminName := "cloud_admin"
-		if userPrefix := keyspace.GetKeyspaceNameBySettings(); userPrefix != "" {
-			cloudAdminName = userPrefix + "." + cloudAdminName
+	// Dropping restricted user is not allowed.
+	case *ast.DropUserStmt:
+		for _, user := range s.UserList {
+			if isRestrictedUser(user.Username, user.Hostname) {
+				return dbterror.ErrNotSupportedOnServerless.GenWithStackByCause(fmt.Sprintf("DROP USER %s", user))
+			}
 		}
+		return nil
+	// Renaming restricted user is not allowed.
+	case *ast.RenameUserStmt:
 		for _, userToUser := range s.UserToUsers {
-			if userToUser.OldUser.Username == cloudAdminName && userToUser.OldUser.Hostname == "%" {
+			if isRestrictedUser(userToUser.OldUser.Username, userToUser.OldUser.Hostname) {
 				return dbterror.ErrNotSupportedOnServerless.GenWithStackByCause(fmt.Sprintf("RENAME USER %s", userToUser.OldUser))
 			}
 		}
