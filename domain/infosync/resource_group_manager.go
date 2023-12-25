@@ -111,5 +111,5 @@ func (m *mockResourceGroupManager) LoadResourceGroups(ctx context.Context) ([]*r
 }
 
 func (m *mockResourceGroupManager) Watch(ctx context.Context, key []byte, opts ...pd.OpOption) (chan []*meta_storagepb.Event, error) {
-	return m.eventCh, nil
+	return nil, nil
 }

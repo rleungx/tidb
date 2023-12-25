@@ -209,12 +209,17 @@ func (d TiKVDriver) OpenWithOptions(path string, options ...Option) (resStore kv
 		return nil, errors.Trace(err)
 	}
 
+	tlsConfig, err := d.security.ToTLSConfig()
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+
 	if d.cseConfig.EnableRegionClient {
 		logutil.BgLogger().Warn("enable cse region client")
-		pdCli, err = cse.NewClient(pdCli, nil)
+		pdCli, err = cse.NewClient(pdCli, tlsConfig, nil)
 	} else {
 		// If `cse.enable-region-client` is not enabled, we use CSEClient as fallback for PDClient.
-		pdCli, err = cse.NewClientWithFallback(pdCli, nil)
+		pdCli, err = cse.NewClientWithFallback(pdCli, tlsConfig, nil)
 	}
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -227,11 +232,6 @@ func (d TiKVDriver) OpenWithOptions(path string, options ...Option) (resStore kv
 	if store, ok := mc.cache[uuid]; ok {
 		pdCli.Close()
 		return store, nil
-	}
-
-	tlsConfig, err := d.security.ToTLSConfig()
-	if err != nil {
-		return nil, errors.Trace(err)
 	}
 
 	// ---------------- keyspace logic  ----------------
