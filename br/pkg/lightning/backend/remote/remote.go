@@ -396,23 +396,34 @@ func (b *Backend) CloseEngine(ctx context.Context, cfg *backend.EngineConfig, en
 
 func (b *Backend) checkLoadDataTask(ctx context.Context, cfg *backend.EngineConfig) (bool, error) {
 	clusterID := b.pdCtl.GetPDClient().GetClusterID(ctx)
-	url := fmt.Sprintf("%s/load_data?cluster_id=%d", b.workerAddr, clusterID)
-	data, err := sendRequest(ctx, b.httpClient, "GET", url, nil)
-	if err != nil {
-		return false, err
-	}
-	tasks := []LoadDataStates{}
-	err = json.Unmarshal(data, &tasks)
-	if err != nil {
-		return false, err
-	}
 	taskID := genLoadDataTaskID(cfg)
-	for _, task := range tasks {
-		if task.TaskID == taskID {
-			return true, nil
+	addr := b.workerAddr
+	for {
+		url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s", addr, clusterID, taskID)
+		client := *b.httpClient
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
 		}
+		resp, err := client.Get(url)
+		if err != nil {
+			return false, err
+		}
+		if resp.StatusCode == http.StatusFound {
+			addr = strings.TrimSuffix(resp.Header.Get("Location"), "/load_data")
+			b.logger.Info("redirect to loadData worker",
+				zap.String("loadDataTaskID", taskID),
+				zap.String("worker addr", addr))
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			msg, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return false, err
+			}
+			return false, errors.Errorf("failed to get task, status: %s, msg: %s", resp.Status, string(msg))
+		}
+		return true, nil
 	}
-	return false, nil
 }
 
 // ImportEngine imports an engine to TiKV.
