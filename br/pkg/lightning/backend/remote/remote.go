@@ -342,7 +342,18 @@ func (b *Backend) loadDataInit(ctx context.Context, engine *engine, dataSize int
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
-		resp, err := client.Post(url, "application/json", nil)
+		var (
+			resp *http.Response
+			err  error
+		)
+		for i := 0; i < retryCount; i++ {
+			resp, err = client.Post(url, "application/json", nil)
+			if err != nil {
+				time.Sleep(sleepDuration)
+				continue
+			}
+			break
+		}
 		if err != nil {
 			return err
 		}
@@ -404,7 +415,18 @@ func (b *Backend) checkLoadDataTask(ctx context.Context, cfg *backend.EngineConf
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
-		resp, err := client.Get(url)
+		var (
+			resp *http.Response
+			err  error
+		)
+		for i := 0; i < retryCount; i++ {
+			resp, err = client.Get(url)
+			if err != nil {
+				time.Sleep(sleepDuration)
+				continue
+			}
+			break
+		}
 		if err != nil {
 			return false, err
 		}
