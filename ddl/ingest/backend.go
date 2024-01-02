@@ -49,6 +49,7 @@ type BackendCtx interface {
 	FinishImport(indexID int64, unique bool, tbl table.Table) error
 	ResetWorkers(jobID, indexID int64)
 	Flush(indexID int64, mode FlushMode) (flushed, imported bool, err error)
+	TaskFlushed(indexID int64, taskID int) bool
 	Done() bool
 	SetDone()
 
@@ -174,12 +175,26 @@ func acquireLock(ctx context.Context, se *concurrency.Session, key string) (*con
 	return mu, nil
 }
 
+// TaskFlushed returns true if the task data has been flushed.
+func (bc *litBackendCtx) TaskFlushed(indexID int64, taskID int) bool {
+	ei, exist := bc.Load(indexID)
+	if !exist {
+		logutil.BgLogger().Error(LitErrGetEngineFail, zap.Int64("index ID", indexID))
+		return false
+	}
+
+	if writer, ok := ei.writerCache.Load(taskID); ok {
+		return writer.(*writerContext).Flushed()
+	}
+	return false
+}
+
 // Flush checks the disk quota and imports the current key-values in engine to the storage.
 func (bc *litBackendCtx) Flush(indexID int64, mode FlushMode) (flushed, imported bool, err error) {
-	if len(bc.cfg.TikvImporter.Addr) > 0 {
-		return true, true, nil
+	backend, ok := bc.backend.(*local.Backend)
+	if !ok {
+		return false, false, dbterror.ErrIngestFailed.FastGenByArgs("remote backend does not need to flush")
 	}
-	backend := bc.backend.(*local.Backend)
 
 	ei, exist := bc.Load(indexID)
 	if !exist {

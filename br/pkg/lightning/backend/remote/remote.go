@@ -671,9 +671,8 @@ func (b *Backend) LocalWriter(_ context.Context, cfg *backend.LocalWriterConfig,
 		return nil, err
 	}
 	localWriterID := uint64(cfg.LocalWriterID)
-	_, ok := engine.writers[localWriterID]
-	if ok {
-		return nil, errors.Errorf("local writer %d already exists", localWriterID)
+	if client, ok := engine.writers[localWriterID]; ok {
+		return client, nil
 	}
 
 	chunksCache, err := newChunkCache(engine.loadDataTaskID, localWriterID)
@@ -846,7 +845,7 @@ func (w *client) handlePutChunkResult(ctx context.Context, putChunkRes *PutChunk
 			zap.Uint64("writerID", w.writerID),
 			zap.Uint64("expectChunkID", expectChunkID),
 			zap.Uint64("handledChunkID", putChunkRes.HandledChunkID),
-			zap.Uint64("FlushedChunkID", putChunkRes.FlushedChunkID),
+			zap.Uint64("flushedChunkID", putChunkRes.FlushedChunkID),
 			zap.String("error", putChunkRes.Error))
 
 		nextChunkID := putChunkRes.HandledChunkID + 1

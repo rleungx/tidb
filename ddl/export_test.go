@@ -57,10 +57,18 @@ func FetchChunk4Test(copCtx *copContext, tbl table.PhysicalTable, startKey, endK
 	pool.chunkSender = &resultChanForTest{ch: resultCh}
 	pool.adjustSize(1)
 	pool.tasksCh <- task
-	rs := <-resultCh
+	rss := []idxRecResult{}
+	for {
+		rs := <-resultCh
+		rss = append(rss, rs)
+		rs.handled <- struct{}{}
+		if len(rss) == 2 {
+			break
+		}
+	}
 	close(taskCh)
 	pool.close(false)
-	return rs.chunk
+	return rss[0].chunk
 }
 
 func ConvertRowToHandleAndIndexDatum(row chunk.Row, copCtx *copContext) (kv.Handle, []types.Datum, error) {

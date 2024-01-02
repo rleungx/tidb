@@ -45,26 +45,26 @@ func TestCheckpointManager(t *testing.T) {
 	mgr.Register(1, []byte{'1', '9'})
 	mgr.Register(2, []byte{'2', '9'})
 	mgr.UpdateTotal(1, 100, false)
-	require.False(t, mgr.IsComplete([]byte{'1', '9'}))
+	require.False(t, mgr.CheckComplete(0, []byte{'1', '9'}))
 	require.NoError(t, mgr.UpdateCurrent(1, 100))
-	require.False(t, mgr.IsComplete([]byte{'1', '9'}))
+	require.False(t, mgr.CheckComplete(0, []byte{'1', '9'}))
 	mgr.UpdateTotal(1, 100, true)
 	require.NoError(t, mgr.UpdateCurrent(1, 100))
 	// The data is not imported to the storage yet.
-	require.False(t, mgr.IsComplete([]byte{'1', '9'}))
+	require.False(t, mgr.CheckComplete(0, []byte{'1', '9'}))
 	flushCtrl.imported = true // Mock the data is imported to the storage.
 	require.NoError(t, mgr.UpdateCurrent(2, 0))
-	require.True(t, mgr.IsComplete([]byte{'1', '9'}))
+	require.True(t, mgr.CheckComplete(0, []byte{'1', '9'}))
 
 	// Only when the last batch is completed, the job can be completed.
 	mgr.UpdateTotal(2, 50, false)
 	mgr.UpdateTotal(2, 50, true)
 	require.NoError(t, mgr.UpdateCurrent(2, 50))
-	require.True(t, mgr.IsComplete([]byte{'1', '9'}))
-	require.False(t, mgr.IsComplete([]byte{'2', '9'}))
+	require.True(t, mgr.CheckComplete(0, []byte{'1', '9'}))
+	require.False(t, mgr.CheckComplete(0, []byte{'2', '9'}))
 	require.NoError(t, mgr.UpdateCurrent(2, 50))
-	require.True(t, mgr.IsComplete([]byte{'1', '9'}))
-	require.True(t, mgr.IsComplete([]byte{'2', '9'}))
+	require.True(t, mgr.CheckComplete(0, []byte{'1', '9'}))
+	require.True(t, mgr.CheckComplete(0, []byte{'2', '9'}))
 
 	// Only when the subsequent job is completed, the previous job can be completed.
 	mgr.Register(3, []byte{'3', '9'})
@@ -75,8 +75,8 @@ func TestCheckpointManager(t *testing.T) {
 	mgr.UpdateTotal(5, 100, true)
 	require.NoError(t, mgr.UpdateCurrent(5, 100))
 	require.NoError(t, mgr.UpdateCurrent(4, 100))
-	require.False(t, mgr.IsComplete([]byte{'3', '9'}))
-	require.False(t, mgr.IsComplete([]byte{'4', '9'}))
+	require.False(t, mgr.CheckComplete(0, []byte{'3', '9'}))
+	require.False(t, mgr.CheckComplete(0, []byte{'4', '9'}))
 }
 
 func TestCheckpointManagerUpdateReorg(t *testing.T) {
@@ -143,8 +143,8 @@ func TestCheckpointManagerResumeReorg(t *testing.T) {
 	mgr, err := ingest.NewCheckpointManager(ctx, flushCtrl, sessPool, 1, 1)
 	require.NoError(t, err)
 	defer mgr.Close()
-	require.True(t, mgr.IsComplete([]byte{'1', '9'}))
-	require.True(t, mgr.IsComplete([]byte{'2', '9'}))
+	require.True(t, mgr.CheckComplete(0, []byte{'1', '9'}))
+	require.True(t, mgr.CheckComplete(0, []byte{'2', '9'}))
 	localCnt, globalNextKey := mgr.Status()
 	require.Equal(t, 100, localCnt)
 	require.EqualValues(t, []byte{'2', '9'}, globalNextKey)
@@ -156,4 +156,8 @@ type dummyFlushCtrl struct {
 
 func (d *dummyFlushCtrl) Flush(_ int64, _ ingest.FlushMode) (bool, bool, error) {
 	return true, d.imported, nil
+}
+
+func (d *dummyFlushCtrl) TaskFlushed(_ int64, _ int) bool {
+	return true
 }

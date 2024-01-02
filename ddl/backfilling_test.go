@@ -94,3 +94,110 @@ func TestPickBackfillType(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, tp, model.ReorgTypeLitMerge)
 }
+
+func TestMergeKVRanges(t *testing.T) {
+	testCases := []struct {
+		ranges   []kv.KeyRange
+		expected []kv.KeyRange
+		mergeCnt int
+	}{
+		{
+			ranges: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("b")},
+				{StartKey: kv.Key("b"), EndKey: kv.Key("c")},
+				{StartKey: kv.Key("c"), EndKey: kv.Key("d")},
+				{StartKey: kv.Key("d"), EndKey: kv.Key("e")},
+				{StartKey: kv.Key("e"), EndKey: kv.Key("f")},
+				{StartKey: kv.Key("f"), EndKey: kv.Key("g")},
+				{StartKey: kv.Key("g"), EndKey: kv.Key("h")},
+			},
+			expected: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("b")},
+				{StartKey: kv.Key("b"), EndKey: kv.Key("c")},
+				{StartKey: kv.Key("c"), EndKey: kv.Key("d")},
+				{StartKey: kv.Key("d"), EndKey: kv.Key("e")},
+				{StartKey: kv.Key("e"), EndKey: kv.Key("f")},
+				{StartKey: kv.Key("f"), EndKey: kv.Key("g")},
+				{StartKey: kv.Key("g"), EndKey: kv.Key("h")},
+			},
+			mergeCnt: 0,
+		},
+		{
+			ranges: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("b")},
+				{StartKey: kv.Key("b"), EndKey: kv.Key("c")},
+				{StartKey: kv.Key("c"), EndKey: kv.Key("d")},
+				{StartKey: kv.Key("d"), EndKey: kv.Key("e")},
+				{StartKey: kv.Key("e"), EndKey: kv.Key("f")},
+				{StartKey: kv.Key("f"), EndKey: kv.Key("g")},
+				{StartKey: kv.Key("g"), EndKey: kv.Key("h")},
+			},
+			expected: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("b")},
+				{StartKey: kv.Key("b"), EndKey: kv.Key("c")},
+				{StartKey: kv.Key("c"), EndKey: kv.Key("d")},
+				{StartKey: kv.Key("d"), EndKey: kv.Key("e")},
+				{StartKey: kv.Key("e"), EndKey: kv.Key("f")},
+				{StartKey: kv.Key("f"), EndKey: kv.Key("g")},
+				{StartKey: kv.Key("g"), EndKey: kv.Key("h")},
+			},
+			mergeCnt: 1,
+		},
+		{
+			ranges: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("b")},
+				{StartKey: kv.Key("b"), EndKey: kv.Key("c")},
+				{StartKey: kv.Key("c"), EndKey: kv.Key("d")},
+				{StartKey: kv.Key("d"), EndKey: kv.Key("e")},
+				{StartKey: kv.Key("e"), EndKey: kv.Key("f")},
+				{StartKey: kv.Key("f"), EndKey: kv.Key("g")},
+				{StartKey: kv.Key("g"), EndKey: kv.Key("h")},
+			},
+			expected: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("c")},
+				{StartKey: kv.Key("c"), EndKey: kv.Key("e")},
+				{StartKey: kv.Key("e"), EndKey: kv.Key("g")},
+				{StartKey: kv.Key("g"), EndKey: kv.Key("h")},
+			},
+			mergeCnt: 2,
+		},
+		{
+			ranges: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("b")},
+				{StartKey: kv.Key("b"), EndKey: kv.Key("c")},
+				{StartKey: kv.Key("c"), EndKey: kv.Key("d")},
+				{StartKey: kv.Key("d"), EndKey: kv.Key("e")},
+				{StartKey: kv.Key("e"), EndKey: kv.Key("f")},
+				{StartKey: kv.Key("f"), EndKey: kv.Key("g")},
+				{StartKey: kv.Key("g"), EndKey: kv.Key("h")},
+			},
+			expected: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("d")},
+				{StartKey: kv.Key("d"), EndKey: kv.Key("g")},
+				{StartKey: kv.Key("g"), EndKey: kv.Key("h")},
+			},
+			mergeCnt: 3,
+		},
+		{
+			ranges: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("b")},
+				{StartKey: kv.Key("b"), EndKey: kv.Key("c")},
+				{StartKey: kv.Key("c"), EndKey: kv.Key("d")},
+				{StartKey: kv.Key("d"), EndKey: kv.Key("e")},
+				{StartKey: kv.Key("e"), EndKey: kv.Key("f")},
+				{StartKey: kv.Key("f"), EndKey: kv.Key("g")},
+				{StartKey: kv.Key("g"), EndKey: kv.Key("h")},
+			},
+			expected: []kv.KeyRange{
+				{StartKey: kv.Key("a"), EndKey: kv.Key("e")},
+				{StartKey: kv.Key("e"), EndKey: kv.Key("h")},
+			},
+			mergeCnt: 4,
+		},
+	}
+
+	for _, tc := range testCases {
+		mergedRanges := mergeKVRanges(tc.ranges, tc.mergeCnt)
+		require.Equal(t, tc.expected, mergedRanges)
+	}
+}

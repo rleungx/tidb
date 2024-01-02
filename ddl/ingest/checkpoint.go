@@ -60,6 +60,7 @@ type CheckpointManager struct {
 	minKeySyncGlobal kv.Key
 	localCnt         int
 	globalCnt        int
+	kvRanges         []kv.KeyRange
 	// Global meta.
 	pidGlobal   int64
 	startGlobal kv.Key
@@ -84,6 +85,7 @@ type TaskCheckpoint struct {
 // FlushController is an interface to control the flush of the checkpoint.
 type FlushController interface {
 	Flush(indexID int64, mode FlushMode) (flushed, imported bool, err error)
+	TaskFlushed(indexID int64, taskID int) bool
 }
 
 // NewCheckpointManager creates a new checkpoint manager.
@@ -124,15 +126,24 @@ func InitInstanceAddr() string {
 	return fmt.Sprintf("%s:%s", dsn, cfg.TempDir)
 }
 
-// IsComplete checks if the task is complete.
+// CheckComplete checks if the task is complete.
 // This is called before the reader reads the data and decides whether to skip the current task.
-func (s *CheckpointManager) IsComplete(end kv.Key) bool {
+func (s *CheckpointManager) CheckComplete(taskID int, end kv.Key) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.minKeySyncGlobal) > 0 && end.Cmp(s.minKeySyncGlobal) <= 0 {
+		if taskID > s.minTaskIDSynced {
+			s.minTaskIDSynced = taskID
+		}
 		return true
 	}
-	return s.localDataIsValid && len(s.minKeySyncLocal) > 0 && end.Cmp(s.minKeySyncLocal) <= 0
+	if s.localDataIsValid && len(s.minKeySyncLocal) > 0 && end.Cmp(s.minKeySyncLocal) <= 0 {
+		if taskID > s.minTaskIDSynced {
+			s.minTaskIDSynced = taskID
+		}
+		return true
+	}
+	return false
 }
 
 // Status returns the status of the checkpoint.
@@ -173,6 +184,12 @@ func (s *CheckpointManager) UpdateCurrent(taskID int, added int) error {
 	cp.currentKeys += added
 	s.mu.Unlock()
 
+	if len(config.GetGlobalConfig().TiKVAPIServiceAddr) != 0 {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.progressLocalSyncMinKey()
+		return nil
+	}
 	flushed, imported, err := s.flushCtrl.Flush(s.indexID, FlushModeAuto)
 	if !flushed || err != nil {
 		return err
@@ -192,10 +209,27 @@ func (s *CheckpointManager) UpdateCurrent(taskID int, added int) error {
 	return nil
 }
 
+// UpdateKVRanges saved the ranges.
+func (s *CheckpointManager) UpdateKVRanges(kvRanges []kv.KeyRange) error {
+	s.mu.Lock()
+	s.kvRanges = kvRanges
+	s.dirty = true
+	s.mu.Unlock()
+	return s.updateCheckpoint()
+}
+
+// GetKVRanges gets the ranges by start key.
+func (s *CheckpointManager) GetKVRanges() []kv.KeyRange {
+	s.mu.Lock()
+	kvRanges := s.kvRanges
+	s.mu.Unlock()
+	return kvRanges
+}
+
 func (s *CheckpointManager) progressLocalSyncMinKey() {
 	for {
 		cp := s.checkpoints[s.minTaskIDSynced+1]
-		if cp == nil || !cp.lastBatchSent || cp.currentKeys < cp.totalKeys {
+		if cp == nil || !cp.lastBatchSent || cp.currentKeys < cp.totalKeys || !s.flushCtrl.TaskFlushed(s.indexID, s.minTaskIDSynced+1) {
 			break
 		}
 		s.minTaskIDSynced++
@@ -203,6 +237,10 @@ func (s *CheckpointManager) progressLocalSyncMinKey() {
 		s.localCnt += cp.totalKeys
 		delete(s.checkpoints, s.minTaskIDSynced)
 		s.dirty = true
+		logutil.BgLogger().Info("[ddl-ingest] update minTaskIDSynced",
+			zap.Int64("job ID", s.jobID), zap.Int64("index ID", s.indexID),
+			zap.Int("minTaskIDSynced", s.minTaskIDSynced),
+		)
 	}
 }
 
@@ -236,14 +274,16 @@ func (s *CheckpointManager) Reset(newPhysicalID int64, start, end kv.Key) {
 	logutil.BgLogger().Info("[ddl-ingest] reset checkpoint manager",
 		zap.Int64("newPhysicalID", newPhysicalID), zap.Int64("oldPhysicalID", s.pidLocal),
 		zap.Int64("indexID", s.indexID), zap.Int64("jobID", s.jobID), zap.Int("localCnt", s.localCnt))
-	if s.pidLocal != newPhysicalID {
+	if s.pidLocal != 0 && s.pidLocal != newPhysicalID {
 		s.minKeySyncLocal = nil
 		s.minKeySyncGlobal = nil
 		s.minTaskIDSynced = 0
 		s.pidLocal = newPhysicalID
 		s.startLocal = start
 		s.endLocal = end
+		s.kvRanges = nil
 	}
+	s.pidLocal = newPhysicalID
 }
 
 // JobReorgMeta is the metadata for a reorg job.
@@ -262,6 +302,8 @@ type ReorgCheckpoint struct {
 	PhysicalID int64  `json:"physical_id"`
 	StartKey   kv.Key `json:"start_key"`
 	EndKey     kv.Key `json:"end_key"`
+
+	KVRanges []kv.KeyRange `json:"kv_ranges"`
 
 	Version int64 `json:"version"`
 }
@@ -302,16 +344,16 @@ func (s *CheckpointManager) resumeCheckpoint() error {
 			s.pidGlobal = cp.PhysicalID
 			s.startGlobal = cp.StartKey
 			s.endGlobal = cp.EndKey
-			if s.instanceAddr == cp.InstanceAddr || cp.InstanceAddr == "" /* initial state */ {
-				s.localDataIsValid = true
-				s.minKeySyncLocal = cp.LocalSyncKey
-				s.localCnt = cp.LocalKeyCount
-			}
+			s.kvRanges = cp.KVRanges
+			s.localDataIsValid = true
+			s.minKeySyncLocal = cp.LocalSyncKey
+			s.localCnt = cp.LocalKeyCount
 			logutil.BgLogger().Info("[ddl-ingest] resume checkpoint",
 				zap.Int64("job ID", s.jobID), zap.Int64("index ID", s.indexID),
 				zap.String("local checkpoint", hex.EncodeToString(s.minKeySyncLocal)),
 				zap.String("global checkpoint", hex.EncodeToString(s.minKeySyncGlobal)),
 				zap.Int64("physical table ID", cp.PhysicalID),
+				zap.Int("kv ranges", len(cp.KVRanges)),
 				zap.String("previous instance", cp.InstanceAddr),
 				zap.String("current instance", s.instanceAddr))
 			return nil
@@ -331,6 +373,7 @@ func (s *CheckpointManager) updateCheckpoint() error {
 	currentGlobalPID := s.pidGlobal
 	currentGlobalStart := s.startGlobal
 	currentGlobalEnd := s.endGlobal
+	currentKVRanges := s.kvRanges
 	s.updating = true
 	s.mu.Unlock()
 	defer func() {
@@ -356,6 +399,7 @@ func (s *CheckpointManager) updateCheckpoint() error {
 			PhysicalID:     currentGlobalPID,
 			StartKey:       currentGlobalStart,
 			EndKey:         currentGlobalEnd,
+			KVRanges:       currentKVRanges,
 			Version:        JobCheckpointVersionCurrent,
 		}
 		rawReorgMeta, err := json.Marshal(JobReorgMeta{Checkpoint: cp})

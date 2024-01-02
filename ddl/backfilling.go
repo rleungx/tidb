@@ -25,6 +25,7 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tidb/config"
 	sess "github.com/pingcap/tidb/ddl/internal/session"
 	ddlutil "github.com/pingcap/tidb/ddl/util"
 	"github.com/pingcap/tidb/expression"
@@ -41,6 +42,7 @@ import (
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/dbterror"
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/pingcap/tidb/util/mathutil"
 	decoder "github.com/pingcap/tidb/util/rowDecoder"
 	"github.com/pingcap/tidb/util/timeutil"
 	"github.com/pingcap/tidb/util/topsql"
@@ -507,7 +509,9 @@ func handleOneResult(result *backfillResult, scheduler backfillScheduler, consum
 	}
 	if !consumer.distribute {
 		reorgCtx := consumer.dc.getReorgCtx(reorgInfo.Job.ID)
-		reorgCtx.setRowCount(*totalAddedCount)
+		if reorgCtx != nil {
+			reorgCtx.setRowCount(*totalAddedCount)
+		}
 	}
 	keeper.updateNextKey(result.taskID, result.nextKey)
 	if taskSeq%(scheduler.currentWorkerSize()*4) == 0 {
@@ -654,7 +658,10 @@ func setSessCtxLocation(sctx sessionctx.Context, tzLocation *model.TimeZoneLocat
 	return nil
 }
 
-var backfillTaskChanSize = 128
+var (
+	backfillTaskChanSize = 128
+	mergeKVRangeCount    = 8
+)
 
 // SetBackfillTaskChanSizeForTest is only used for test.
 func SetBackfillTaskChanSizeForTest(n int) {
@@ -712,9 +719,42 @@ func (dc *ddlCtx) writePhysicalTableRecord(sessPool *sess.Pool, t table.Physical
 		return errors.Trace(err)
 	}
 
+	var totalKVRanges []kv.KeyRange
+	if ingestScheduler, ok := scheduler.(*ingestBackfillScheduler); ok && ingestScheduler.checkpointMgr != nil {
+		totalKVRanges = ingestScheduler.checkpointMgr.GetKVRanges()
+		if len(totalKVRanges) == 0 {
+			kvRanges, err := splitTableRanges(t, reorgInfo.d.store, startKey, endKey, copr.UnspecifiedLimit)
+			if err != nil {
+				return errors.Trace(err)
+			}
+
+			mergeCnt := mergeKVRangeCount
+			if config.GetGlobalConfig().MergeKVRangeCount != 0 {
+				mergeCnt = config.GetGlobalConfig().MergeKVRangeCount
+			}
+			totalKVRanges = mergeKVRanges(kvRanges, mergeCnt)
+
+			err = ingestScheduler.checkpointMgr.UpdateKVRanges(totalKVRanges)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			logutil.BgLogger().Info("[ddl] update ranges for reorg to checkpoint",
+				zap.Int("range count", len(totalKVRanges)),
+				zap.Int("source range count", len(kvRanges)))
+		}
+		logutil.BgLogger().Info("[ddl] get kv ranges for reorg",
+			zap.Int("range count", len(totalKVRanges)))
+	}
+
 	taskIDAlloc := newTaskIDAllocator()
 	for {
-		kvRanges, err := splitTableRanges(t, reorgInfo.d.store, startKey, endKey, backfillTaskChanSize)
+		var kvRanges []kv.KeyRange
+		if ingestScheduler, ok := scheduler.(*ingestBackfillScheduler); ok && ingestScheduler.checkpointMgr != nil {
+			n := mathutil.Min(backfillTaskChanSize, len(totalKVRanges))
+			kvRanges, totalKVRanges = totalKVRanges[:n], totalKVRanges[n:]
+		} else {
+			kvRanges, err = splitTableRanges(t, reorgInfo.d.store, startKey, endKey, backfillTaskChanSize)
+		}
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -907,4 +947,35 @@ func (n *doneTaskKeeper) updateNextKey(doneTaskID int, next kv.Key) {
 		return
 	}
 	n.doneTaskNextKey[doneTaskID] = next
+}
+
+func mergeKVRanges(kvRanges []kv.KeyRange, mergeCnt int) []kv.KeyRange {
+	if mergeCnt == 0 {
+		return kvRanges
+	}
+
+	srcKVRangesCnt := len(kvRanges)
+	size := srcKVRangesCnt / mergeCnt
+	if srcKVRangesCnt%mergeCnt > 0 {
+		size += 1
+	}
+
+	newKVRanges := make([]kv.KeyRange, 0, size)
+	for len(kvRanges) > 0 {
+		n := mergeCnt
+		if len(kvRanges) < n {
+			n = len(kvRanges)
+		}
+		startKey := kvRanges[0].StartKey
+		endKey := kvRanges[n-1].EndKey
+		newKVRanges = append(newKVRanges, kv.KeyRange{
+			StartKey: startKey,
+			EndKey:   endKey,
+		})
+		kvRanges = kvRanges[n:]
+	}
+	logutil.BgLogger().Info("[ddl] merge kv ranges", zap.Int("source kv range count", srcKVRangesCnt),
+		zap.Int("kv range count", len(newKVRanges)),
+		zap.Int("merge count", mergeCnt))
+	return newKVRanges
 }

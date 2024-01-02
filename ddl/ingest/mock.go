@@ -122,6 +122,11 @@ func (*MockBackendCtx) Flush(_ int64, _ FlushMode) (flushed bool, imported bool,
 	return false, false, nil
 }
 
+// TaskFlushed implements BackendCtx.FlushTable interface.
+func (*MockBackendCtx) TaskFlushed(indexID int64, taskID int) bool {
+	return true
+}
+
 // Done implements BackendCtx.Done interface.
 func (*MockBackendCtx) Done() bool {
 	return false
@@ -171,6 +176,16 @@ func (m *MockEngineInfo) CreateWriter(id int, _ bool) (Writer, error) {
 type MockWriter struct {
 	sessCtx sessionctx.Context
 	mu      *sync.Mutex
+}
+
+// Flushed implements Writer.Flushed interface.
+func (*MockWriter) Flushed() bool {
+	return true
+}
+
+// Close implements Writer.Close interface.
+func (*MockWriter) Close() error {
+	return nil
 }
 
 // WriteRow implements Writer.WriteRow interface.

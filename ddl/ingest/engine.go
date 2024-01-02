@@ -26,7 +26,6 @@ import (
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
 	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	tidbkv "github.com/pingcap/tidb/kv"
-	"github.com/pingcap/tidb/util/generic"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
@@ -43,6 +42,8 @@ type Engine interface {
 type Writer interface {
 	WriteRow(key, idxVal []byte, handle tidbkv.Handle) error
 	LockForWrite() (unlock func())
+	Close() error
+	Flushed() bool
 }
 
 // engineInfo is the engine for one index reorg task, each task will create several new writers under the
@@ -55,7 +56,7 @@ type engineInfo struct {
 	uuid         uuid.UUID
 	cfg          *backend.EngineConfig
 	writerCount  int
-	writerCache  generic.SyncMap[int, backend.EngineWriter]
+	writerCache  sync.Map
 	memRoot      MemRoot
 	flushLock    *sync.RWMutex
 	flushing     atomic.Bool
@@ -63,7 +64,7 @@ type engineInfo struct {
 
 // newEngineInfo create a new engineInfo struct.
 func newEngineInfo(ctx context.Context, jobID, indexID int64, cfg *backend.EngineConfig,
-	en *backend.OpenedEngine, uuid uuid.UUID, wCnt int, memRoot MemRoot) *engineInfo {
+	en *backend.OpenedEngine, uuid uuid.UUID, memRoot MemRoot) *engineInfo {
 	return &engineInfo{
 		ctx:          ctx,
 		jobID:        jobID,
@@ -71,8 +72,7 @@ func newEngineInfo(ctx context.Context, jobID, indexID int64, cfg *backend.Engin
 		cfg:          cfg,
 		openedEngine: en,
 		uuid:         uuid,
-		writerCount:  wCnt,
-		writerCache:  generic.NewSyncMap[int, backend.EngineWriter](wCnt),
+		writerCache:  sync.Map{},
 		memRoot:      memRoot,
 		flushLock:    &sync.RWMutex{},
 	}
@@ -157,20 +157,15 @@ func (ei *engineInfo) ImportAndClean() error {
 
 // writerContext is used to keep a lightning local writer for each backfill worker.
 type writerContext struct {
-	ctx    context.Context
-	unique bool
-	lWrite backend.EngineWriter
-	fLock  *sync.RWMutex
+	ctx         context.Context
+	unique      bool
+	lWrite      backend.EngineWriter
+	fLock       *sync.RWMutex
+	flushStatus backend.ChunkFlushStatus
 }
 
 // CreateWriter creates a new writerContext.
 func (ei *engineInfo) CreateWriter(id int, unique bool) (Writer, error) {
-	ei.memRoot.RefreshConsumption()
-	ok := ei.memRoot.CheckConsume(StructSizeWriterCtx)
-	if !ok {
-		return nil, genEngineAllocMemFailedErr(ei.memRoot, ei.jobID, ei.indexID)
-	}
-
 	wCtx, err := ei.newWriterContext(id, unique)
 	if err != nil {
 		logutil.BgLogger().Error(LitErrCreateContextFail, zap.Error(err),
@@ -178,13 +173,6 @@ func (ei *engineInfo) CreateWriter(id int, unique bool) (Writer, error) {
 			zap.Int("worker ID", id))
 		return nil, err
 	}
-
-	ei.memRoot.Consume(StructSizeWriterCtx)
-	logutil.BgLogger().Info(LitInfoCreateWrite, zap.Int64("job ID", ei.jobID),
-		zap.Int64("index ID", ei.indexID), zap.Int("worker ID", id),
-		zap.Int64("allocate memory", StructSizeWriterCtx),
-		zap.Int64("current memory usage", ei.memRoot.CurrentUsage()),
-		zap.Int64("max memory quota", ei.memRoot.MaxMemoryQuota()))
 	return wCtx, err
 }
 
@@ -192,39 +180,53 @@ func (ei *engineInfo) CreateWriter(id int, unique bool) (Writer, error) {
 // If local writer not exist, then create new one and store it into engine info writer cache.
 // note: operate ei.writeCache map is not thread safe please make sure there is sync mechanism to
 // make sure the safe.
-func (ei *engineInfo) newWriterContext(workerID int, unique bool) (*writerContext, error) {
-	lWrite, exist := ei.writerCache.Load(workerID)
+func (ei *engineInfo) newWriterContext(writerID int, unique bool) (*writerContext, error) {
+	wc, exist := ei.writerCache.Load(writerID)
 	if !exist {
-		var err error
-		lWrite, err = ei.openedEngine.LocalWriter(ei.ctx, &backend.LocalWriterConfig{})
+		ei.memRoot.RefreshConsumption()
+		ok := ei.memRoot.CheckConsume(StructSizeWriterCtx)
+		if !ok {
+			return nil, genEngineAllocMemFailedErr(ei.memRoot, ei.jobID, ei.indexID)
+		}
+		ei.flushLock.Lock()
+		lWrite, err := ei.openedEngine.LocalWriter(ei.ctx, &backend.LocalWriterConfig{LocalWriterID: writerID})
 		if err != nil {
+			ei.flushLock.Unlock()
 			return nil, err
 		}
+		ei.flushLock.Unlock()
+		wc = &writerContext{
+			ctx:    ei.ctx,
+			unique: unique,
+			lWrite: lWrite,
+			fLock:  ei.flushLock,
+		}
 		// Cache the local writer.
-		ei.writerCache.Store(workerID, lWrite)
+		ei.writerCache.Store(writerID, wc)
+
+		ei.memRoot.Consume(StructSizeWriterCtx)
+		logutil.BgLogger().Info(LitInfoCreateWrite, zap.Int64("job ID", ei.jobID),
+			zap.Int64("index ID", ei.indexID), zap.Int("writer ID", writerID),
+			zap.Int64("allocate memory", StructSizeWriterCtx),
+			zap.Int64("current memory usage", ei.memRoot.CurrentUsage()),
+			zap.Int64("max memory quota", ei.memRoot.MaxMemoryQuota()))
 	}
-	wc := &writerContext{
-		ctx:    ei.ctx,
-		unique: unique,
-		lWrite: lWrite,
-		fLock:  ei.flushLock,
-	}
-	return wc, nil
+	return wc.(*writerContext), nil
 }
 
 func (ei *engineInfo) closeWriters() error {
 	var firstErr error
-	for _, wid := range ei.writerCache.Keys() {
-		if w, ok := ei.writerCache.Load(wid); ok {
-			_, err := w.Close(ei.ctx)
-			if err != nil {
-				if firstErr == nil {
-					firstErr = err
-				}
+	ei.writerCache.Range(func(key, value interface{}) bool {
+		w := value.(*writerContext)
+		_, err := w.lWrite.Close(ei.ctx)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
 			}
 		}
-		ei.writerCache.Delete(wid)
-	}
+		ei.writerCache.Delete(key)
+		return true
+	})
 	return firstErr
 }
 
@@ -246,4 +248,22 @@ func (wCtx *writerContext) LockForWrite() (unlock func()) {
 	return func() {
 		wCtx.fLock.RUnlock()
 	}
+}
+
+// Close closes the local writer.
+func (wCtx *writerContext) Close() error {
+	flushStatus, err := wCtx.lWrite.Close(wCtx.ctx)
+	if err != nil {
+		return err
+	}
+	wCtx.flushStatus = flushStatus
+	return nil
+}
+
+// Flushed returns the flush status of the local writer.
+func (wCtx *writerContext) Flushed() bool {
+	if wCtx.flushStatus == nil {
+		return false
+	}
+	return wCtx.flushStatus.Flushed()
 }

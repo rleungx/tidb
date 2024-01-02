@@ -113,7 +113,7 @@ func (c *copReqSender) run() {
 		if !ok {
 			return
 		}
-		if p.checkpointMgr != nil && p.checkpointMgr.IsComplete(task.endKey) {
+		if p.checkpointMgr != nil && p.checkpointMgr.CheckComplete(task.id, task.endKey) {
 			logutil.BgLogger().Info("[ddl-ingest] checkpoint detected, skip a cop-request task",
 				zap.Int("task ID", task.id),
 				zap.String("task end key", hex.EncodeToString(task.endKey)))
@@ -145,6 +145,7 @@ func scanRecords(p *copReqSenderPool, task *reorgBackfillTask, se *sess.Session)
 			p.checkpointMgr.Register(task.id, task.endKey)
 		}
 		var done bool
+		handleChan := make(chan struct{}, 1)
 		for !done {
 			srcChk := p.getChunk()
 			done, err = p.copCtx.fetchTableScanResult(p.ctx, rs, srcChk)
@@ -156,11 +157,17 @@ func scanRecords(p *copReqSenderPool, task *reorgBackfillTask, se *sess.Session)
 			if p.checkpointMgr != nil {
 				p.checkpointMgr.UpdateTotal(task.id, srcChk.NumRows(), done)
 			}
-			idxRs := idxRecResult{id: task.id, chunk: srcChk, done: done}
+			idxRs := idxRecResult{id: task.id, chunk: srcChk, done: done, handled: handleChan}
 			failpoint.Inject("MockCopSenderError", func() {
 				idxRs.err = errors.New("mock cop error")
 			})
 			p.chunkSender.AddTask(idxRs)
+
+			select {
+			case <-handleChan:
+			case <-p.ctx.Done():
+				return p.ctx.Err()
+			}
 		}
 		terror.Call(rs.Close)
 		return nil
@@ -527,8 +534,9 @@ func buildHandle(pkDts []types.Datum, tblInfo *model.TableInfo,
 }
 
 type idxRecResult struct {
-	id    int
-	chunk *chunk.Chunk
-	err   error
-	done  bool
+	id      int
+	chunk   *chunk.Chunk
+	err     error
+	done    bool
+	handled chan struct{}
 }

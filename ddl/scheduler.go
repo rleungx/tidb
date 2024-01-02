@@ -25,6 +25,7 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl/ingest"
 	ddlutil "github.com/pingcap/tidb/ddl/util"
 	"github.com/pingcap/tidb/disttask/framework/proto"
@@ -33,8 +34,10 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta"
 	"github.com/pingcap/tidb/parser/model"
+	"github.com/pingcap/tidb/store/copr"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/pingcap/tidb/util/mathutil"
 	"go.uber.org/zap"
 )
 
@@ -268,9 +271,42 @@ func (b *backfillSchedulerHandle) SplitSubtask(ctx context.Context, subtask []by
 		return nil, err
 	}
 
+	var totalKVRanges []kv.KeyRange
+	if ingestScheduler.checkpointMgr != nil {
+		totalKVRanges = ingestScheduler.checkpointMgr.GetKVRanges()
+		if len(totalKVRanges) == 0 {
+			kvRanges, err := splitTableRanges(b.ptbl, d.store, startKey, endKey, copr.UnspecifiedLimit)
+			if err != nil {
+				return nil, err
+			}
+
+			mergeCnt := mergeKVRangeCount
+			if config.GetGlobalConfig().MergeKVRangeCount != 0 {
+				mergeCnt = config.GetGlobalConfig().MergeKVRangeCount
+			}
+			totalKVRanges = mergeKVRanges(kvRanges, mergeCnt)
+
+			err = ingestScheduler.checkpointMgr.UpdateKVRanges(totalKVRanges)
+			if err != nil {
+				return nil, err
+			}
+			logutil.BgLogger().Info("[ddl] save ranges for reorg to checkpoint",
+				zap.Int("range count", len(totalKVRanges)),
+				zap.Int("source range count", len(kvRanges)))
+		}
+		logutil.BgLogger().Info("[ddl] get kv ranges for reorg",
+			zap.Int("range count", len(totalKVRanges)))
+	}
+
 	taskIDAlloc := newTaskIDAllocator()
 	for {
-		kvRanges, err := splitTableRanges(b.ptbl, d.store, startKey, endKey, backfillTaskChanSize)
+		var kvRanges []kv.KeyRange
+		if ingestScheduler.checkpointMgr != nil {
+			n := mathutil.Min(backfillTaskChanSize, len(totalKVRanges))
+			kvRanges, totalKVRanges = totalKVRanges[:n], totalKVRanges[n:]
+		} else {
+			kvRanges, err = splitTableRanges(b.ptbl, d.store, startKey, endKey, backfillTaskChanSize)
+		}
 		if err != nil {
 			return nil, err
 		}

@@ -1613,10 +1613,10 @@ type addIndexIngestWorker struct {
 
 	tbl              table.PhysicalTable
 	index            table.Index
-	writer           ingest.Writer
 	copReqSenderPool *copReqSenderPool
 	checkpointMgr    *ingest.CheckpointManager
 	flushLock        *sync.RWMutex
+	createWriter     func(writerID int) (ingest.Writer, error)
 
 	resultCh   chan *backfillResult
 	jobID      int64
@@ -1629,9 +1629,9 @@ func newAddIndexIngestWorker(t table.PhysicalTable, d *ddlCtx, ei ingest.Engine,
 	checkpointMgr *ingest.CheckpointManager, distribute bool) (*addIndexIngestWorker, error) {
 	indexInfo := model.FindIndexInfoByID(t.Meta().Indices, indexID)
 	index := tables.NewIndex(t.GetPhysicalID(), t.Meta(), indexInfo)
-	lw, err := ei.CreateWriter(writerID, indexInfo.Unique)
-	if err != nil {
-		return nil, err
+
+	createWriter := func(writerID int) (ingest.Writer, error) {
+		return ei.CreateWriter(writerID, indexInfo.Unique)
 	}
 
 	return &addIndexIngestWorker{
@@ -1641,7 +1641,7 @@ func newAddIndexIngestWorker(t table.PhysicalTable, d *ddlCtx, ei ingest.Engine,
 			metrics.GenerateReorgLabel("add_idx_rate", schemaName, t.Meta().Name.O)),
 		tbl:              t,
 		index:            index,
-		writer:           lw,
+		createWriter:     createWriter,
 		copReqSenderPool: copReqSenderPool,
 		resultCh:         resultCh,
 		jobID:            jobID,
@@ -1655,8 +1655,20 @@ func (w *addIndexIngestWorker) WriteLocal(rs *idxRecResult) (count int, nextKey 
 	oprStartTime := time.Now()
 	copCtx := w.copReqSenderPool.copCtx
 	vars := w.sessCtx.GetSessionVars()
-	cnt, lastHandle, err := writeChunkToLocal(w.writer, w.index, copCtx, vars, rs.chunk)
-	if err != nil || cnt == 0 {
+	writer, err := w.createWriter(rs.id)
+	if err != nil {
+		return 0, nil, err
+	}
+	cnt, lastHandle, err := writeChunkToLocal(writer, w.index, copCtx, vars, rs.chunk)
+	if err != nil {
+		return 0, nil, err
+	}
+	if rs.done {
+		if err = writer.Close(); err != nil {
+			return 0, nil, err
+		}
+	}
+	if cnt == 0 {
 		return 0, nil, err
 	}
 	w.metricCounter.Add(float64(cnt))

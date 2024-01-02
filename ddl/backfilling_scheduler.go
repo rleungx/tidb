@@ -458,6 +458,9 @@ func (w *addIndexIngestWorker) HandleTask(rs idxRecResult) {
 	if result.err != nil {
 		logutil.BgLogger().Error("[ddl-ingest] encounter error when handle index chunk",
 			zap.Int("id", rs.id), zap.Error(rs.err))
+		if rs.handled != nil {
+			rs.handled <- struct{}{}
+		}
 		w.resultCh <- result
 		return
 	}
@@ -470,6 +473,7 @@ func (w *addIndexIngestWorker) HandleTask(rs idxRecResult) {
 		}
 	}
 	count, nextKey, err := w.WriteLocal(&rs)
+	rs.handled <- struct{}{}
 	if err != nil {
 		result.err = err
 		w.resultCh <- result
