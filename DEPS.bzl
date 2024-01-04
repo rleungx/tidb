@@ -4514,8 +4514,8 @@ def go_deps():
         name = "com_github_tidbcloud_aws_shared_provider_pkg_tidbworker_client",
         build_file_proto_mode = "disable",
         importpath = "github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client",
-        sum = "h1:RwOCyBX99MfbvRsZOgHi+Ai1d/dmec+NTmRMgW7T/mU=",
-        version = "v0.0.0-20231218022440-1206057a6823",
+        sum = "h1:jsr5/HganFYoox32CqawchDHUND0aZyuI3l9353A8ys=",
+        version = "v0.0.0-20240102063527-17d4ed18e2dc",
     )
 
     go_repository(
