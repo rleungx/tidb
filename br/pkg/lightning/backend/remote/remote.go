@@ -168,6 +168,7 @@ func NewRemoteBackend(
 		}
 		keyAdapter = local.DupDetectKeyAdapter{}
 	}
+	reportErrOnDup := cfg.TikvImporter.DuplicateResolution == config.DupeResAlgErr
 
 	pdCtl, err := pdutil.NewPdController(ctx, keyspaceName, cfg.TiDB.PdAddr, tls.TLSConfig(), tls.ToPDSecurityOption())
 	if err != nil {
@@ -221,6 +222,7 @@ func NewRemoteBackend(
 		keyAdapter:         keyAdapter,
 		dupeConcurrency:    cfg.TikvImporter.RangeConcurrency * 2,
 		duplicateDetection: duplicateDetection,
+		reportErrOnDup:     reportErrOnDup,
 		checkpointEnabled:  cfg.Checkpoint.Enable,
 		localStoreDir:      localFile,
 	}
@@ -260,6 +262,7 @@ type Backend struct {
 	keyAdapter         local.KeyAdapter
 	dupeConcurrency    int
 	duplicateDetection bool
+	reportErrOnDup     bool
 	checkpointEnabled  bool
 	localStoreDir      string
 }
@@ -510,6 +513,21 @@ func (b *Backend) handleDuplicateEntries(ctx context.Context, engine *engine, st
 		zap.String("db", engine.tbl.DB),
 		zap.String("table", engine.tbl.Name),
 		zap.Int("duplicateEntries", len(states.DuplicateEntries)))
+
+	if b.reportErrOnDup {
+		dupKey, err := hex.DecodeString(states.DuplicateEntries[0].Key)
+		dupKey, err = b.tikvCodec.DecodeKey(dupKey)
+		if err != nil {
+			b.logger.Warn("failed to decode key", zap.String("key", states.DuplicateEntries[0].Key), zap.Error(err))
+		}
+
+		dupVal, err := hex.DecodeString(states.DuplicateEntries[0].Values[0])
+		if err != nil {
+			b.logger.Warn("failed to decode value", zap.String("value", states.DuplicateEntries[0].Values[0]), zap.Error(err))
+		}
+
+		return common.ErrFoundDuplicateKeys.FastGenByArgs(dupKey, dupVal)
+	}
 
 	writeBatch := b.duplicateDB.NewBatch()
 	writeBatchSize := int64(0)
