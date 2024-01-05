@@ -27,6 +27,7 @@ import (
 	lightning "github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/br/pkg/lightning/errormanager"
 	"github.com/pingcap/tidb/br/pkg/lightning/log"
+	"github.com/pingcap/tidb/config"
 	tikv "github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/table"
@@ -191,11 +192,6 @@ func (bc *litBackendCtx) TaskFlushed(indexID int64, taskID int) bool {
 
 // Flush checks the disk quota and imports the current key-values in engine to the storage.
 func (bc *litBackendCtx) Flush(indexID int64, mode FlushMode) (flushed, imported bool, err error) {
-	backend, ok := bc.backend.(*local.Backend)
-	if !ok {
-		return false, false, dbterror.ErrIngestFailed.FastGenByArgs("remote backend does not need to flush")
-	}
-
 	ei, exist := bc.Load(indexID)
 	if !exist {
 		logutil.BgLogger().Error(LitErrGetEngineFail, zap.Int64("index ID", indexID))
@@ -246,8 +242,12 @@ func (bc *litBackendCtx) Flush(indexID int64, mode FlushMode) (flushed, imported
 		}()
 	}
 
+	if _, ok := bc.backend.(*remote.Backend); ok {
+		return true, false, nil
+	}
 	logutil.BgLogger().Info(LitInfoUnsafeImport, zap.Int64("index ID", indexID),
 		zap.String("usage info", bc.diskRoot.UsageInfo()))
+	backend := bc.backend.(*local.Backend)
 	err = backend.UnsafeImportAndReset(bc.ctx, ei.uuid, int64(lightning.SplitRegionSize)*int64(lightning.MaxSplitRegionSizeRatio), int64(lightning.SplitRegionKeys))
 	if err != nil {
 		logutil.BgLogger().Error(LitErrIngestDataErr, zap.Int64("index ID", indexID),
@@ -263,6 +263,9 @@ func (bc *litBackendCtx) ShouldSync(mode FlushMode) (shouldFlush bool, shouldImp
 	}
 	if mode == FlushModeForceLocal {
 		return true, false
+	}
+	if len(config.GetGlobalConfig().TiKVAPIServiceAddr) > 0 {
+		return false, false
 	}
 	bc.diskRoot.UpdateUsage()
 	shouldImport = bc.diskRoot.ShouldImport()

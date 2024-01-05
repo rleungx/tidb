@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
+	tidbconfig "github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl/ingest"
 	sess "github.com/pingcap/tidb/ddl/internal/session"
 	"github.com/pingcap/tidb/metrics"
@@ -330,7 +331,7 @@ func (b *ingestBackfillScheduler) close(force bool) {
 	if b.writerPool != nil {
 		b.writerPool.ReleaseAndWait()
 	}
-	if b.checkpointMgr != nil {
+	if b.checkpointMgr != nil && len(tidbconfig.GetGlobalConfig().TiKVAPIServiceAddr) == 0 {
 		b.checkpointMgr.Sync()
 		// Get the latest status after all workers are closed so that the result is more accurate.
 		cnt, nextKey := b.checkpointMgr.Status()
@@ -505,8 +506,8 @@ type taskIDAllocator struct {
 	id int
 }
 
-func newTaskIDAllocator() *taskIDAllocator {
-	return &taskIDAllocator{}
+func newTaskIDAllocator(base int) *taskIDAllocator {
+	return &taskIDAllocator{id: base}
 }
 
 func (a *taskIDAllocator) alloc() int {

@@ -655,9 +655,9 @@ func updateDDLReorgHandle(se *sess.Session, jobID int64, startKey kv.Key, endKey
 func initDDLReorgHandle(s *sess.Session, jobID int64, startKey kv.Key, endKey kv.Key, physicalTableID int64, element *meta.Element) error {
 	rawReorgMeta, err := json.Marshal(ingest.JobReorgMeta{
 		Checkpoint: &ingest.ReorgCheckpoint{
-			PhysicalID: physicalTableID,
-			StartKey:   startKey,
-			EndKey:     endKey,
+			PhysicalID: 0,
+			StartKey:   nil,
+			EndKey:     nil,
 			Version:    ingest.JobCheckpointVersionCurrent,
 		}})
 	if err != nil {

@@ -50,7 +50,7 @@ type CheckpointManager struct {
 	mu              sync.Mutex
 	minTaskIDSynced int
 	dirty           bool
-	// Local meta.
+	// Local meta, persisted to the storage.
 	pidLocal   int64
 	startLocal kv.Key
 	endLocal   kv.Key
@@ -61,6 +61,9 @@ type CheckpointManager struct {
 	localCnt         int
 	globalCnt        int
 	kvRanges         []kv.KeyRange
+	// Don't reset the task ID when the checkpoint is reset.
+	baseTaskID int
+
 	// Global meta.
 	pidGlobal   int64
 	startGlobal kv.Key
@@ -267,20 +270,33 @@ func (s *CheckpointManager) Sync() {
 	wg.Wait()
 }
 
+// GetBaseTaskID return baseTaskID.
+func (s *CheckpointManager) GetBaseTaskID() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.baseTaskID
+}
+
 // Reset resets the checkpoint manager between two partitions.
 func (s *CheckpointManager) Reset(newPhysicalID int64, start, end kv.Key) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	logutil.BgLogger().Info("[ddl-ingest] reset checkpoint manager",
 		zap.Int64("newPhysicalID", newPhysicalID), zap.Int64("oldPhysicalID", s.pidLocal),
-		zap.Int64("indexID", s.indexID), zap.Int64("jobID", s.jobID), zap.Int("localCnt", s.localCnt))
-	if s.pidLocal != 0 && s.pidLocal != newPhysicalID {
+		zap.Int64("indexID", s.indexID), zap.Int64("jobID", s.jobID), zap.Int("localCnt", s.localCnt),
+		zap.String("local start key", hex.EncodeToString(s.startLocal)),
+		zap.String("local end key", hex.EncodeToString(s.endLocal)),
+		zap.String("current start key", hex.EncodeToString(start)),
+		zap.String("current end key", hex.EncodeToString(end)),
+	)
+	if s.startLocal.Cmp(start) != 0 && s.endLocal.Cmp(end) != 0 {
 		s.minKeySyncLocal = nil
 		s.minKeySyncGlobal = nil
-		s.minTaskIDSynced = 0
 		s.pidLocal = newPhysicalID
 		s.startLocal = start
 		s.endLocal = end
+		s.baseTaskID += len(s.kvRanges)
+		s.minTaskIDSynced = s.baseTaskID
 		s.kvRanges = nil
 	}
 	s.pidLocal = newPhysicalID
@@ -303,7 +319,10 @@ type ReorgCheckpoint struct {
 	StartKey   kv.Key `json:"start_key"`
 	EndKey     kv.Key `json:"end_key"`
 
-	KVRanges []kv.KeyRange `json:"kv_ranges"`
+	KVRanges      []kv.KeyRange `json:"kv_ranges"`
+	LocalStartKey kv.Key        `json:"local_start_key"`
+	LocalEndKey   kv.Key        `json:"local_end_key"`
+	BaseTaskID    int           `json:"base_task_id"`
 
 	Version int64 `json:"version"`
 }
@@ -344,6 +363,9 @@ func (s *CheckpointManager) resumeCheckpoint() error {
 			s.pidGlobal = cp.PhysicalID
 			s.startGlobal = cp.StartKey
 			s.endGlobal = cp.EndKey
+			s.startLocal = cp.LocalStartKey
+			s.endLocal = cp.LocalEndKey
+			s.baseTaskID = cp.BaseTaskID
 			s.kvRanges = cp.KVRanges
 			s.localDataIsValid = true
 			s.minKeySyncLocal = cp.LocalSyncKey
@@ -354,6 +376,9 @@ func (s *CheckpointManager) resumeCheckpoint() error {
 				zap.String("global checkpoint", hex.EncodeToString(s.minKeySyncGlobal)),
 				zap.Int64("physical table ID", cp.PhysicalID),
 				zap.Int("kv ranges", len(cp.KVRanges)),
+				zap.String("local start", hex.EncodeToString(cp.LocalStartKey)),
+				zap.String("local end", hex.EncodeToString(cp.LocalEndKey)),
+				zap.Int("base task id", cp.BaseTaskID),
 				zap.String("previous instance", cp.InstanceAddr),
 				zap.String("current instance", s.instanceAddr))
 			return nil
@@ -373,6 +398,9 @@ func (s *CheckpointManager) updateCheckpoint() error {
 	currentGlobalPID := s.pidGlobal
 	currentGlobalStart := s.startGlobal
 	currentGlobalEnd := s.endGlobal
+	currentLocalStart := s.startLocal
+	currentLocalEnd := s.endLocal
+	currentBaseTaskID := s.baseTaskID
 	currentKVRanges := s.kvRanges
 	s.updating = true
 	s.mu.Unlock()
@@ -399,6 +427,9 @@ func (s *CheckpointManager) updateCheckpoint() error {
 			PhysicalID:     currentGlobalPID,
 			StartKey:       currentGlobalStart,
 			EndKey:         currentGlobalEnd,
+			LocalStartKey:  currentLocalStart,
+			LocalEndKey:    currentLocalEnd,
+			BaseTaskID:     currentBaseTaskID,
 			KVRanges:       currentKVRanges,
 			Version:        JobCheckpointVersionCurrent,
 		}

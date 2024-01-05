@@ -719,7 +719,10 @@ func (dc *ddlCtx) writePhysicalTableRecord(sessPool *sess.Pool, t table.Physical
 		return errors.Trace(err)
 	}
 
-	var totalKVRanges []kv.KeyRange
+	var (
+		totalKVRanges []kv.KeyRange
+		baseTaskID    int
+	)
 	if ingestScheduler, ok := scheduler.(*ingestBackfillScheduler); ok && ingestScheduler.checkpointMgr != nil {
 		totalKVRanges = ingestScheduler.checkpointMgr.GetKVRanges()
 		if len(totalKVRanges) == 0 {
@@ -742,11 +745,15 @@ func (dc *ddlCtx) writePhysicalTableRecord(sessPool *sess.Pool, t table.Physical
 				zap.Int("range count", len(totalKVRanges)),
 				zap.Int("source range count", len(kvRanges)))
 		}
+		baseTaskID = ingestScheduler.checkpointMgr.GetBaseTaskID()
 		logutil.BgLogger().Info("[ddl] get kv ranges for reorg",
-			zap.Int("range count", len(totalKVRanges)))
+			zap.Int("range count", len(totalKVRanges)),
+			zap.Int("base task id", baseTaskID),
+		)
 	}
 
-	taskIDAlloc := newTaskIDAllocator()
+	taskIDAlloc := newTaskIDAllocator(baseTaskID)
+	done := false
 	for {
 		var kvRanges []kv.KeyRange
 		if ingestScheduler, ok := scheduler.(*ingestBackfillScheduler); ok && ingestScheduler.checkpointMgr != nil {
@@ -759,6 +766,7 @@ func (dc *ddlCtx) writePhysicalTableRecord(sessPool *sess.Pool, t table.Physical
 			return errors.Trace(err)
 		}
 		if len(kvRanges) == 0 {
+			done = true
 			break
 		}
 		logutil.BgLogger().Info("[ddl] start backfill workers to reorg record",
@@ -775,9 +783,23 @@ func (dc *ddlCtx) writePhysicalTableRecord(sessPool *sess.Pool, t table.Physical
 		rangeEndKey := kvRanges[len(kvRanges)-1].EndKey
 		startKey = rangeEndKey.Next()
 		if startKey.Cmp(endKey) >= 0 {
+			done = true
 			break
 		}
 	}
+
+	if ingestScheduler, ok := scheduler.(*ingestBackfillScheduler); ok && ingestScheduler.checkpointMgr != nil {
+		// for remote backend, we can only flush when it completes normally.
+		if done && len(config.GetGlobalConfig().TiKVAPIServiceAddr) != 0 {
+			ingestScheduler.checkpointMgr.Sync()
+			cnt, nextKey := ingestScheduler.checkpointMgr.Status()
+			ingestScheduler.resultCh <- &backfillResult{
+				totalCount: cnt,
+				nextKey:    nextKey,
+			}
+		}
+	}
+
 	scheduler.close(false)
 	return consumer.getResult()
 }

@@ -271,7 +271,11 @@ func (b *backfillSchedulerHandle) SplitSubtask(ctx context.Context, subtask []by
 		return nil, err
 	}
 
-	var totalKVRanges []kv.KeyRange
+	var (
+		totalKVRanges []kv.KeyRange
+		baseTaskID    int
+	)
+
 	if ingestScheduler.checkpointMgr != nil {
 		totalKVRanges = ingestScheduler.checkpointMgr.GetKVRanges()
 		if len(totalKVRanges) == 0 {
@@ -294,11 +298,14 @@ func (b *backfillSchedulerHandle) SplitSubtask(ctx context.Context, subtask []by
 				zap.Int("range count", len(totalKVRanges)),
 				zap.Int("source range count", len(kvRanges)))
 		}
+		baseTaskID = ingestScheduler.checkpointMgr.GetBaseTaskID()
 		logutil.BgLogger().Info("[ddl] get kv ranges for reorg",
-			zap.Int("range count", len(totalKVRanges)))
+			zap.Int("range count", len(totalKVRanges)),
+			zap.Int("base task ID", baseTaskID),
+		)
 	}
 
-	taskIDAlloc := newTaskIDAllocator()
+	taskIDAlloc := newTaskIDAllocator(baseTaskID)
 	for {
 		var kvRanges []kv.KeyRange
 		if ingestScheduler.checkpointMgr != nil {

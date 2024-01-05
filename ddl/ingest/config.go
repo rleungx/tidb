@@ -151,8 +151,9 @@ func generateLocalEngineConfig(cfg *lightning.Config, tblID, indexID, jobID int6
 		}
 	}
 
+	keyspaceID := tikvCodec.GetKeyspaceID()
 	return &backend.EngineConfig{
-		EngineID: int32(indexID),
+		EngineID: int32(keyspaceID),
 		TaskID:   jobID,
 		Local: backend.LocalEngineConfig{
 			Compact:            true,
