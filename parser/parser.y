@@ -784,6 +784,7 @@ import (
 	/* The following tokens belong to TiDBKeyword. Notice: make sure these tokens are contained in TiDBKeyword. */
 	admin                      "ADMIN"
 	batch                      "BATCH"
+	batchTask                  "BATCHTASK"
 	buckets                    "BUCKETS"
 	builtins                   "BUILTINS"
 	cancel                     "CANCEL"
@@ -6646,6 +6647,7 @@ UnReservedKeyword:
 TiDBKeyword:
 	"ADMIN"
 |	"BATCH"
+|	"BATCHTASK"
 |	"BUCKETS"
 |	"BUILTINS"
 |	"CANCEL"
@@ -10845,6 +10847,20 @@ AdminStmt:
 		$$ = &ast.AdminStmt{
 			Tp:             ast.AdminFlushPlanCache,
 			StatementScope: $3.(ast.StatementScope),
+		}
+	}
+|	"ADMIN" "SHOW" "BATCHTASK"
+	{
+		stmt := &ast.AdminStmt{
+			Tp: ast.AdminShowBatchTasks,
+		}
+		$$ = stmt
+	}
+|	"ADMIN" "CANCEL" "BATCHTASK" NumList
+	{
+		$$ = &ast.AdminStmt{
+			Tp:     ast.AdminCancelBatchTasks,
+			JobIDs: $4.([]int64),
 		}
 	}
 

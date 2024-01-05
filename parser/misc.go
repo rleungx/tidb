@@ -171,6 +171,7 @@ var tokenMap = map[string]int{
 	"ATTRIBUTE":                attribute,
 	"ATTRIBUTES":               attributes,
 	"BATCH":                    batch,
+	"BATCHTASK":                batchTask,
 	"STATS_OPTIONS":            statsOptions,
 	"STATS_SAMPLE_RATE":        statsSampleRate,
 	"STATS_COL_CHOICE":         statsColChoice,

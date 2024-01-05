@@ -361,7 +361,9 @@ func verifyAdmin(stmt *ast.AdminStmt) error {
 		ast.AdminEvolveBindings,
 		ast.AdminReloadBindings,
 		ast.AdminReloadStatistics,
-		ast.AdminFlushPlanCache:
+		ast.AdminFlushPlanCache,
+		ast.AdminShowBatchTasks,
+		ast.AdminCancelBatchTasks:
 		return nil
 	case ast.AdminPluginDisable:
 		return dbterror.ErrNotSupportedOnServerless.GenWithStackByCause("ADMIN PLUGIN DISABLE")

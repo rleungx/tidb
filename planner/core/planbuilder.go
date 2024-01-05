@@ -1723,6 +1723,14 @@ func (b *PlanBuilder) buildAdmin(ctx context.Context, as *ast.AdminStmt) (Plan, 
 		return &Simple{Statement: as}, nil
 	case ast.AdminFlushPlanCache:
 		return &Simple{Statement: as}, nil
+	case ast.AdminShowBatchTasks:
+		p := &AdminShowBatchTask{}
+		p.setSchemaAndNames(buildShowBatchTaskSchema())
+		ret = p
+	case ast.AdminCancelBatchTasks:
+		return &AdminCancelBatchTask{
+			TaskIDs: as.JobIDs,
+		}, nil
 	default:
 		return nil, ErrUnsupportedType.GenWithStack("Unsupported ast.AdminStmt(%T) for buildAdmin", as)
 	}
@@ -3208,6 +3216,19 @@ func buildShowTelemetrySchema() (*expression.Schema, types.NameSlice) {
 	schema.Append(buildColumnWithName("", "TRACKING_ID", mysql.TypeVarchar, 64))
 	schema.Append(buildColumnWithName("", "LAST_STATUS", mysql.TypeString, mysql.MaxBlobWidth))
 	schema.Append(buildColumnWithName("", "DATA_PREVIEW", mysql.TypeString, mysql.MaxBlobWidth))
+	return schema.col2Schema(), schema.names
+}
+
+func buildShowBatchTaskSchema() (*expression.Schema, types.NameSlice) {
+	schema := newColumnsWithNames(1)
+	longlongSize, _ := mysql.GetDefaultFieldLengthAndDecimal(mysql.TypeLonglong)
+	datetimeSize, _ := mysql.GetDefaultFieldLengthAndDecimal(mysql.TypeDatetime)
+	// id,task_key,state,start_time,state_update_time
+	schema.Append(buildColumnWithName("", "ID", mysql.TypeLonglong, longlongSize))
+	schema.Append(buildColumnWithName("", "TASK_KEY", mysql.TypeVarchar, 256))
+	schema.Append(buildColumnWithName("", "STATE", mysql.TypeVarchar, 64))
+	schema.Append(buildColumnWithName("", "START_TIME", mysql.TypeDatetime, datetimeSize))
+	schema.Append(buildColumnWithName("", "STATE_UPDATE_TIME", mysql.TypeDatetime, datetimeSize))
 	return schema.col2Schema(), schema.names
 }
 

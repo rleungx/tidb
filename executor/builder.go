@@ -305,6 +305,10 @@ func (b *executorBuilder) build(p plannercore.Plan) Executor {
 		return b.buildCTETableReader(v)
 	case *plannercore.CompactTable:
 		return b.buildCompactTable(v)
+	case *plannercore.AdminShowBatchTask:
+		return b.buildAdminShowBatchTask(v)
+	case *plannercore.AdminCancelBatchTask:
+		return b.buildAdminCancelBatchTask(v)
 	default:
 		if mp, ok := p.(MockPhysicalPlan); ok {
 			return mp.GetExecutor()
@@ -5579,5 +5583,16 @@ func (b *executorBuilder) buildCompactTable(v *plannercore.CompactTable) Executo
 		tableInfo:    v.TableInfo,
 		partitionIDs: partitionIDs,
 		tikvStore:    tikvStore,
+	}
+}
+
+func (b *executorBuilder) buildAdminShowBatchTask(v *plannercore.AdminShowBatchTask) Executor {
+	return &AdminShowBatchTaskExec{baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ID())}
+}
+
+func (b *executorBuilder) buildAdminCancelBatchTask(v *plannercore.AdminCancelBatchTask) Executor {
+	return &AdminCancelBatchTaskExec{
+		taskIDs:      v.TaskIDs,
+		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ID()),
 	}
 }

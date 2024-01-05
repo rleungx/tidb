@@ -2266,6 +2266,8 @@ const (
 	AdminResetTelemetryID
 	AdminReloadStatistics
 	AdminFlushPlanCache
+	AdminShowBatchTasks
+	AdminCancelBatchTasks
 )
 
 // HandleRange represents a range where handle value >= Begin and < End.
@@ -2514,6 +2516,18 @@ func (n *AdminStmt) Restore(ctx *format.RestoreCtx) error {
 			ctx.WriteKeyWord("FLUSH INSTANCE PLAN_CACHE")
 		} else if n.StatementScope == StatementScopeGlobal {
 			ctx.WriteKeyWord("FLUSH GLOBAL PLAN_CACHE")
+		}
+	case AdminShowBatchTasks:
+		ctx.WriteKeyWord("SHOW BATCHTASK")
+	case AdminCancelBatchTasks:
+		ctx.WriteKeyWord("CANCEL BATCHTASK")
+		for i, v := range n.JobIDs {
+			if i == 0 {
+				ctx.WritePlain(" ")
+			} else {
+				ctx.WritePlain(", ")
+			}
+			ctx.WritePlainf("%d", v)
 		}
 	default:
 		return errors.New("Unsupported AdminStmt type")

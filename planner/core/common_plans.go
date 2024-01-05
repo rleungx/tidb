@@ -178,6 +178,17 @@ type AdminResetTelemetryID struct {
 	baseSchemaProducer
 }
 
+// AdminShowBatchTask returns all batch tasks.
+type AdminShowBatchTask struct {
+	baseSchemaProducer
+}
+
+// AdminCancelBatchTask cancels a batch task.
+type AdminCancelBatchTask struct {
+	baseSchemaProducer
+	TaskIDs []int64
+}
+
 // Change represents a change plan.
 type Change struct {
 	baseSchemaProducer
