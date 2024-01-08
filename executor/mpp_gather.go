@@ -56,6 +56,11 @@ func getMPPQueryTS(ctx sessionctx.Context) uint64 {
 	return mppQueryInfo.QueryTS.Load()
 }
 
+func allocMPPGatherID(ctx sessionctx.Context) uint64 {
+	mppQueryInfo := &ctx.GetSessionVars().StmtCtx.MPPQueryInfo
+	return mppQueryInfo.AllocatedGatherID.Add(1)
+}
+
 // MPPGather dispatch MPP tasks and read data from root tasks.
 type MPPGather struct {
 	// following fields are construct needed
@@ -80,6 +85,8 @@ type MPPGather struct {
 	table    table.Table
 	kvRanges []kv.KeyRange
 	dummy    bool
+
+	gatherID uint64
 }
 
 func (e *MPPGather) appendMPPDispatchReq(pf *plannercore.Fragment) error {
@@ -123,9 +130,13 @@ func (e *MPPGather) appendMPPDispatchReq(pf *plannercore.Fragment) error {
 			zap.String("exchange-compression-mode", pf.ExchangeSender.CompressionMode.Name()),
 			zap.String("ResourceGroup", rgName),
 		)
+		if mppTask.GatherID != e.gatherID {
+			return errors.Errorf("unexpected gather id for mpp task, expect %v, got %v", e.gatherID, mppTask.GatherID)
+		}
 		req := &kv.MPPDispatchRequest{
 			Data:              pbData,
 			Meta:              mppTask.Meta,
+			GatherID:          mppTask.GatherID,
 			ID:                mppTask.ID,
 			IsRoot:            pf.IsRoot,
 			Timeout:           10,
@@ -151,10 +162,12 @@ func collectPlanIDS(plan plannercore.PhysicalPlan, ids []int) []int {
 // Open decides the task counts and locations and generate exchange operators for every plan fragment.
 // Then dispatch tasks to tiflash stores. If any task fails, it would cancel the rest tasks.
 func (e *MPPGather) Open(ctx context.Context) (err error) {
+	e.gatherID = allocMPPGatherID(e.ctx)
+
 	// TODO: Move the construct tasks logic to planner, so we can see the explain results.
 	sender := e.originalPlan.(*plannercore.PhysicalExchangeSender)
 	planIDs := collectPlanIDS(e.originalPlan, nil)
-	frags, kvRanges, err := plannercore.GenerateRootMPPTasks(e.ctx, e.startTS, e.mppQueryID, sender, e.is)
+	frags, kvRanges, err := plannercore.GenerateRootMPPTasks(e.ctx, e.gatherID, e.startTS, e.mppQueryID, sender, e.is)
 	if err != nil {
 		return errors.Trace(err)
 	}

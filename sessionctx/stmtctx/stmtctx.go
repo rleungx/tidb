@@ -395,6 +395,7 @@ type StatementContext struct {
 		QueryID            atomic2.Uint64
 		QueryTS            atomic2.Uint64
 		AllocatedMPPTaskID atomic2.Int64
+		AllocatedGatherID  atomic2.Uint64
 	}
 
 	// TableStats stores the visited runtime table stats by table id during query

@@ -1377,6 +1377,7 @@ func (a *ExecStmt) FinishExecuteStmt(txnTS uint64, err error, hasMoreResults boo
 	sessVars.StmtCtx.MPPQueryInfo.QueryID.Store(0)
 	sessVars.StmtCtx.MPPQueryInfo.QueryTS.Store(0)
 	sessVars.StmtCtx.MPPQueryInfo.AllocatedMPPTaskID.Store(0)
+	sessVars.StmtCtx.MPPQueryInfo.AllocatedGatherID.Store(0)
 
 	if sessVars.StmtCtx.ReadFromTableCache {
 		metrics.ReadFromTableCacheCounter.Inc()

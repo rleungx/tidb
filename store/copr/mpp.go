@@ -242,7 +242,13 @@ func (m *mppIterator) handleDispatchReq(ctx context.Context, bo *Backoffer, req 
 	}
 
 	// meta for current task.
-	taskMeta := &mpp.TaskMeta{StartTs: req.StartTs, QueryTs: req.MppQueryID.QueryTs, LocalQueryId: req.MppQueryID.LocalQueryID, TaskId: req.ID, ServerId: req.MppQueryID.ServerID,
+	taskMeta := &mpp.TaskMeta{
+		GatherId:          req.GatherID,
+		StartTs:           req.StartTs,
+		QueryTs:           req.MppQueryID.QueryTs,
+		LocalQueryId:      req.MppQueryID.LocalQueryID,
+		TaskId:            req.ID,
+		ServerId:          req.MppQueryID.ServerID,
 		Address:           req.Meta.GetAddress(),
 		MppVersion:        m.mppVersion.ToInt64(),
 		ResourceGroupName: req.ResourceGroupName,
@@ -365,7 +371,14 @@ func (m *mppIterator) cancelMppTasks() {
 		return
 	}
 	killReq := &mpp.CancelTaskRequest{
-		Meta: &mpp.TaskMeta{StartTs: m.startTs, QueryTs: m.mppQueryID.QueryTs, LocalQueryId: m.mppQueryID.LocalQueryID, ServerId: m.mppQueryID.ServerID, MppVersion: m.mppVersion.ToInt64(), ResourceGroupName: m.tasks[0].ResourceGroupName},
+		Meta: &mpp.TaskMeta{
+			GatherId:          m.tasks[0].GatherID,
+			StartTs:           m.startTs,
+			QueryTs:           m.mppQueryID.QueryTs,
+			LocalQueryId:      m.mppQueryID.LocalQueryID,
+			ServerId:          m.mppQueryID.ServerID,
+			MppVersion:        m.mppVersion.ToInt64(),
+			ResourceGroupName: m.tasks[0].ResourceGroupName},
 	}
 
 	wrappedReq := tikvrpc.NewRequest(tikvrpc.CmdMPPCancel, killReq, kvrpcpb.Context{})
@@ -409,6 +422,7 @@ func (m *mppIterator) establishMPPConns(bo *Backoffer, req *kv.MPPDispatchReques
 	connReq := &mpp.EstablishMPPConnectionRequest{
 		SenderMeta: taskMeta,
 		ReceiverMeta: &mpp.TaskMeta{
+			GatherId:          req.GatherID,
 			StartTs:           req.StartTs,
 			QueryTs:           m.mppQueryID.QueryTs,
 			LocalQueryId:      m.mppQueryID.LocalQueryID,

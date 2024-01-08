@@ -94,6 +94,7 @@ type MPPQueryID struct {
 type MPPTask struct {
 	Meta       MPPTaskMeta // on which store this task will execute
 	ID         int64       // mppTaskID
+	GatherID   uint64
 	StartTs    uint64
 	MppQueryID MPPQueryID
 	TableID    int64      // physical table id
@@ -107,6 +108,7 @@ type MPPTask struct {
 func (t *MPPTask) ToPB() *mpp.TaskMeta {
 	meta := &mpp.TaskMeta{
 		StartTs:      t.StartTs,
+		GatherId:     t.GatherID,
 		QueryTs:      t.MppQueryID.QueryTs,
 		LocalQueryId: t.MppQueryID.LocalQueryID,
 		ServerId:     t.MppQueryID.ServerID,
@@ -141,6 +143,7 @@ type MPPDispatchRequest struct {
 	Timeout uint64      // If task is assigned but doesn't receive a connect request during timeout, the task should be destroyed.
 	// SchemaVer is for any schema-ful storage (like tiflash) to validate schema correctness if necessary.
 	SchemaVar         int64
+	GatherID          uint64
 	StartTs           uint64
 	MppQueryID        MPPQueryID
 	ID                int64 // identify a single task

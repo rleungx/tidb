@@ -83,6 +83,7 @@ type tasksAndFrags struct {
 
 type mppTaskGenerator struct {
 	ctx        sessionctx.Context
+	gatherID   uint64
 	startTS    uint64
 	mppQueryID kv.MPPQueryID
 	is         infoschema.InfoSchema
@@ -94,9 +95,11 @@ type mppTaskGenerator struct {
 }
 
 // GenerateRootMPPTasks generate all mpp tasks and return root ones.
-func GenerateRootMPPTasks(ctx sessionctx.Context, startTs uint64, mppQueryID kv.MPPQueryID, sender *PhysicalExchangeSender, is infoschema.InfoSchema) ([]*Fragment, []kv.KeyRange, error) {
+func GenerateRootMPPTasks(ctx sessionctx.Context, gatherID uint64, startTs uint64,
+	mppQueryID kv.MPPQueryID, sender *PhysicalExchangeSender, is infoschema.InfoSchema) ([]*Fragment, []kv.KeyRange, error) {
 	g := &mppTaskGenerator{
 		ctx:        ctx,
+		gatherID:   gatherID,
 		startTS:    startTs,
 		mppQueryID: mppQueryID,
 		is:         is,
@@ -130,6 +133,7 @@ func (e *mppTaskGenerator) generateMPPTasks(s *PhysicalExchangeSender) ([]*Fragm
 	mppVersion := e.ctx.GetSessionVars().ChooseMppVersion()
 	logutil.BgLogger().Info("Mpp will generate tasks", zap.String("plan", ToString(s)), zap.Int64("mpp-version", mppVersion.ToInt64()))
 	tidbTask := &kv.MPPTask{
+		GatherID:   e.gatherID,
 		StartTs:    e.startTS,
 		MppQueryID: e.mppQueryID,
 		ID:         -1,
@@ -168,6 +172,7 @@ func (e *mppTaskGenerator) constructMPPTasksByChildrenTasks(tasks []*kv.MPPTask)
 		if !ok {
 			mppTask := &kv.MPPTask{
 				Meta:       &mppAddr{addr: addr},
+				GatherID:   e.gatherID,
 				ID:         AllocMPPTaskID(e.ctx),
 				MppQueryID: e.mppQueryID,
 				StartTs:    e.startTS,
@@ -448,6 +453,7 @@ func (e *mppTaskGenerator) constructMPPTasksImpl(ctx context.Context, ts *Physic
 	for _, meta := range metas {
 		task := &kv.MPPTask{
 			Meta:                              meta,
+			GatherID:                          e.gatherID,
 			ID:                                AllocMPPTaskID(e.ctx),
 			MppVersion:                        e.ctx.GetSessionVars().ChooseMppVersion(),
 			StartTs:                           e.startTS,
