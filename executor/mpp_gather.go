@@ -16,11 +16,15 @@ package executor
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/distsql"
+	"github.com/pingcap/tidb/executor/mpperr"
 	"github.com/pingcap/tidb/infoschema"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser/model"
@@ -31,10 +35,14 @@ import (
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/pingcap/tidb/util/mathutil"
 	"github.com/pingcap/tidb/util/memory"
 	"github.com/pingcap/tipb/go-tipb"
 	"go.uber.org/zap"
 )
+
+// For mpp err recovery, hold at most 4 * MaxChunkSize rows.
+const mppErrRecoveryHoldChkCap = 4
 
 func useMPPExecution(ctx sessionctx.Context, tr *plannercore.PhysicalTableReader) bool {
 	if !ctx.GetSessionVars().IsMPPAllowed() {
@@ -87,6 +95,18 @@ type MPPGather struct {
 	dummy    bool
 
 	gatherID uint64
+
+	// mppErrRecovery is designed for the recovery of MPP errors.
+	// Basic idea:
+	// 1. It attempts to hold the results of MPP. During the holding process, if an error occurs, it starts error recovery.
+	//    If the recovery is successful, it discards held results and reconstructs the respIter, then re-executes the MPP task.
+	//    If the recovery fails, an error is reported directly.
+	// 2. If the held MPP results exceed the capacity, will starts returning results to caller.
+	//    Once the results start being returned, error recovery cannot be performed anymore.
+	mppErrRecovery *mpperr.RecoveryHandler
+	// Only for MemLimit err recovery for now.
+	// AutoScaler use this value as hint to scale out CN.
+	nodeCnt int
 }
 
 func (e *MPPGather) appendMPPDispatchReq(pf *plannercore.Fragment) error {
@@ -159,15 +179,28 @@ func collectPlanIDS(plan plannercore.PhysicalPlan, ids []int) []int {
 	return ids
 }
 
-// Open decides the task counts and locations and generate exchange operators for every plan fragment.
-// Then dispatch tasks to tiflash stores. If any task fails, it would cancel the rest tasks.
-func (e *MPPGather) Open(ctx context.Context) (err error) {
-	e.gatherID = allocMPPGatherID(e.ctx)
+func (e *MPPGather) setupRespIter(ctx context.Context, isRecoverying bool) error {
+	if isRecoverying {
+		// If we are trying to recovery from MPP error, needs to cleanup some resources.
+		// Sanity check.
+		if e.dummy {
+			return errors.New("should not reset mpp resp iter for dummy table")
+		}
+
+		if e.respIter == nil {
+			return errors.New("mpp resp iter should already be setup")
+		}
+
+		if err := e.respIter.Close(); err != nil {
+			return err
+		}
+	}
 
 	// TODO: Move the construct tasks logic to planner, so we can see the explain results.
 	sender := e.originalPlan.(*plannercore.PhysicalExchangeSender)
+	e.gatherID = allocMPPGatherID(e.ctx)
 	planIDs := collectPlanIDS(e.originalPlan, nil)
-	frags, kvRanges, err := plannercore.GenerateRootMPPTasks(e.ctx, e.gatherID, e.startTS, e.mppQueryID, sender, e.is)
+	frags, kvRanges, nodeInfo, err := plannercore.GenerateRootMPPTasks(e.ctx, e.gatherID, e.startTS, e.mppQueryID, sender, e.is)
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -177,9 +210,9 @@ func (e *MPPGather) Open(ctx context.Context) (err error) {
 		return nil
 	}
 
+	e.mppReqs = e.mppReqs[:0]
 	for _, frag := range frags {
-		err = e.appendMPPDispatchReq(frag)
-		if err != nil {
+		if err = e.appendMPPDispatchReq(frag); err != nil {
 			return errors.Trace(err)
 		}
 	}
@@ -188,10 +221,109 @@ func (e *MPPGather) Open(ctx context.Context) (err error) {
 			failpoint.Return(errors.Errorf("The number of tasks is not right, expect %d tasks but actually there are %d tasks", val.(int), len(e.mppReqs)))
 		}
 	})
-	e.respIter, err = distsql.DispatchMPPTasks(ctx, e.ctx, e.mppReqs, e.retFieldTypes, planIDs, e.id, e.startTS, e.mppQueryID, e.memTracker)
-	if err != nil {
+	if e.respIter, err = distsql.DispatchMPPTasks(ctx, e.ctx, e.mppReqs, e.retFieldTypes, planIDs, e.id, e.startTS, e.mppQueryID, e.memTracker); err != nil {
 		return errors.Trace(err)
 	}
+	if e.nodeCnt = len(nodeInfo); e.nodeCnt <= 0 {
+		return errors.Errorf("tiflash node count should be greater than zero: %v", e.nodeCnt)
+	}
+
+	return nil
+}
+
+// Open decides the task counts and locations and generate exchange operators for every plan fragment.
+// Then dispatch tasks to tiflash stores. If any task fails, it would cancel the rest tasks.
+func (e *MPPGather) Open(ctx context.Context) error {
+	if err := e.setupRespIter(ctx, false); err != nil {
+		return err
+	}
+
+	holdCap := mathutil.Max(32, mppErrRecoveryHoldChkCap*e.ctx.GetSessionVars().MaxChunkSize)
+
+	disaggTiFlashWithAutoScaler := config.GetGlobalConfig().DisaggregatedTiFlash && config.GetGlobalConfig().UseAutoScaler
+	_, allowTiFlashFallback := e.ctx.GetSessionVars().AllowFallbackToTiKV[kv.TiFlash]
+	// 1. For now, mpp err recovery only support MemLimit, which is only useful when AutoScaler is used.
+	// 2. When enable fallback to tikv, the returned mpp err will be ErrTiFlashServerTimeout,
+	//    which we cannot handle for now. Also there is no need to recovery because tikv will retry the query.
+	// 3. For cached table, will not dispatch tasks to TiFlash, so no need to recovery.
+	enableMPPRecovery := disaggTiFlashWithAutoScaler && !allowTiFlashFallback && !e.dummy
+
+	failpoint.Inject("mpp_recovery_test_mock_enable", func() {
+		if !e.dummy && !allowTiFlashFallback {
+			enableMPPRecovery = true
+		}
+	})
+
+	e.mppErrRecovery = mpperr.NewRecoveryHandler(disaggTiFlashWithAutoScaler, uint64(holdCap), enableMPPRecovery, e.memTracker)
+	return nil
+}
+
+func (e *MPPGather) nextWithRecovery(ctx context.Context) error {
+	if !e.mppErrRecovery.Enabled() {
+		return nil
+	}
+
+	for e.mppErrRecovery.CanHoldResult() {
+		tmpChk := newFirstChunk(e)
+		mppErr := e.respIter.Next(ctx, tmpChk)
+
+		// Mock recovery n times.
+		failpoint.Inject("mpp_recovery_test_max_err_times", func(forceErrCnt failpoint.Value) {
+			forceErrCntInt := forceErrCnt.(int)
+			if e.mppErrRecovery.RecoveryCnt() < uint32(forceErrCntInt) {
+				mppErr = errors.New("mock mpp error")
+			}
+		})
+
+		if mppErr != nil {
+			recoveryErr := e.mppErrRecovery.Recovery(&mpperr.RecoveryInfo{
+				MPPErr:  mppErr,
+				NodeCnt: e.nodeCnt,
+			})
+
+			// Mock recovery succeed, ignore no recovery handler err.
+			failpoint.Inject("mpp_recovery_test_ignore_recovery_err", func() {
+				if recoveryErr == nil {
+					panic("mocked mpp err should got recovery err")
+				}
+				if strings.Contains(recoveryErr.Error(), "no handler to recovery") {
+					recoveryErr = nil
+				}
+			})
+
+			if recoveryErr != nil {
+				logutil.BgLogger().Error("recovery mpp error failed", zap.Any("mppErr", mppErr),
+					zap.Any("recoveryErr", recoveryErr))
+				return mppErr
+			}
+
+			logutil.BgLogger().Info("recovery mpp error succeed, begin next retry",
+				zap.Any("mppErr", mppErr), zap.Any("recoveryCnt", e.mppErrRecovery.RecoveryCnt()))
+
+			if err := e.setupRespIter(ctx, true); err != nil {
+				logutil.BgLogger().Error("setup resp iter when recovery mpp err failed", zap.Any("err", err))
+				return mppErr
+			}
+			e.mppErrRecovery.ResetHolder()
+
+			continue
+		}
+
+		if tmpChk.NumRows() == 0 {
+			break
+		}
+
+		e.mppErrRecovery.HoldResult(tmpChk)
+	}
+
+	failpoint.Inject("mpp_recovery_test_hold_size", func(num failpoint.Value) {
+		// Note: this failpoint only execute once.
+		curRows := e.mppErrRecovery.NumHoldRows()
+		numInt := num.(int)
+		if curRows != uint64(numInt) {
+			panic(fmt.Sprintf("unexpected holding rows, cur: %d", curRows))
+		}
+	})
 	return nil
 }
 
@@ -201,11 +333,29 @@ func (e *MPPGather) Next(ctx context.Context, chk *chunk.Chunk) error {
 	if e.dummy {
 		return nil
 	}
-	err := e.respIter.Next(ctx, chk)
-	if err != nil {
+
+	if err := e.nextWithRecovery(ctx); err != nil {
 		return err
 	}
-	err = table.FillVirtualColumnValue(e.virtualColumnRetFieldTypes, e.virtualColumnIndex, e.schema.Columns, e.columns, e.ctx, chk)
+
+	if e.mppErrRecovery.NumHoldChk() != 0 {
+		var tmpChk *chunk.Chunk
+		if tmpChk = e.mppErrRecovery.PopFrontChk(); tmpChk == nil {
+			return errors.New("cannot get chunk from mpp result holder")
+		}
+		chk.SwapColumns(tmpChk)
+	} else if err := e.respIter.Next(ctx, chk); err != nil {
+		// Got here when:
+		// 1. mppErrRecovery is disabled. So no chk held in mppErrRecovery.
+		// 2. mppErrRecovery is enabled and it holds some chks, but we consume all these chks.
+		return err
+	}
+
+	if chk.NumRows() == 0 {
+		return nil
+	}
+
+	err := table.FillVirtualColumnValue(e.virtualColumnRetFieldTypes, e.virtualColumnIndex, e.Schema().Columns, e.columns, e.ctx, chk)
 	if err != nil {
 		return err
 	}
@@ -216,6 +366,9 @@ func (e *MPPGather) Next(ctx context.Context, chk *chunk.Chunk) error {
 func (e *MPPGather) Close() error {
 	if e.dummy {
 		return nil
+	}
+	if e.mppErrRecovery != nil {
+		e.mppErrRecovery.ResetHolder()
 	}
 	e.mppReqs = nil
 	if e.respIter != nil {

@@ -118,6 +118,7 @@ go_library(
         "//executor/asyncloaddata",
         "//executor/importer",
         "//executor/metrics",
+        "//executor/mpperr",
         "//expression",
         "//expression/aggregation",
         "//infoschema",

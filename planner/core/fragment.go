@@ -92,11 +92,13 @@ type mppTaskGenerator struct {
 
 	// For MPPGather under UnionScan, need keyRange to scan MemBuffer.
 	KVRanges []kv.KeyRange
+
+	nodeInfo map[string]bool
 }
 
 // GenerateRootMPPTasks generate all mpp tasks and return root ones.
-func GenerateRootMPPTasks(ctx sessionctx.Context, gatherID uint64, startTs uint64,
-	mppQueryID kv.MPPQueryID, sender *PhysicalExchangeSender, is infoschema.InfoSchema) ([]*Fragment, []kv.KeyRange, error) {
+func GenerateRootMPPTasks(ctx sessionctx.Context, gatherID uint64, startTs uint64, mppQueryID kv.MPPQueryID,
+	sender *PhysicalExchangeSender, is infoschema.InfoSchema) ([]*Fragment, []kv.KeyRange, map[string]bool, error) {
 	g := &mppTaskGenerator{
 		ctx:        ctx,
 		gatherID:   gatherID,
@@ -105,15 +107,16 @@ func GenerateRootMPPTasks(ctx sessionctx.Context, gatherID uint64, startTs uint6
 		is:         is,
 		cache:      make(map[int]tasksAndFrags),
 		KVRanges:   make([]kv.KeyRange, 0),
+		nodeInfo:   make(map[string]bool),
 	}
 	frags, err := g.generateMPPTasks(sender)
 	if err != nil {
-		return frags, nil, err
+		return frags, nil, nil, err
 	}
 	if len(g.KVRanges) == 0 {
 		err = errors.New("kvRanges for MPPTask should not be empty")
 	}
-	return frags, g.KVRanges, err
+	return frags, g.KVRanges, g.nodeInfo, err
 }
 
 // AllocMPPTaskID allocates task id for mpp tasks. It will reset the task id when the query finished.
@@ -463,6 +466,8 @@ func (e *mppTaskGenerator) constructMPPTasksImpl(ctx context.Context, ts *Physic
 			IsDisaggregatedTiFlashStaticPrune: isDisaggregatedTiFlashStaticPrune,
 		}
 		tasks = append(tasks, task)
+		addr := meta.GetAddress()
+		e.nodeInfo[addr] = true
 	}
 	return tasks, nil
 }
