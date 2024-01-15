@@ -41,7 +41,7 @@ func (e *AdminShowBatchTaskExec) Next(ctx context.Context, req *chunk.Chunk) err
 	ctx = kv.WithInternalSourceType(ctx, kv.InternalTxnMeta)
 	exec := e.ctx.(sqlexec.RestrictedSQLExecutor)
 
-	rows, _, err := exec.ExecRestrictedSQL(ctx, nil, `SELECT id,task_key,state,start_time,state_update_time FROM mysql.tidb_global_task WHERE type="batch"`)
+	rows, _, err := exec.ExecRestrictedSQL(ctx, nil, `SELECT id,task_key,state,start_time,state_update_time,error FROM mysql.tidb_global_task WHERE type="batch"`)
 	if err != nil {
 		return errors.Trace(err)
 	}
