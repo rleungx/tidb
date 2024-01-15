@@ -245,6 +245,7 @@ func verifyShow(stmt *ast.ShowStmt) error {
 		ast.ShowGrants,
 		ast.ShowTriggers,
 		ast.ShowProcedureStatus,
+		ast.ShowFunctionStatus,
 		ast.ShowIndex,
 		ast.ShowProcessList,
 		ast.ShowCreateDatabase,
