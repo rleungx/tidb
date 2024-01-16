@@ -372,6 +372,8 @@ type Config struct {
 	TiFlashReplicas TiFlashReplicas `toml:"tiflash-replicas" json:"tiflash-replicas"`
 	// Rewrite collations for certain keyspaces
 	RewriteCollations map[string]map[string]string `toml:"rewrite-collations" json:"rewrite-collations"`
+	// EnableOnlyRunUpgrade indicates whether only run upgrade process.
+	EnableOnlyRunUpgrade bool `toml:"enable-only-run-upgrade" json:"enable-only-run-upgrade"`
 }
 
 // CSE is the config collection for the cloud storage engine.

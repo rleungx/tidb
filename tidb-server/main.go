@@ -330,6 +330,11 @@ func main() {
 	resourcemanager.InstanceResourceManager.Start()
 	storage, dom, err := createStoreAndDomain(keyspaceName)
 	mainErrHandler(err)
+	logutil.BgLogger().Info("finished upgrade.")
+	if config.GetGlobalConfig().EnableOnlyRunUpgrade {
+		closeDomainAndStorage(storage, dom)
+		os.Exit(0)
+	}
 	svr, err := createServer(storage, dom)
 	mainErrHandler(err)
 
