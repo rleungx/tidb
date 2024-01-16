@@ -119,6 +119,11 @@ func (m *manager) RecycleGCV2(ctx context.Context, safePoint uint64) error {
 	return m.client.RecycleGCV2(ctx, safePoint)
 }
 
+func (m *manager) AbortGCV2(ctx context.Context) error {
+	log.Info("[tidb-worker] abort all GCV2 tasks")
+	return m.client.RecycleGCV2(ctx, math.MaxUint64)
+}
+
 func (m *manager) Role() string {
 	return m.role
 }

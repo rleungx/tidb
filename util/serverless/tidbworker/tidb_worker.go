@@ -38,6 +38,8 @@ type Manager interface {
 	// InitializeGCV2 registers the initial GCV2 task to TiDB worker service, this is used to make sure
 	// at least one GCV2 task exists in TiDB worker service.
 	InitializeGCV2(ctx context.Context) error
+	// AbortGCV2 aborts all the GCV2 tasks in TiDB worker service.
+	AbortGCV2(ctx context.Context) error
 	// Role returns the role of the TiDB worker.
 	Role() string
 }

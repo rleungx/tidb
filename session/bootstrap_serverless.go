@@ -16,6 +16,7 @@ package session
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/util/logutil"
+	"github.com/pingcap/tidb/util/serverless/tidbworker"
 	"go.uber.org/zap"
 )
 
@@ -141,6 +143,18 @@ func runServerlessUpgrade(store kv.Storage) {
 	s.ClearValue(sessionctx.Initing)
 }
 
+// abortGCV2 aborts the GCV2 worker if it's running.
+func abortGCV2() {
+	if tidbworker.IsGCV2Worker() {
+		err := tidbworker.GlobalTiDBWorkerManager.AbortGCV2(context.Background())
+		if err != nil {
+			logutil.BgLogger().Fatal("abort gc worker failed", zap.Error(err))
+		}
+		logutil.BgLogger().Info("gcv2 worker aborted")
+		os.Exit(0)
+	}
+}
+
 // upgradeServerless execute some upgrade work if system is bootstrapped by tidb with lower serverless version.
 func upgradeServerless(s Session) {
 	ver, err := getServerlessVersion(s)
@@ -149,6 +163,9 @@ func upgradeServerless(s Session) {
 	if ver >= currentServerlessVersion {
 		return
 	}
+
+	// We suggest not to run upgrade function in gcv2 worker.
+	abortGCV2()
 
 	// Do upgrade works then update bootstrap version.
 	for _, upgradeFunc := range bootstrapServerlessVersion {

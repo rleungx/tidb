@@ -105,15 +105,11 @@ func (w *TiDBWorker) Valid(c *Config) error {
 			c.SkipGCWorker = true
 		}
 	case RoleGCWorker:
-		// Disable DDL when running as GC worker.
-		c.Instance.TiDBEnableDDL.Store(false)
 	case RoleGCV2Worker:
 		// GCV2 worker must have SafePointV2 enabled.
 		if !c.EnableSafePointV2 {
 			return fmt.Errorf("must enable safe point V2 to run as GCV2 worker")
 		}
-		// Disable DDL when running as GCV2 worker.
-		c.Instance.TiDBEnableDDL.Store(false)
 	case RoleDDLWorker, RoleBatchWorker:
 		// Skip running GC worker on DDL worker.
 		c.SkipGCWorker = true

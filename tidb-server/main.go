@@ -327,6 +327,9 @@ func main() {
 	err = checkSafePointVersion(keyspaceMeta)
 	mainErrHandler(err)
 
+	err = initTiDBWorkerManager()
+	mainErrHandler(err)
+
 	resourcemanager.InstanceResourceManager.Start()
 	storage, dom, err := createStoreAndDomain(keyspaceName)
 	mainErrHandler(err)
@@ -580,7 +583,7 @@ func createStoreAndDomain(keyspaceName string) (kv.Storage, *domain.Domain, erro
 	return storage, dom, nil
 }
 
-func initTiDBWorkerService(sctx sessionctx.Context) error {
+func initTiDBWorkerManager() error {
 	cfg := config.GetGlobalConfig()
 	workerConfig := cfg.TiDBWorker
 	if !workerConfig.Enable || tidbworker.GlobalTiDBWorkerManager != nil {
@@ -592,14 +595,19 @@ func initTiDBWorkerService(sctx sessionctx.Context) error {
 	if err := tidbworker.InitManager(ctx, config.GetGlobalKeyspaceName(), workerConfig); err != nil {
 		return errors.Trace(err)
 	}
+	return nil
+}
+
+func initTiDBWorkerService(sctx sessionctx.Context) error {
 	if !tidbworker.IsMaster() {
 		return nil
 	}
+	cfg := config.GetGlobalConfig()
 	// Initialize GC tasks if TiDB is master.
 	if cfg.EnableSafePointV2 {
-		return tidbworker.GlobalTiDBWorkerManager.InitializeGCV2(ctx)
+		return tidbworker.GlobalTiDBWorkerManager.InitializeGCV2(context.TODO())
 	}
-	return tidbworker.GlobalTiDBWorkerManager.InitializeGC(ctx, sctx)
+	return tidbworker.GlobalTiDBWorkerManager.InitializeGC(context.TODO(), sctx)
 }
 
 func setupBinlogClient() error {
