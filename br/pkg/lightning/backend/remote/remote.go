@@ -944,6 +944,7 @@ func (w *client) addChunk(ctx context.Context) error {
 			zap.Uint64("writerID", w.writerID))
 		return nil
 	}
+	w.e.writeBytes.Add(int64(len(data)))
 
 	url := fmt.Sprintf("%s/load_data?cluster_id=%d&task_id=%s&writer_id=%d&chunk_id=%d",
 		w.e.addr, w.e.clusterID, w.e.loadDataTaskID, w.writerID, newChunkID)
