@@ -76,7 +76,7 @@ func (e *AdminCancelBatchTaskExec) Next(ctx context.Context, req *chunk.Chunk) e
 	sqlExecutor := restrictedCtx.(sqlexec.SQLExecutor)
 
 	var sb strings.Builder
-	sb.WriteString(`UPDATE mysql.tidb_global_task SET state="cancelling" WHERE state="running" and id IN (`)
+	sb.WriteString(`UPDATE mysql.tidb_global_task SET state="cancelling" WHERE state IN ("waiting","pending","running") and id IN (`)
 	for i, id := range e.taskIDs {
 		if i != 0 {
 			sb.WriteString(",")
