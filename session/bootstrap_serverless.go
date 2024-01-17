@@ -195,6 +195,7 @@ func upgradeServerless(s Session) {
 			zap.Int64("to", currentServerlessVersion),
 			zap.Error(err))
 	}
+	logutil.BgLogger().Info("[upgrade] upgrade serverless version succeed", zap.Int64("currentServerlessVersion", currentServerlessVersion))
 }
 
 // Serverless upgrade functions.

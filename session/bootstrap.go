@@ -1151,6 +1151,7 @@ func upgrade(s Session) {
 			zap.Int64("to", currentBootstrapVersion),
 			zap.Error(err))
 	}
+	logutil.BgLogger().Info("[upgrade] upgrade succeed", zap.Int64("currentBootstrapVersion", currentBootstrapVersion))
 }
 
 func syncUpgradeState(s Session) {
