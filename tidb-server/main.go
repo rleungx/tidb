@@ -145,6 +145,8 @@ const (
 	nmActivationTimeout = "activation-timeout"
 	nmMaxIdleSeconds    = "max-idle-seconds"
 	nmKeyspaceActivate  = "keyspace-activate"
+
+	nmEnableOnlyRunUpgrade = "enable-only-run-upgrade"
 )
 
 var (
@@ -202,6 +204,8 @@ var (
 	maxIdleSeconds    = flag.Uint(nmMaxIdleSeconds, 0, "max idle seconds for a connection, 0 means no limit")
 	// Keyspace Activate
 	keyspaceActivateMode = flagBoolean(nmKeyspaceActivate, false, "start tidb-server as keyspaceActivate")
+
+	enableOnlyRunUpgrade = flagBoolean(nmEnableOnlyRunUpgrade, false, "only run upgrade and exit")
 )
 
 func main() {
@@ -880,6 +884,10 @@ func overrideConfig(cfg *config.Config) {
 
 	if actualFlags[nmMaxIdleSeconds] {
 		cfg.MaxIdleSeconds = *maxIdleSeconds
+	}
+
+	if actualFlags[nmEnableOnlyRunUpgrade] {
+		cfg.EnableOnlyRunUpgrade = *enableOnlyRunUpgrade
 	}
 }
 
