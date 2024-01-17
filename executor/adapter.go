@@ -1854,6 +1854,7 @@ func (a *ExecStmt) SummaryStmt(succ bool) {
 	ruDetailsRaw := a.GoCtx.Value(util.RUDetailsCtxKey)
 	if ruDetailsRaw != nil {
 		ruDetails = ruDetailsRaw.(*util.RUDetails).Clone()
+		sessVars.StmtCtx.LastQueryRUConsumption += uint64(ruDetails.RRU() + ruDetails.WRU())
 	}
 
 	if stmtCtx.WaitLockLeaseTime > 0 {

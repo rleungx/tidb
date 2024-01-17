@@ -2252,6 +2252,7 @@ func ResetContextOfStmt(ctx sessionctx.Context, s ast.StmtNode) (err error) {
 	} else {
 		sc.PrevLastInsertID = vars.StmtCtx.PrevLastInsertID
 	}
+	sc.PrevLastQueryRUConsumption = vars.StmtCtx.PrevLastQueryRUConsumption
 	sc.PrevAffectedRows = 0
 	if vars.StmtCtx.InUpdateStmt || vars.StmtCtx.InDeleteStmt || vars.StmtCtx.InInsertStmt || vars.StmtCtx.InSetSessionStatesStmt {
 		sc.PrevAffectedRows = int64(vars.StmtCtx.AffectedRows())

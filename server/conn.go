@@ -2178,6 +2178,8 @@ func (cc *clientConn) handleStmt(ctx context.Context, stmt ast.StmtNode, warns [
 	status := cc.ctx.Status()
 	if lastStmt {
 		cc.ctx.GetSessionVars().StmtCtx.AppendWarnings(warns)
+		cc.ctx.GetSessionVars().StmtCtx.PrevLastQueryRUConsumption = cc.ctx.GetSessionVars().StmtCtx.LastQueryRUConsumption
+		cc.ctx.GetSessionVars().StmtCtx.LastQueryRUConsumption = 0
 	} else {
 		status |= mysql.ServerMoreResultsExists
 	}

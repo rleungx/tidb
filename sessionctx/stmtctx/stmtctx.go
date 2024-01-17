@@ -233,6 +233,10 @@ type StatementContext struct {
 	PrevLastInsertID uint64
 	// LastInsertID is the auto-generated ID in the current statement.
 	LastInsertID uint64
+	// PrevLastQueryRUConsumption is the last RU consumption of previous query.
+	PrevLastQueryRUConsumption uint64
+	// LastQueryRUConsumption is the RU consumption in the current query.
+	LastQueryRUConsumption uint64
 	// InsertID is the given insert ID of an auto_increment column.
 	InsertID uint64
 

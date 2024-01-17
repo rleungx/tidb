@@ -110,6 +110,11 @@ var defaultSysVars = []*SysVar{
 	}, GetStateValue: func(s *SessionVars) (string, bool, error) {
 		return "", false, nil
 	}},
+	{Scope: ScopeSession, Name: LastRUConsumption, Value: "0", ReadOnly: true, Type: TypeInt, AllowEmpty: true, MinValue: 0, MaxValue: math.MaxInt64, GetSession: func(s *SessionVars) (string, error) {
+		return strconv.FormatUint(s.StmtCtx.PrevLastQueryRUConsumption, 10), nil
+	}, GetStateValue: func(s *SessionVars) (string, bool, error) {
+		return "", false, nil
+	}},
 	{Scope: ScopeSession, Name: Identity, Value: "0", Type: TypeInt, AllowEmpty: true, MinValue: 0, MaxValue: math.MaxInt64, GetSession: func(s *SessionVars) (string, error) {
 		return strconv.FormatUint(s.StmtCtx.PrevLastInsertID, 10), nil
 	}, GetStateValue: func(s *SessionVars) (string, bool, error) {
@@ -3030,6 +3035,8 @@ const (
 	DefaultAuthPlugin = "default_authentication_plugin"
 	// LastInsertID is the name of 'last_insert_id' system variable.
 	LastInsertID = "last_insert_id"
+	// LastRUConsumption is the name of 'last_ru_consumption' system variable.
+	LastRUConsumption = "last_ru_consumption"
 	// Identity is the name of 'identity' system variable.
 	Identity = "identity"
 	// TiDBAllowFunctionForExpressionIndex is the name of `TiDBAllowFunctionForExpressionIndex` system variable.
