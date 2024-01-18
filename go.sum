@@ -1021,8 +1021,8 @@ github.com/tiancaiamao/gp v0.0.0-20221230034425-4025bc8a4d4a h1:J/YdBZ46WKpXsxsW
 github.com/tiancaiamao/gp v0.0.0-20221230034425-4025bc8a4d4a/go.mod h1:h4xBhSNtOeEosLJ4P7JyKXX7Cabg7AVkWCK5gV2vOrM=
 github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client v0.0.0-20240115055049-6b4e366cf857 h1:iRcGAV8L+OkYssviRVX//4+kQ6UiBAJJfsJifqhvF+s=
 github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client v0.0.0-20240115055049-6b4e366cf857/go.mod h1:SdqLGHHWBKoGwg/6pNABluHB4kzjunigT9GiH8v1A+M=
-github.com/tikv/client-go/v2 v2.0.8-0.20231222073858-605dbe8a5434 h1:rd2XRpNKp2+skhLhVMvw3FrRMkshkJiymqIfjUZXKHo=
-github.com/tikv/client-go/v2 v2.0.8-0.20231222073858-605dbe8a5434/go.mod h1:IE0/o4zWJW5Wpvp15CK2jpbu49DSLLSJBMNmwjv6I6o=
+github.com/tikv/client-go/v2 v2.0.8-0.20240117075823-9676f18f014b h1:5pL0BGPQR5mRhP/OnE4A3ZUp4TBbyN+Kh3cawEzihCQ=
+github.com/tikv/client-go/v2 v2.0.8-0.20240117075823-9676f18f014b/go.mod h1:IE0/o4zWJW5Wpvp15CK2jpbu49DSLLSJBMNmwjv6I6o=
 github.com/tikv/pd v0.0.0-20230420042919-0e0313adef1f h1:1BBlbLSCua+oK3xngEjPO2dj1oLcItJxhCzqYG6XANA=
 github.com/tikv/pd v0.0.0-20230420042919-0e0313adef1f/go.mod h1:2hGdvUNGLaCKLbEXC8JMiQz2JsbxEDCKGDOBGJTt0NQ=
 github.com/tikv/pd/client v0.0.0-20231219031951-25f48f0bdd27 h1:U8jPVwFu9Zu8tXYlmOxO/Zv3OcsgoJ/COSwMNWvED9c=

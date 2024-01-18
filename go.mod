@@ -96,7 +96,7 @@ require (
 	github.com/tdakkota/asciicheck v0.2.0
 	github.com/tiancaiamao/appdash v0.0.0-20181126055449-889f96f722a2
 	github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client v0.0.0-20240115055049-6b4e366cf857
-	github.com/tikv/client-go/v2 v2.0.8-0.20231222073858-605dbe8a5434
+	github.com/tikv/client-go/v2 v2.0.8-0.20240117075823-9676f18f014b
 	github.com/tikv/pd/client v0.0.0-20231219031951-25f48f0bdd27
 	github.com/timakin/bodyclose v0.0.0-20221125081123-e39cf3fc478e
 	github.com/twmb/murmur3 v1.1.6
