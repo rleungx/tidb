@@ -976,7 +976,7 @@ func NewConfig() *Config {
 			DataCharacterSet:        defaultCSVDataCharacterSet,
 			DataInvalidCharReplace:  string(defaultCSVDataInvalidCharReplace),
 			MaxSourceDataSize:       defaultMaxSourceDataSize,
-			MaxSourceDataSizeForVip: defaultMaxSourceDataSize,
+			MaxSourceDataSizeForVip: defaultMaxSourceDataSizeForVip,
 		},
 		TikvImporter: TikvImporter{
 			Backend:                 "",
