@@ -1894,7 +1894,8 @@ func (rc *Client) FailpointDoChecksumForLogRestore(
 		gcSafePointKeeperCancel()
 		// set the ttl to 0 to remove the gc-safe-point
 		sp.TTL = 0
-		if err := utils.UpdateServiceSafePoint(ctx, pdClient, sp); err != nil {
+		keyspaceName := config.GetGlobalConfig().KeyspaceName
+		if err := utils.UpdateServiceSafePoint(ctx, pdClient, sp, keyspaceName); err != nil {
 			log.Warn("failed to update service safe point, backup may fail if gc triggered",
 				zap.Error(err),
 			)

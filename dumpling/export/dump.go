@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/coreos/go-semver/semver"
+	"github.com/pingcap/tidb/br/pkg/utils"
+
 	// import mysql driver
 	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
@@ -1448,16 +1450,11 @@ func tidbSetPDClientForGC(d *Dumper) error {
 		return nil
 	}
 	if len(pdAddrs) > 0 {
-		doPdGC, err := checkSameCluster(tctx, pool, pdAddrs)
+		pdClient, err := pd.NewClientWithContext(tctx, pdAddrs, pd.SecurityOption{})
 		if err != nil {
-			tctx.L().Info("meet error while check whether fetched pd addr and TiDB belong to one cluster. This won't affect dump process", log.ShortError(err), zap.Strings("pdAddrs", pdAddrs))
-		} else if doPdGC {
-			pdClient, err := pd.NewClientWithContext(tctx, pdAddrs, pd.SecurityOption{})
-			if err != nil {
-				tctx.L().Info("create pd client to control GC failed. This won't affect dump process", log.ShortError(err), zap.Strings("pdAddrs", pdAddrs))
-			}
-			d.tidbPDClientForGC = pdClient
+			tctx.L().Info("create pd client to control GC failed. This won't affect dump process", log.ShortError(err), zap.Strings("pdAddrs", pdAddrs))
 		}
+		d.tidbPDClientForGC = pdClient
 	}
 	return nil
 }
@@ -1502,7 +1499,7 @@ func tidbStartGCSavepointUpdateService(d *Dumper) error {
 		if err != nil {
 			return err
 		}
-		go updateServiceSafePoint(tctx, d.tidbPDClientForGC, defaultDumpGCSafePointTTL, snapshotTS)
+		go updateServiceSafePoint(tctx, d, d.tidbPDClientForGC, defaultDumpGCSafePointTTL, snapshotTS)
 	} else if si.ServerType == version.ServerTypeTiDB {
 		tctx.L().Warn("If the amount of data to dump is large, criteria: (data more than 60GB or dumped time more than 10 minutes)\n" +
 			"you'd better adjust the tikv_gc_life_time to avoid export failure due to TiDB GC during the dump process.\n" +
@@ -1512,18 +1509,19 @@ func tidbStartGCSavepointUpdateService(d *Dumper) error {
 	return nil
 }
 
-func updateServiceSafePoint(tctx *tcontext.Context, pdClient pd.Client, ttl int64, snapshotTS uint64) {
+func updateServiceSafePoint(tctx *tcontext.Context, db *Dumper, pdClient pd.Client, ttl int64, snapshotTS uint64) {
 	updateInterval := time.Duration(ttl/2) * time.Second
 	tick := time.NewTicker(updateInterval)
 	dumplingServiceSafePointID := fmt.Sprintf("%s_%d", dumplingServiceSafePointPrefix, time.Now().UnixNano())
 	tctx.L().Info("generate dumpling gc safePoint id", zap.String("id", dumplingServiceSafePointID))
+	keyspaceName, _ := utils.GetKeyspaceNameFromTiDB(db.dbHandle)
 
 	for {
 		tctx.L().Debug("update PD safePoint limit with ttl",
 			zap.Uint64("safePoint", snapshotTS),
 			zap.Int64("ttl", ttl))
 		for retryCnt := 0; retryCnt <= 10; retryCnt++ {
-			_, err := pdClient.UpdateServiceGCSafePoint(tctx, dumplingServiceSafePointID, ttl, snapshotTS)
+			_, err := utils.UpdatePdCliServiceSafePoint(tctx, pdClient, dumplingServiceSafePointID, ttl, snapshotTS, keyspaceName)
 			if err == nil {
 				break
 			}

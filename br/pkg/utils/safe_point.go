@@ -12,6 +12,8 @@ import (
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
+	tidbconfig "github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/util/gcutil"
 	"github.com/tikv/client-go/v2/oracle"
 	pd "github.com/tikv/pd/client"
 	"go.uber.org/zap"
@@ -52,12 +54,28 @@ func (sp BRServiceSafePoint) MarshalLogObject(encoder zapcore.ObjectEncoder) err
 
 // getGCSafePoint returns the current gc safe point.
 // TODO: Some cluster may not enable distributed GC.
-func getGCSafePoint(ctx context.Context, pdClient pd.Client) (uint64, error) {
-	safePoint, err := pdClient.UpdateGCSafePoint(ctx, 0)
+func getGCSafePoint(ctx context.Context, pdClient pd.Client, keyspaceName string) (uint64, error) {
+	if keyspaceName == "" {
+		log.Info("To get GC safe point v1.")
+		safePoint, err := pdClient.UpdateGCSafePoint(ctx, 0)
+		if err != nil {
+			return 0, errors.Trace(err)
+		}
+		return safePoint, nil
+	}
+
+	keyspaceID, keyspaceSafePointVersion, err := getKeyspaceMeta(ctx, pdClient, keyspaceName)
 	if err != nil {
 		return 0, errors.Trace(err)
 	}
-	return safePoint, nil
+
+	if keyspaceSafePointVersion == tidbconfig.SafePointV2 {
+		log.Info("To get GC safe point v2.", zap.String("keyspace-name", keyspaceName), zap.Uint32("keyspace-id", keyspaceID))
+		return pdClient.UpdateGCSafePointV2(ctx, keyspaceID, 0)
+	} else {
+		log.Info("To get GC safe point v1.", zap.String("keyspace-name", keyspaceName), zap.Uint32("keyspace-id", keyspaceID))
+		return pdClient.UpdateGCSafePoint(ctx, 0)
+	}
 }
 
 // MakeSafePointID makes a unique safe point ID, for reduce name conflict.
@@ -68,8 +86,9 @@ func MakeSafePointID() string {
 // CheckGCSafePoint checks whether the ts is older than GC safepoint.
 // Note: It ignores errors other than exceed GC safepoint.
 func CheckGCSafePoint(ctx context.Context, pdClient pd.Client, ts uint64) error {
+	keyspaceName := tidbconfig.GetGlobalConfig().KeyspaceName
 	// TODO: use PDClient.GetGCSafePoint instead once PD client exports it.
-	safePoint, err := getGCSafePoint(ctx, pdClient)
+	safePoint, err := getGCSafePoint(ctx, pdClient, keyspaceName)
 	if err != nil {
 		log.Warn("fail to get GC safe point", zap.Error(err))
 		return nil
@@ -81,10 +100,9 @@ func CheckGCSafePoint(ctx context.Context, pdClient pd.Client, ts uint64) error 
 }
 
 // UpdateServiceSafePoint register BackupTS to PD, to lock down BackupTS as safePoint with TTL seconds.
-func UpdateServiceSafePoint(ctx context.Context, pdClient pd.Client, sp BRServiceSafePoint) error {
-	log.Debug("update PD safePoint limit with TTL", zap.Object("safePoint", sp))
-
-	lastSafePoint, err := pdClient.UpdateServiceGCSafePoint(ctx, sp.ID, sp.TTL, sp.BackupTS-1)
+func UpdateServiceSafePoint(ctx context.Context, pdClient pd.Client, sp BRServiceSafePoint, keyspaceName string) error {
+	log.Info("update PD safePoint limit with TTL", zap.Object("safePoint", sp), zap.Any("keyspaceName", keyspaceName))
+	lastSafePoint, err := UpdatePdCliServiceSafePoint(ctx, pdClient, sp.ID, sp.TTL, sp.BackupTS-1, keyspaceName)
 	if lastSafePoint > sp.BackupTS-1 {
 		log.Warn("service GC safe point lost, we may fail to back up if GC lifetime isn't long enough",
 			zap.Uint64("lastSafePoint", lastSafePoint),
@@ -92,6 +110,32 @@ func UpdateServiceSafePoint(ctx context.Context, pdClient pd.Client, sp BRServic
 		)
 	}
 	return errors.Trace(err)
+}
+
+func UpdatePdCliServiceSafePoint(ctx context.Context, pdClient pd.Client, serviceID string, ttl int64, safePoint uint64, keyspaceName string) (uint64, error) {
+	if keyspaceName == "" {
+		log.Info("use safe point v1.")
+		return pdClient.UpdateServiceGCSafePoint(ctx, serviceID, ttl, safePoint)
+	}
+
+	keyspaceID, keyspaceSafePointVersion, err := getKeyspaceMeta(ctx, pdClient, keyspaceName)
+	if err != nil {
+		return 0, errors.Trace(err)
+	}
+
+	if keyspaceSafePointVersion == tidbconfig.SafePointV2 {
+		log.Info("use safe point v2.", zap.String("keyspace-name", keyspaceName), zap.Uint32("keyspace-id", keyspaceID))
+		return pdClient.UpdateServiceSafePointV2(ctx, keyspaceID, serviceID, ttl, safePoint)
+	} else {
+		log.Info("use safe point v1.", zap.String("keyspace-name", keyspaceName), zap.Uint32("keyspace-id", keyspaceID))
+		return pdClient.UpdateServiceGCSafePoint(ctx, serviceID, ttl, safePoint)
+	}
+
+}
+
+func getKeyspaceMeta(ctx context.Context, pdClient pd.Client, keyspaceName string) (uint32, string, error) {
+	keyspaceMeta, err := pdClient.LoadKeyspace(ctx, keyspaceName)
+	return keyspaceMeta.Id, keyspaceMeta.Config[gcutil.SafePointVersion], err
 }
 
 // StartServiceSafePointKeeper will run UpdateServiceSafePoint periodicity
@@ -104,12 +148,13 @@ func StartServiceSafePointKeeper(
 	if sp.ID == "" || sp.TTL <= 0 {
 		return errors.Annotatef(berrors.ErrInvalidArgument, "invalid service safe point %v", sp)
 	}
+	keyspaceName := tidbconfig.GetGlobalConfig().KeyspaceName
 	if err := CheckGCSafePoint(ctx, pdClient, sp.BackupTS); err != nil {
 		return errors.Trace(err)
 	}
 	// Update service safe point immediately to cover the gap between starting
 	// update goroutine and updating service safe point.
-	if err := UpdateServiceSafePoint(ctx, pdClient, sp); err != nil {
+	if err := UpdateServiceSafePoint(ctx, pdClient, sp, keyspaceName); err != nil {
 		return errors.Trace(err)
 	}
 
@@ -126,7 +171,7 @@ func StartServiceSafePointKeeper(
 				log.Debug("service safe point keeper exited")
 				return
 			case <-updateTick.C:
-				if err := UpdateServiceSafePoint(ctx, pdClient, sp); err != nil {
+				if err := UpdateServiceSafePoint(ctx, pdClient, sp, keyspaceName); err != nil {
 					log.Warn("failed to update service safe point, backup may fail if gc triggered",
 						zap.Error(err),
 					)

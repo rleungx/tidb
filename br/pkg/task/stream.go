@@ -392,7 +392,7 @@ func (s *streamMgr) setGCSafePoint(ctx context.Context, sp utils.BRServiceSafePo
 			"failed to check gc safePoint, ts %v", sp.BackupTS)
 	}
 
-	err = utils.UpdateServiceSafePoint(ctx, s.mgr.GetPDClient(), sp)
+	err = utils.UpdateServiceSafePoint(ctx, s.mgr.GetPDClient(), sp, s.cfg.KeyspaceName)
 	if err != nil {
 		return errors.Trace(err)
 	}

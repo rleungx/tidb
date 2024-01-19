@@ -809,7 +809,7 @@ func runRestore(c context.Context, g glue.Glue, cmdName string, cfg *RestoreConf
 		gcSafePointKeeperCancel()
 		// set the ttl to 0 to remove the gc-safe-point
 		sp.TTL = 0
-		if err := utils.UpdateServiceSafePoint(ctx, mgr.GetPDClient(), sp); err != nil {
+		if err := utils.UpdateServiceSafePoint(ctx, mgr.GetPDClient(), sp, cfg.KeyspaceName); err != nil {
 			log.Warn("failed to update service safe point, backup may fail if gc triggered",
 				zap.Error(err),
 			)
