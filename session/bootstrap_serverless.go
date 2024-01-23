@@ -161,6 +161,7 @@ func upgradeServerless(s Session) {
 	terror.MustNil(err)
 
 	if ver >= currentServerlessVersion {
+		logutil.BgLogger().Info("[upgrade] The current version is greater than or equal to the target version,skip upgrade", zap.Int64("ver", ver), zap.Int64("target-version", currentBootstrapVersion))
 		return
 	}
 
@@ -169,7 +170,9 @@ func upgradeServerless(s Session) {
 
 	// Do upgrade works then update bootstrap version.
 	for _, upgradeFunc := range bootstrapServerlessVersion {
+		logutil.BgLogger().Info("[upgrade] before upgrade serverless version", zap.Int64("serverless-version", ver))
 		upgradeFunc(s, ver)
+		logutil.BgLogger().Info("[upgrade] upgrade the serverless version succeed", zap.Int64("serverless-version", ver))
 	}
 	updateServerlessVersion(s)
 
@@ -195,7 +198,7 @@ func upgradeServerless(s Session) {
 			zap.Int64("to", currentServerlessVersion),
 			zap.Error(err))
 	}
-	logutil.BgLogger().Info("[upgrade] upgrade serverless version succeed", zap.Int64("currentServerlessVersion", currentServerlessVersion))
+	logutil.BgLogger().Info("[upgrade] upgrade all serverless version succeed", zap.Int64("currentServerlessVersion", currentServerlessVersion))
 }
 
 // Serverless upgrade functions.

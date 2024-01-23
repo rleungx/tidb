@@ -1083,6 +1083,7 @@ func upgrade(s Session) {
 	terror.MustNil(err)
 	if ver >= currentBootstrapVersion {
 		// It is already bootstrapped/upgraded by a higher version TiDB server.
+		logutil.BgLogger().Info("[upgrade] The current version is greater than or equal to the target version,skip upgrade", zap.Int64("ver", ver), zap.Int64("target-version", currentBootstrapVersion))
 		return
 	}
 
@@ -1118,7 +1119,9 @@ func upgrade(s Session) {
 	// It is only used in test.
 	addMockBootstrapVersionForTest(s)
 	for _, upgrade := range bootstrapVersion {
+		logutil.BgLogger().Info("[upgrade] before upgrade bootstrap version", zap.Int64("bootstrap-version", ver))
 		upgrade(s, ver)
+		logutil.BgLogger().Info("[upgrade] upgrade the bootstrap version succeed", zap.Int64("bootstrap-version", ver))
 	}
 	if isNull {
 		upgradeToVer99After(s)
@@ -1151,7 +1154,7 @@ func upgrade(s Session) {
 			zap.Int64("to", currentBootstrapVersion),
 			zap.Error(err))
 	}
-	logutil.BgLogger().Info("[upgrade] upgrade succeed", zap.Int64("currentBootstrapVersion", currentBootstrapVersion))
+	logutil.BgLogger().Info("[upgrade] upgrade all succeed", zap.Int64("currentBootstrapVersion", currentBootstrapVersion))
 }
 
 func syncUpgradeState(s Session) {
