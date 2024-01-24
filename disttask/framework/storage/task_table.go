@@ -239,13 +239,13 @@ func (stm *TaskManager) GetGlobalTaskByKey(key string) (task *proto.Task, err er
 func row2SubTask(r chunk.Row) *proto.Subtask {
 	task := &proto.Subtask{
 		ID:          r.GetInt64(0),
-		Type:        proto.Int2Type(int(r.GetInt64(4))),
-		SchedulerID: r.GetString(5),
-		State:       r.GetString(7),
-		Meta:        r.GetBytes(11),
-		StartTime:   r.GetUint64(9),
+		Type:        proto.Int2Type(int(r.GetInt64(1))),
+		SchedulerID: r.GetString(2),
+		State:       r.GetString(3),
+		Meta:        r.GetBytes(4),
+		StartTime:   r.GetUint64(5),
 	}
-	tid, err := strconv.Atoi(r.GetString(2))
+	tid, err := strconv.Atoi(r.GetString(6))
 	if err != nil {
 		logutil.BgLogger().Warn("unexpected task ID", zap.String("task ID", r.GetString(2)))
 	}
@@ -272,7 +272,8 @@ func (stm *TaskManager) AddNewSubTask(globalTaskID int64, designatedTiDBID strin
 func (stm *TaskManager) GetSubtaskInStates(tidbID string, taskID int64, states ...interface{}) (*proto.Subtask, error) {
 	args := []interface{}{tidbID, taskID}
 	args = append(args, states...)
-	rs, err := stm.executeSQLWithNewSession(stm.ctx, "select * from mysql.tidb_background_subtask where exec_id = %? and task_key = %? and state in ("+strings.Repeat("%?,", len(states)-1)+"%?)", args...)
+	// severless: specify column names to make it compatible with extra columns (tidb v7.5)
+	rs, err := stm.executeSQLWithNewSession(stm.ctx, "select id,type,exec_id,state,meta,start_time,task_key from mysql.tidb_background_subtask where exec_id = %? and task_key = %? and state in ("+strings.Repeat("%?,", len(states)-1)+"%?)", args...)
 	if err != nil {
 		return nil, err
 	}
