@@ -47,6 +47,7 @@ import (
 	tikvmetrics "github.com/tikv/client-go/v2/metrics"
 	"github.com/tikv/client-go/v2/tikv"
 	"github.com/tikv/client-go/v2/tikvrpc"
+	clientutil "github.com/tikv/client-go/v2/util"
 	"go.uber.org/zap"
 	"golang.org/x/exp/maps"
 )
@@ -420,7 +421,9 @@ func (r *selectResult) fetchResp(ctx context.Context) error {
 		if ok {
 			copStats := hasStats.GetCopRuntimeStats()
 			if copStats != nil {
-				r.updateCopRuntimeStats(ctx, copStats, resultSubset.RespTime())
+				if err := r.updateCopRuntimeStats(ctx, copStats, resultSubset.RespTime()); err != nil {
+					return err
+				}
 				copStats.CopTime = duration
 				sc.MergeExecDetails(&copStats.ExecDetails, nil)
 			}
@@ -527,7 +530,7 @@ func (r *selectResult) readFromChunk(ctx context.Context, chk *chunk.Chunk) erro
 	return nil
 }
 
-func (r *selectResult) updateCopRuntimeStats(ctx context.Context, copStats *copr.CopRuntimeStats, respTime time.Duration) {
+func (r *selectResult) updateCopRuntimeStats(ctx context.Context, copStats *copr.CopRuntimeStats, respTime time.Duration) (err error) {
 	callee := copStats.CalleeAddress
 	if r.rootPlanID <= 0 || r.ctx.GetSessionVars().StmtCtx.RuntimeStatsColl == nil || callee == "" {
 		return
@@ -569,6 +572,12 @@ func (r *selectResult) updateCopRuntimeStats(ctx context.Context, copStats *copr
 			break
 		}
 	}
+
+	if ruDetailsRaw := ctx.Value(clientutil.RUDetailsCtxKey); ruDetailsRaw != nil && r.storeType == kv.TiFlash {
+		if err = execdetails.MergeTiFlashRUConsumption(r.selectResp.GetExecutionSummaries(), ruDetailsRaw.(*clientutil.RUDetails)); err != nil {
+			return err
+		}
+	}
 	if hasExecutor {
 		var recorededPlanIDs = make(map[int]int)
 		for i, detail := range r.selectResp.GetExecutionSummaries() {
@@ -608,6 +617,7 @@ func (r *selectResult) updateCopRuntimeStats(ctx context.Context, copStats *copr
 			}
 		}
 	}
+	return
 }
 
 func (r *selectResult) readRowsData(chk *chunk.Chunk) (err error) {
