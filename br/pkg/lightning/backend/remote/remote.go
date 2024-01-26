@@ -589,10 +589,10 @@ func sendRequest(ctx context.Context, httpClient *http.Client, method, url strin
 			req.WithContext(ctx)
 			resp, err := httpClient.Do(req)
 			if err != nil {
-				return nil, errors.Errorf("failed to send request %s", url)
+				return nil, errors.Errorf("failed to send request to remote worker, %s", url)
 			}
 			if resp.StatusCode != http.StatusOK {
-				return nil, errors.Errorf("failed to send request %s, status %s", url, resp.Status)
+				return nil, errors.Errorf("failed to send request to remote worker, %s, status %s", url, resp.Status)
 			}
 			return resp, nil
 		}()
