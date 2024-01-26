@@ -5,14 +5,18 @@ package utils
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/pingcap/errors"
+	"github.com/pingcap/kvproto/pkg/keyspacepb"
 	"github.com/pingcap/kvproto/pkg/metapb"
+	"github.com/pingcap/kvproto/pkg/pdpb"
 	"github.com/pingcap/log"
 	berrors "github.com/pingcap/tidb/br/pkg/errors"
 	tidbconfig "github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/gcutil"
 	"github.com/tikv/client-go/v2/oracle"
 	pd "github.com/tikv/pd/client"
@@ -134,8 +138,40 @@ func UpdatePdCliServiceSafePoint(ctx context.Context, pdClient pd.Client, servic
 }
 
 func getKeyspaceMeta(ctx context.Context, pdClient pd.Client, keyspaceName string) (uint32, string, error) {
-	keyspaceMeta, err := pdClient.LoadKeyspace(ctx, keyspaceName)
-	return keyspaceMeta.Id, keyspaceMeta.Config[gcutil.SafePointVersion], err
+	// Load Keyspace meta with retry.
+	var keyspaceMeta *keyspacepb.KeyspaceMeta
+	err := util.RunWithRetry(util.DefaultMaxRetries, util.RetryInterval, func() (bool, error) {
+		var errInner error
+		keyspaceMeta, errInner = pdClient.LoadKeyspace(ctx, keyspaceName)
+		// Retry when pd not bootstrapped or if keyspace not exists.
+		if IsNotBootstrappedError(errInner) || IsKeyspaceNotExistError(errInner) {
+			return true, errInner
+		}
+		// Do not retry when success or encountered unexpected error.
+		return false, errInner
+	})
+	if err != nil {
+		return 0, "", err
+	}
+
+	return keyspaceMeta.Id, keyspaceMeta.Config[gcutil.SafePointVersion], nil
+
+}
+
+// IsNotBootstrappedError returns true if the error is pd not bootstrapped error.
+func IsNotBootstrappedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), pdpb.ErrorType_NOT_BOOTSTRAPPED.String())
+}
+
+// IsKeyspaceNotExistError returns true the error is caused by keyspace not exists.
+func IsKeyspaceNotExistError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), pdpb.ErrorType_ENTRY_NOT_FOUND.String())
 }
 
 // StartServiceSafePointKeeper will run UpdateServiceSafePoint periodicity
