@@ -15,9 +15,13 @@
 package config
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
+
+	_ "github.com/go-sql-driver/mysql" // mysql driver
+	"github.com/pingcap/tidb/util/logutil"
 )
 
 const (
@@ -91,6 +95,19 @@ func defaultTiDBWorker() TiDBWorker {
 	}
 }
 
+func tryConnect(dsn string) error {
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	err = db.Ping()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // Valid validates the TiDBWorker config.
 func (w *TiDBWorker) Valid(c *Config) error {
 	// Skip validation if TiDB worker is disabled.
@@ -103,6 +120,11 @@ func (w *TiDBWorker) Valid(c *Config) error {
 		if !c.EnableSafePointV2 {
 			// When running as master without enabling SafePointV2, need to disable GC drop table.
 			c.SkipGCWorker = true
+		}
+		if tryConnect(w.RegistryAddr) != nil {
+			logutil.BgLogger().Error("failed to connect to tidb worker service, fallback to standalone mode")
+			w.Enable = false
+			return nil
 		}
 	case RoleGCWorker:
 	case RoleGCV2Worker:
