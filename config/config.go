@@ -24,6 +24,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -126,6 +127,8 @@ var (
 		string(pdtypes.Exists):    true,
 		string(pdtypes.NotExists): true,
 	}
+
+	displayTiFlashRUKeyspaceIDs map[uint64]struct{} = nil
 )
 
 // Valid config maps
@@ -374,6 +377,11 @@ type Config struct {
 	RewriteCollations map[string]map[string]string `toml:"rewrite-collations" json:"rewrite-collations"`
 	// EnableOnlyRunUpgrade indicates whether only run upgrade process.
 	EnableOnlyRunUpgrade bool `toml:"enable-only-run-upgrade" json:"enable-only-run-upgrade"`
+	// DisplayTiFlashRU indicates whether show tiflash ru in explain analyze and stmt log.
+	// 1. all: means display tiflash ru for all keyspaces.
+	// 2. 123,456: means only display tiflash ru for keyspace id 123 and 456.
+	// 3. "": empty string means tiflash ru will not display for all keyspaces.
+	DisplayTiFlashRU string `toml:"display-tiflash-ru" json:"display-tiflash-ru"`
 }
 
 // CSE is the config collection for the cloud storage engine.
@@ -1404,6 +1412,19 @@ func (c *Config) Load(confFile string) error {
 	return err
 }
 
+// EnableDisplayTiFlashRU return true when tiflash ru can display in
+// explain analyze and stmt log for specific keyspace id.
+func (c *Config) EnableDisplayTiFlashRU(keyspaceID uint64) bool {
+	if len(c.DisplayTiFlashRU) == 0 {
+		return false
+	}
+	if c.DisplayTiFlashRU == "all" {
+		return true
+	}
+	_, ok := displayTiFlashRUKeyspaceIDs[keyspaceID]
+	return ok
+}
+
 // Valid checks if this config is valid.
 func (c *Config) Valid() error {
 	if c.Log.EnableErrorStack == c.Log.DisableErrorStack && c.Log.EnableErrorStack != nbUnset {
@@ -1507,6 +1528,18 @@ func (c *Config) Valid() error {
 		}
 		if c.TiFlashComputeAutoScalerAddr == "" {
 			return fmt.Errorf("autoscaler-addr cannot be empty when disaggregated-tiflash mode is true")
+		}
+	}
+
+	if len(c.DisplayTiFlashRU) != 0 && c.DisplayTiFlashRU != "all" {
+		displayTiFlashRUKeyspaceIDs = make(map[uint64]struct{})
+		ids := strings.Split(c.DisplayTiFlashRU, ",")
+		for _, idStr := range ids {
+			idInt, err := strconv.ParseUint(idStr, 10, 32)
+			if err != nil {
+				return fmt.Errorf("invalid keyspaceID for config display-tiflash-ru, %v, err: %v", idStr, err)
+			}
+			displayTiFlashRUKeyspaceIDs[idInt] = struct{}{}
 		}
 	}
 

@@ -42,11 +42,11 @@ import (
 type ExplainExec struct {
 	baseExecutor
 
-	explain       *core.Explain
-	analyzeExec   Executor
-	executed      bool
-	rows          [][]string
-	cursor        int
+	explain     *core.Explain
+	analyzeExec Executor
+	executed    bool
+	rows        [][]string
+	cursor      int
 }
 
 // Open implements the Executor Open interface.

@@ -574,10 +574,13 @@ func (r *selectResult) updateCopRuntimeStats(ctx context.Context, copStats *copr
 	}
 
 	if ruDetailsRaw := ctx.Value(clientutil.RUDetailsCtxKey); ruDetailsRaw != nil && r.storeType == kv.TiFlash {
-		if err = execdetails.MergeTiFlashRUConsumption(r.selectResp.GetExecutionSummaries(), ruDetailsRaw.(*clientutil.RUDetails)); err != nil {
-			return err
+		if config.GetGlobalConfig().EnableDisplayTiFlashRU(uint64(r.ctx.GetStore().GetCodec().GetKeyspaceID())) {
+			if err = execdetails.MergeTiFlashRUConsumption(r.selectResp.GetExecutionSummaries(), ruDetailsRaw.(*clientutil.RUDetails)); err != nil {
+				return err
+			}
 		}
 	}
+
 	if hasExecutor {
 		var recorededPlanIDs = make(map[int]int)
 		for i, detail := range r.selectResp.GetExecutionSummaries() {
