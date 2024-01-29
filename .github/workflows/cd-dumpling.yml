@@ -1,7 +1,7 @@
 name: DUMPLING-CD
 
 on:
-  pull_request:
+  push:
     branches: ["release-7.1-keyspace"]
   workflow_dispatch:
 
