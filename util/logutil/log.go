@@ -205,23 +205,34 @@ func WithConnID(ctx context.Context, connID uint64) context.Context {
 	return context.WithValue(ctx, CtxLogKey, logger.With(zap.Uint64("conn", connID)))
 }
 
-// WithTraceLogger attaches trace identifier to context
-func WithTraceLogger(ctx context.Context, connID uint64) context.Context {
+// WithGatewayConnID attaches gwConnID to context.
+func WithGatewayConnID(ctx context.Context, gwConnID string) context.Context {
 	var logger *zap.Logger
 	if ctxLogger, ok := ctx.Value(CtxLogKey).(*zap.Logger); ok {
 		logger = ctxLogger
 	} else {
 		logger = log.L()
 	}
-	return context.WithValue(ctx, CtxLogKey, wrapTraceLogger(ctx, connID, logger))
+	return context.WithValue(ctx, CtxLogKey, logger.With(zap.String("gw_conn", gwConnID)))
 }
 
-func wrapTraceLogger(ctx context.Context, connID uint64, logger *zap.Logger) *zap.Logger {
+// WithTraceLogger attaches trace identifier to context
+func WithTraceLogger(ctx context.Context, connID uint64, gwConnID string) context.Context {
+	var logger *zap.Logger
+	if ctxLogger, ok := ctx.Value(CtxLogKey).(*zap.Logger); ok {
+		logger = ctxLogger
+	} else {
+		logger = log.L()
+	}
+	return context.WithValue(ctx, CtxLogKey, wrapTraceLogger(ctx, connID, gwConnID, logger))
+}
+
+func wrapTraceLogger(ctx context.Context, connID uint64, gwConnID string, logger *zap.Logger) *zap.Logger {
 	return logger.WithOptions(zap.WrapCore(func(core zapcore.Core) zapcore.Core {
 		tl := &traceLog{ctx: ctx}
 		// cfg.Format == "", never return error
 		enc, _ := log.NewTextEncoder(&log.Config{})
-		traceCore := log.NewTextCore(enc, tl, tl).With([]zapcore.Field{zap.Uint64("conn", connID)})
+		traceCore := log.NewTextCore(enc, tl, tl).With([]zapcore.Field{zap.Uint64("conn", connID), zap.String("gw_conn", gwConnID)})
 		return zapcore.NewTee(traceCore, core)
 	}))
 }

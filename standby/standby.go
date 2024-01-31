@@ -23,10 +23,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/pingcap/tidb/config"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/signal"
@@ -37,7 +39,8 @@ const (
 	standbyState   = "standby"
 	activatedState = "activated"
 
-	exitWaitDuration = time.Duration(2) * time.Second
+	connNormalClosed         = "normal closed"
+	tidbNormalRestartLogPath = "/run/tidb-normal-restart.log"
 )
 
 // ActivateRequest is the request body for activating the tidb server.
@@ -49,6 +52,7 @@ type sessionManager interface {
 	ConnectionCount() int
 	GetUserProcessList() map[uint64]*util.ProcessInfo
 	GetClientCapabilityList() map[uint64]uint32
+	GetNormalClosedConn(keyspaceName, connID string) string
 	KillAllConnections()
 }
 
@@ -59,6 +63,8 @@ var (
 
 	// activationTimeout specifies the maximum allowed time for tidb to activate from standby mode.
 	activationTimeout uint
+
+	preTidbNormalRestartKeyspaceName, preTidbNormalRestartMsg string
 )
 
 var activateCh = make(chan struct{}, 1)
@@ -90,6 +96,53 @@ func keyspaceChecker(next http.Handler) http.HandlerFunc {
 		}
 		next.ServeHTTP(w, r)
 	}
+}
+
+func loadTiDBNormalRestartInfoAndRemove() {
+	data, err := os.ReadFile(tidbNormalRestartLogPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			logutil.BgLogger().Error("failed to read tidb normal restart log file", zap.Error(err))
+		}
+		return
+	}
+
+	parts := strings.SplitN(string(data), ":", 2)
+	if len(parts) < 2 {
+		logutil.BgLogger().Error("invalid tidb normal restart log file")
+		return
+	}
+
+	preTidbNormalRestartKeyspaceName = parts[0]
+	preTidbNormalRestartMsg = parts[1]
+	logutil.BgLogger().Info("load tidb normal restart log file",
+		zap.String("preTidbNormalRestartKeyspaceName", preTidbNormalRestartKeyspaceName),
+		zap.String("preTidbNormalRestartMsg", preTidbNormalRestartMsg))
+
+	if err := os.Remove(tidbNormalRestartLogPath); err != nil {
+		logutil.BgLogger().Error("failed to remove tidb normal restart log file", zap.Error(err))
+	}
+}
+
+// SaveTidbNormalRestartInfo saves tidb normal restart info to file.
+func SaveTidbNormalRestartInfo(msg string) {
+	keyspaceName := keyspace.GetKeyspaceNameBySettings()
+	if keyspaceName == "" {
+		return
+	}
+
+	if err := os.WriteFile(tidbNormalRestartLogPath, []byte(keyspaceName+":"+msg), 0644); err != nil {
+		logutil.BgLogger().Error("failed to write tidb normal restart log file", zap.Error(err))
+	}
+}
+
+// IsPreTidbNormalRestart returns whether tidb is restarted normally before.
+func IsPreTidbNormalRestart(keyspaceName string) (bool, string) {
+	if keyspaceName == "" || preTidbNormalRestartKeyspaceName != keyspaceName {
+		return false, ""
+	}
+
+	return true, preTidbNormalRestartMsg
 }
 
 // Handler returns a handler to query tidb pool status or activate or exit the tidb server.
@@ -153,10 +206,33 @@ func Handler(sm sessionManager) *http.ServeMux {
 		logutil.BgLogger().Info("receiving exit request, may exit after kill all connections...")
 		if sm != nil {
 			sm.KillAllConnections()
+			SaveTidbNormalRestartInfo("received exit request")
 		}
 		w.WriteHeader(http.StatusOK)
 		signal.TiDBExit()
 	})))
+	mux.HandleFunc("/tidb-pool/checkconn", func(w http.ResponseWriter, r *http.Request) {
+		keyspaceName, connID := r.URL.Query().Get("keyspace_name"), r.URL.Query().Get("conn_id")
+		if keyspaceName == "" || connID == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("keyspace_name or conn_id is empty"))
+			return
+		}
+		logger := logutil.BgLogger().With(zap.String("keyspace_name", keyspaceName), zap.String("conn_id", connID))
+		logger.Info("check connection")
+		if msg := sm.GetNormalClosedConn(keyspaceName, connID); msg != "" {
+			logger.Info("connection is normal closed", zap.String("msg", msg))
+			w.Write([]byte(connNormalClosed))
+			return
+		}
+		if ok, msg := IsPreTidbNormalRestart(keyspaceName); ok {
+			logger.Info("connection is normal closed", zap.String("msg", msg))
+			w.Write([]byte(connNormalClosed))
+			return
+		}
+		logger.Info("connection is unconfirmed")
+		w.Write([]byte(`unconfirmed`))
+	})
 	return mux
 }
 
@@ -181,6 +257,7 @@ func StartStandby(host string, port uint, timeout uint) ActivateRequest {
 		Handler: mux,
 	}
 	activationTimeout = timeout
+	loadTiDBNormalRestartInfoAndRemove()
 	logutil.BgLogger().Info("tidb-server is now running as standby, waiting for activation...", zap.String("addr", server.Addr))
 	go func() {
 		addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
@@ -223,7 +300,7 @@ func EndStandby(err error) {
 		startServerErr = err
 		close(serverStartCh)
 		if server != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			server.Shutdown(ctx)
 		}

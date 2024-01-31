@@ -107,6 +107,8 @@ const (
 	connStatusReading
 	connStatusShutdown     = variable.ConnStatusShutdown // Closed by server.
 	connStatusWaitShutdown = 3                           // Notified by server to close.
+
+	tidbGatewayAttrsConnKey = "TiDB-Gateway-ConnID"
 )
 
 // newClientConn creates a *clientConn object.
@@ -134,6 +136,7 @@ type clientConn struct {
 	server       *Server              // a reference of server instance.
 	capability   uint32               // client capability affects the way server handles client request.
 	connectionID uint64               // atomically allocated by a global variable, unique in process scope.
+	gwConnID     string               // tidb gateway connection ID, unique in gateway scope.
 	user         string               // user of the client.
 	dbname       string               // default database name.
 	salt         []byte               // random bytes used for authentication.
@@ -673,6 +676,7 @@ func (cc *clientConn) readOptionalSSLRequestAndHandshakeResponse(ctx context.Con
 		}
 	}
 
+	cc.gwConnID = resp.Attrs[tidbGatewayAttrsConnKey]
 	cc.capability = resp.Capability & cc.server.capability
 	cc.user = resp.User
 	cc.dbname = resp.DBName
@@ -1183,9 +1187,12 @@ func (cc *clientConn) Run(ctx context.Context) {
 						logutil.Logger(ctx).Info("read packet timeout because of killed connection")
 					} else {
 						idleTime := time.Since(start)
+						tidbGatewayConnID := cc.attrs[tidbGatewayAttrsConnKey]
+						cc.server.SetNormalClosedConn(keyspace.GetKeyspaceNameBySettings(), tidbGatewayConnID, "read packet timeout")
 						logutil.Logger(ctx).Info("read packet timeout, close this connection",
 							zap.Duration("idle", idleTime),
 							zap.Uint64("waitTimeout", waitTimeout),
+							zap.String(tidbGatewayAttrsConnKey, tidbGatewayConnID),
 							zap.Error(err),
 						)
 					}
@@ -1377,7 +1384,7 @@ func (cc *clientConn) dispatch(ctx context.Context, data []byte) error {
 			defer task.End()
 
 			trace.Log(ctx, "sql", lc.String())
-			ctx = logutil.WithTraceLogger(ctx, cc.connectionID)
+			ctx = logutil.WithTraceLogger(ctx, cc.connectionID, cc.gwConnID)
 
 			taskID := *(*uint64)(unsafe.Pointer(task))
 			ctx = pprof.WithLabels(ctx, pprof.Labels("trace", strconv.FormatUint(taskID, 10)))

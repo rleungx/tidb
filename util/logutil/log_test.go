@@ -41,7 +41,9 @@ func TestZapLoggerWithKeys(t *testing.T) {
 	err := InitLogger(conf)
 	require.NoError(t, err)
 	connID := uint64(123)
+	gwConnID := "gw-conn-id"
 	ctx := WithConnID(context.Background(), connID)
+	ctx = WithGatewayConnID(ctx, gwConnID)
 	testZapLogger(ctx, t, fileCfg.Filename, zapLogWithConnIDPattern)
 	err = os.Remove(fileCfg.Filename)
 	require.NoError(t, err)

@@ -56,6 +56,7 @@ import (
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/errno"
 	"github.com/pingcap/tidb/extension"
+	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/metrics"
 	"github.com/pingcap/tidb/parser/ast"
@@ -139,6 +140,9 @@ type Server struct {
 	rwlock  sync.RWMutex
 	clients map[uint64]*clientConn
 
+	normalClosedConnsMutex sync.Mutex
+	normalClosedConns      map[string]string
+
 	capability   uint32
 	dom          *domain.Domain
 	globalConnID util.GlobalConnID
@@ -156,6 +160,28 @@ type Server struct {
 	authTokenCancelFunc context.CancelFunc
 	wg                  sync.WaitGroup
 	printMDLLogTime     time.Time
+}
+
+// SetNormalClosedConn sets the normal closed connection message by specified connID.
+func (s *Server) SetNormalClosedConn(keyspaceName, connID, msg string) {
+	if connID == "" {
+		return
+	}
+
+	s.normalClosedConnsMutex.Lock()
+	defer s.normalClosedConnsMutex.Unlock()
+	s.normalClosedConns[keyspaceName+"-"+connID] = msg
+}
+
+// GetNormalClosedConn gets the normal closed connection message.
+func (s *Server) GetNormalClosedConn(keyspaceName, connID string) string {
+	if connID == "" {
+		return ""
+	}
+
+	s.normalClosedConnsMutex.Lock()
+	defer s.normalClosedConnsMutex.Unlock()
+	return s.normalClosedConns[keyspaceName+"-"+connID]
 }
 
 // ConnectionCount gets current connection count.
@@ -687,6 +713,7 @@ func (s *Server) onConn(conn *clientConn) {
 		return
 	}
 
+	ctx = logutil.WithGatewayConnID(ctx, conn.gwConnID)
 	logutil.Logger(ctx).Info("new connection", zap.String("remoteAddr", conn.bufReadConn.RemoteAddr().String()), zap.Uint64("connectionID", conn.connectionID))
 
 	defer func() {
@@ -862,9 +889,9 @@ func (s *Server) GetProcessInfo(id uint64) (*util.ProcessInfo, bool) {
 	return conn.ctx.ShowProcess(), ok
 }
 
-// Kill implements the SessionManager interface.
-func (s *Server) Kill(connectionID uint64, query bool) {
-	logutil.BgLogger().Info("kill", zap.Uint64("conn", connectionID), zap.Bool("query", query))
+// Kill implements the SessionManager interface, if the connection will be normally closed, normalCloseMsg should be set.
+func (s *Server) Kill(connectionID uint64, query bool, normalCloseMsg string) {
+	logutil.BgLogger().Info("kill", zap.Uint64("conn", connectionID), zap.Bool("query", query), zap.String("normalCloseMsg", normalCloseMsg))
 	metrics.ServerEventCounter.WithLabelValues(metrics.EventKill).Inc()
 
 	s.rwlock.RLock()
@@ -879,6 +906,10 @@ func (s *Server) Kill(connectionID uint64, query bool) {
 		// Mark the client connection status as WaitShutdown, when clientConn.Run detect
 		// this, it will end the dispatch loop and exit.
 		conn.setStatus(connStatusWaitShutdown)
+		if normalCloseMsg != "" {
+			tidbGatewayConnID := conn.attrs[tidbGatewayAttrsConnKey]
+			s.SetNormalClosedConn(keyspace.GetKeyspaceNameBySettings(), tidbGatewayConnID, normalCloseMsg)
+		}
 	}
 	killQuery(conn)
 }
@@ -1084,6 +1115,6 @@ func (s *Server) KillNonFlashbackClusterConn() {
 	}
 	s.rwlock.RUnlock()
 	for _, id := range connIDs {
-		s.Kill(id, false)
+		s.Kill(id, false, "")
 	}
 }
