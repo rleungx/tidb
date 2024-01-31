@@ -40,7 +40,7 @@ const (
 	activatedState = "activated"
 
 	connNormalClosed         = "normal closed"
-	tidbNormalRestartLogPath = "/run/tidb-normal-restart.log"
+	tidbNormalRestartLogPath = "/tmp/tidb-normal-restart.log"
 )
 
 // ActivateRequest is the request body for activating the tidb server.
