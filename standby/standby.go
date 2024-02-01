@@ -220,10 +220,12 @@ func Handler(sm sessionManager) *http.ServeMux {
 		}
 		logger := logutil.BgLogger().With(zap.String("keyspace_name", keyspaceName), zap.String("conn_id", connID))
 		logger.Info("check connection")
-		if msg := sm.GetNormalClosedConn(keyspaceName, connID); msg != "" {
-			logger.Info("connection is normal closed", zap.String("msg", msg))
-			w.Write([]byte(connNormalClosed))
-			return
+		if sm != nil {
+			if msg := sm.GetNormalClosedConn(keyspaceName, connID); msg != "" {
+				logger.Info("connection is normal closed", zap.String("msg", msg))
+				w.Write([]byte(connNormalClosed))
+				return
+			}
 		}
 		if ok, msg := IsPreTidbNormalRestart(keyspaceName); ok {
 			logger.Info("connection is normal closed", zap.String("msg", msg))
