@@ -164,9 +164,13 @@ func scanRecords(p *copReqSenderPool, task *reorgBackfillTask, se *sess.Session)
 			p.chunkSender.AddTask(idxRs)
 
 			select {
-			case <-handleChan:
+			case _, ok := <-handleChan:
+				if !ok {
+					logutil.BgLogger().Warn("[ddl-ingest] handleChan closed", zap.Int("task ID", task.id))
+					done = true
+				}
 			case <-p.ctx.Done():
-				return p.ctx.Err()
+				done = true
 			}
 		}
 		terror.Call(rs.Close)

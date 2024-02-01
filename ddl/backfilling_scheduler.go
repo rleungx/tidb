@@ -468,6 +468,8 @@ func (w *addIndexIngestWorker) HandleTask(rs idxRecResult) {
 	if !w.distribute {
 		err := w.d.isReorgRunnable(w.jobID, false)
 		if err != nil {
+			logutil.BgLogger().Error("[ddl-ingest] reorg job is not runnable", zap.Error(err), zap.Int("id", rs.id))
+			close(rs.handled)
 			result.err = err
 			w.resultCh <- result
 			return
