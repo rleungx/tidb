@@ -74,6 +74,7 @@ const (
 	flagReadTimeout              = "read-timeout"
 	flagTransactionalConsistency = "transactional-consistency"
 	flagCompress                 = "compress"
+	flagPDAddr                   = "pd"
 
 	// FlagHelp represents the help flag
 	FlagHelp = "help"
@@ -148,6 +149,7 @@ type Config struct {
 
 	IOTotalBytes *atomic.Uint64
 	Net          string
+	PDAddr       string
 }
 
 // ServerInfoUnknown is the unknown database type to dumpling
@@ -305,6 +307,7 @@ func (*Config) DefineFlags(flags *pflag.FlagSet) {
 	flags.Bool(flagTransactionalConsistency, true, "Only support transactional consistency")
 	_ = flags.MarkHidden(flagTransactionalConsistency)
 	flags.StringP(flagCompress, "c", "", "Compress output file type, support 'gzip', 'snappy', 'zstd', 'no-compression' now")
+	flags.String(flagPDAddr, "pd", "cluster PD address")
 }
 
 // ParseFromFlags parses dumpling's export.Config from flags
@@ -533,6 +536,8 @@ func (conf *Config) ParseFromFlags(flags *pflag.FlagSet) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
+
+	conf.PDAddr, err = flags.GetString(flagPDAddr)
 
 	for k, v := range params {
 		conf.SessionParams[k] = v

@@ -68,50 +68,50 @@ func TestStartServiceSafePointKeeper(t *testing.T) {
 	pdClient := &mockSafePoint{safepoint: 2333}
 
 	cases := []struct {
-		sp utils.BRServiceSafePoint
+		sp utils.ServiceSafePoint
 		ok bool
 	}{
 		{
-			utils.BRServiceSafePoint{
-				ID:       "br",
-				TTL:      10,
-				BackupTS: 2333 + 1,
+			utils.ServiceSafePoint{
+				ID:  "br",
+				TTL: 10,
+				TS:  2333 + 1,
 			},
 			true,
 		},
 
 		// Invalid TTL.
 		{
-			utils.BRServiceSafePoint{
-				ID:       "br",
-				TTL:      0,
-				BackupTS: 2333 + 1,
+			utils.ServiceSafePoint{
+				ID:  "br",
+				TTL: 0,
+				TS:  2333 + 1,
 			}, false,
 		},
 
 		// Invalid ID.
 		{
-			utils.BRServiceSafePoint{
-				ID:       "",
-				TTL:      0,
-				BackupTS: 2333 + 1,
+			utils.ServiceSafePoint{
+				ID:  "",
+				TTL: 0,
+				TS:  2333 + 1,
 			},
 			false,
 		},
 
-		// BackupTS is too small.
+		// TS is too small.
 		{
-			utils.BRServiceSafePoint{
-				ID:       "br",
-				TTL:      10,
-				BackupTS: 2333,
+			utils.ServiceSafePoint{
+				ID:  "br",
+				TTL: 10,
+				TS:  2333,
 			}, false,
 		},
 		{
-			utils.BRServiceSafePoint{
-				ID:       "br",
-				TTL:      10,
-				BackupTS: 2333 - 1,
+			utils.ServiceSafePoint{
+				ID:  "br",
+				TTL: 10,
+				TS:  2333 - 1,
 			},
 			false,
 		},

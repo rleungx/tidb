@@ -18,6 +18,7 @@ import (
 
 	"github.com/coreos/go-semver/semver"
 	"github.com/pingcap/tidb/br/pkg/utils"
+	"github.com/pingcap/tidb/config"
 
 	// import mysql driver
 	"github.com/go-sql-driver/mysql"
@@ -69,6 +70,8 @@ type Dumper struct {
 	charsetAndDefaultCollationMap map[string]string
 
 	speedRecorder *SpeedRecorder
+
+	serviceSafePoint utils.ServiceSafePoint
 }
 
 // NewDumper returns a new Dumper
@@ -134,7 +137,6 @@ func NewDumper(ctx context.Context, conf *Config) (*Dumper, error) {
 		validateResolveAutoConsistency,
 		tidbSetPDClientForGC,
 		tidbGetSnapshot,
-		tidbStartGCSavepointUpdateService,
 
 		setSessionParam)
 	return d, err
@@ -143,6 +145,13 @@ func NewDumper(ctx context.Context, conf *Config) (*Dumper, error) {
 // Dump dumps table from database
 // nolint: gocyclo
 func (d *Dumper) Dump() (dumpErr error) {
+
+	cctx, gcSafePointKeeperCancel := d.GetContext()
+	defer func() {
+		d.RemoveServiceSafepoint(gcSafePointKeeperCancel)
+	}()
+	d.TidbStartGCSavepointUpdateService(cctx)
+
 	initColTypeRowReceiverMap()
 	var (
 		conn    *sql.Conn
@@ -336,6 +345,20 @@ func (d *Dumper) Dump() (dumpErr error) {
 	summary.SetSuccessStatus(true)
 	m.recordFinishTime(time.Now())
 	return nil
+}
+
+func (d *Dumper) updateKeyspaceName() {
+	if d.conf.ServerInfo.ServerType == version.ServerTypeTiDB {
+		keyspaceName, err := utils.GetKeyspaceNameFromTiDB(d.dbHandle)
+		if err != nil {
+			panic(err)
+		}
+		if keyspaceName != "" {
+			config.UpdateGlobal(func(conf *config.Config) {
+				conf.KeyspaceName = keyspaceName
+			})
+		}
+	}
 }
 
 func (d *Dumper) startWriters(tctx *tcontext.Context, wg *errgroup.Group, taskChan <-chan Task,
@@ -1372,6 +1395,7 @@ func openSQLDB(d *Dumper) error {
 		return errors.Trace(err)
 	}
 	d.dbHandle = sql.OpenDB(c)
+	d.updateKeyspaceName()
 	return nil
 }
 
@@ -1444,12 +1468,21 @@ func tidbSetPDClientForGC(d *Dumper) error {
 		si.ServerVersion.Compare(*gcSafePointVersion) < 0 {
 		return nil
 	}
-	pdAddrs, err := GetPdAddrs(tctx, pool)
-	if err != nil {
-		tctx.L().Info("meet some problem while fetching pd addrs. This won't affect dump process", log.ShortError(err))
-		return nil
+
+	var pdAddrs []string
+	if d.conf.PDAddr != "" {
+		pdAddrs = strings.Split(d.conf.PDAddr, ",")
+	} else {
+		var err error
+		pdAddrs, err = GetPdAddrs(tctx, pool)
+		if err != nil {
+			tctx.L().Info("meet some problem while fetching pd addrs. This won't affect dump process", log.ShortError(err))
+			return nil
+		}
 	}
+
 	if len(pdAddrs) > 0 {
+		tctx.L().Info("get pd address", zap.Any("pdAddrs", pdAddrs))
 		pdClient, err := pd.NewClientWithContext(tctx, pdAddrs, pd.SecurityOption{})
 		if err != nil {
 			tctx.L().Info("create pd client to control GC failed. This won't affect dump process", log.ShortError(err), zap.Strings("pdAddrs", pdAddrs))
@@ -1490,8 +1523,8 @@ func tidbGetSnapshot(d *Dumper) error {
 	return nil
 }
 
-// tidbStartGCSavepointUpdateService is an initialization step of Dumper.
-func tidbStartGCSavepointUpdateService(d *Dumper) error {
+// TidbStartGCSavepointUpdateService is an initialization step of Dumper.
+func (d *Dumper) TidbStartGCSavepointUpdateService(cctx context.Context) error {
 	tctx, pool, conf := d.tctx, d.dbHandle, d.conf
 	snapshot, si := conf.Snapshot, conf.ServerInfo
 	if d.tidbPDClientForGC != nil {
@@ -1499,7 +1532,10 @@ func tidbStartGCSavepointUpdateService(d *Dumper) error {
 		if err != nil {
 			return err
 		}
-		go updateServiceSafePoint(tctx, d, d.tidbPDClientForGC, defaultDumpGCSafePointTTL, snapshotTS)
+		err = d.updateDumplingServiceSafePoint(tctx, cctx, d.tidbPDClientForGC, defaultDumpGCSafePointTTL, snapshotTS)
+		if err != nil {
+			return err
+		}
 	} else if si.ServerType == version.ServerTypeTiDB {
 		tctx.L().Warn("If the amount of data to dump is large, criteria: (data more than 60GB or dumped time more than 10 minutes)\n" +
 			"you'd better adjust the tikv_gc_life_time to avoid export failure due to TiDB GC during the dump process.\n" +
@@ -1509,35 +1545,45 @@ func tidbStartGCSavepointUpdateService(d *Dumper) error {
 	return nil
 }
 
-func updateServiceSafePoint(tctx *tcontext.Context, db *Dumper, pdClient pd.Client, ttl int64, snapshotTS uint64) {
-	updateInterval := time.Duration(ttl/2) * time.Second
-	tick := time.NewTicker(updateInterval)
+func (d *Dumper) GetContext() (context.Context, context.CancelFunc) {
+	cctx, gcSafePointKeeperCancel := context.WithCancel(d.tctx)
+	return cctx, gcSafePointKeeperCancel
+}
+
+func (d *Dumper) updateDumplingServiceSafePoint(tctx *tcontext.Context, cctx context.Context, pdClient pd.Client, ttl int64, snapshotTS uint64) error {
 	dumplingServiceSafePointID := fmt.Sprintf("%s_%d", dumplingServiceSafePointPrefix, time.Now().UnixNano())
 	tctx.L().Info("generate dumpling gc safePoint id", zap.String("id", dumplingServiceSafePointID))
-	keyspaceName, _ := utils.GetKeyspaceNameFromTiDB(db.dbHandle)
 
-	for {
-		tctx.L().Debug("update PD safePoint limit with ttl",
-			zap.Uint64("safePoint", snapshotTS),
-			zap.Int64("ttl", ttl))
-		for retryCnt := 0; retryCnt <= 10; retryCnt++ {
-			_, err := utils.UpdatePdCliServiceSafePoint(tctx, pdClient, dumplingServiceSafePointID, ttl, snapshotTS, keyspaceName)
-			if err == nil {
-				break
-			}
-			tctx.L().Debug("update PD safePoint failed", log.ShortError(err), zap.Int("retryTime", retryCnt))
-			select {
-			case <-tctx.Done():
-				return
-			case <-time.After(time.Second):
-			}
-		}
-		select {
-		case <-tctx.Done():
-			return
-		case <-tick.C:
-		}
+	sp := utils.ServiceSafePoint{
+		TS:  snapshotTS,
+		TTL: ttl,
+		ID:  dumplingServiceSafePointID,
 	}
+
+	d.serviceSafePoint = sp
+
+	tctx.L().Info("current dumpling safePoint job", zap.Object("safePoint", sp))
+
+	err := utils.StartServiceSafePointKeeper(cctx, pdClient, sp)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	return nil
+}
+
+func (d *Dumper) RemoveServiceSafepoint(gcSafePointKeeperCancel context.CancelFunc) {
+	keyspaceName := config.GetGlobalConfig().KeyspaceName
+	d.tctx.L().Info("start to remove service safepoint keeper")
+	// close the gc safe point keeper at first
+	gcSafePointKeeperCancel()
+	// set the ttl to 0 to remove the gc-safe-point
+	d.serviceSafePoint.TTL = -1
+	if err := utils.UpdateServiceSafePoint(d.tctx, d.tidbPDClientForGC, d.serviceSafePoint, keyspaceName); err != nil {
+		d.tctx.L().Warn("failed to update service safe point, service may fail if gc triggered",
+			zap.Error(err),
+		)
+	}
+	d.tctx.L().Info("finish removing service safe point keeper")
 }
 
 // setDefaultSessionParams is a step to set default params for session params.
@@ -1580,6 +1626,7 @@ func setSessionParam(d *Dumper) error {
 	if d.dbHandle, err = resetDBWithSessionParams(d.tctx, pool, conf.GetDriverConfig(""), conf.SessionParams); err != nil {
 		return errors.Trace(err)
 	}
+	d.updateKeyspaceName()
 	return nil
 }
 

@@ -58,18 +58,18 @@ func PauseGCAndScheduler(ctx context.Context, cfg *PauseGcConfig) error {
 
 func pauseGCKeeper(ctx context.Context, cfg *PauseGcConfig, ctl *pdutil.PdController) error {
 	// Note: should we remove the service safepoint as soon as this exits?
-	sp := utils.BRServiceSafePoint{
-		ID:       utils.MakeSafePointID(),
-		TTL:      int64(cfg.TTL.Seconds()),
-		BackupTS: cfg.SafePoint,
+	sp := utils.ServiceSafePoint{
+		ID:  utils.MakeSafePointID(),
+		TTL: int64(cfg.TTL.Seconds()),
+		TS:  cfg.SafePoint,
 	}
-	if sp.BackupTS == 0 {
+	if sp.TS == 0 {
 		rts, err := ctl.GetMinResolvedTS(ctx)
 		if err != nil {
 			return err
 		}
 		log.Info("No service safepoint provided, using the minimal resolved TS.", zap.Uint64("min-resolved-ts", rts))
-		sp.BackupTS = rts
+		sp.TS = rts
 	}
 	err := utils.StartServiceSafePointKeeper(ctx, ctl.GetPDClient(), sp)
 	if err != nil {

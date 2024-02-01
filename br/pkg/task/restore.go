@@ -795,10 +795,10 @@ func runRestore(c context.Context, g glue.Glue, cmdName string, cfg *RestoreConf
 		}()
 	}
 
-	sp := utils.BRServiceSafePoint{
-		BackupTS: restoreTS,
-		TTL:      utils.DefaultBRGCSafePointTTL,
-		ID:       utils.MakeSafePointID(),
+	sp := utils.ServiceSafePoint{
+		TS:  restoreTS,
+		TTL: utils.DefaultBRGCSafePointTTL,
+		ID:  utils.MakeSafePointID(),
 	}
 	g.Record("BackupTS", backupMeta.EndVersion)
 	g.Record("RestoreTS", restoreTS)

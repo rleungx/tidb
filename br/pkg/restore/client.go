@@ -1882,10 +1882,10 @@ func (rc *Client) FailpointDoChecksumForLogRestore(
 		return errors.Trace(err)
 	}
 	// set gc safepoint for checksum
-	sp := utils.BRServiceSafePoint{
-		BackupTS: startTS,
-		TTL:      utils.DefaultBRGCSafePointTTL,
-		ID:       utils.MakeSafePointID(),
+	sp := utils.ServiceSafePoint{
+		TS:  startTS,
+		TTL: utils.DefaultBRGCSafePointTTL,
+		ID:  utils.MakeSafePointID(),
 	}
 	cctx, gcSafePointKeeperCancel := context.WithCancel(ctx)
 	defer func() {

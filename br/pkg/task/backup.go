@@ -467,16 +467,16 @@ func RunBackup(c context.Context, g glue.Glue, cmdName string, cfg *BackupConfig
 	}
 	g.Record("BackupTS", backupTS)
 	safePointID := client.GetSafePointID()
-	sp := utils.BRServiceSafePoint{
-		BackupTS: backupTS,
-		TTL:      client.GetGCTTL(),
-		ID:       safePointID,
+	sp := utils.ServiceSafePoint{
+		TS:  backupTS,
+		TTL: client.GetGCTTL(),
+		ID:  safePointID,
 	}
 
 	// use lastBackupTS as safePoint if exists
 	isIncrementalBackup := cfg.LastBackupTS > 0
 	if isIncrementalBackup {
-		sp.BackupTS = cfg.LastBackupTS
+		sp.TS = cfg.LastBackupTS
 	}
 
 	log.Info("current backup safePoint job", zap.Object("safePoint", sp))

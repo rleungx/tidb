@@ -38,21 +38,21 @@ const (
 	DefaultStreamPauseSafePointTTL = 24 * 3600
 )
 
-// BRServiceSafePoint is metadata of service safe point from a BR 'instance'.
-type BRServiceSafePoint struct {
-	ID       string
-	TTL      int64
-	BackupTS uint64
+// ServiceSafePoint is metadata of service safe point from a BR 'instance'.
+type ServiceSafePoint struct {
+	ID  string
+	TTL int64
+	TS  uint64
 }
 
 // MarshalLogObject implements zapcore.ObjectMarshaler.
-func (sp BRServiceSafePoint) MarshalLogObject(encoder zapcore.ObjectEncoder) error {
+func (sp ServiceSafePoint) MarshalLogObject(encoder zapcore.ObjectEncoder) error {
 	encoder.AddString("ID", sp.ID)
 	ttlDuration := time.Duration(sp.TTL) * time.Second
 	encoder.AddString("TTL", ttlDuration.String())
-	backupTime := oracle.GetTimeFromTS(sp.BackupTS)
-	encoder.AddString("BackupTime", backupTime.String())
-	encoder.AddUint64("BackupTS", sp.BackupTS)
+	backupTime := oracle.GetTimeFromTS(sp.TS)
+	encoder.AddString("ServiceTime", backupTime.String())
+	encoder.AddUint64("ServiceTS", sp.TS)
 	return nil
 }
 
@@ -103,11 +103,11 @@ func CheckGCSafePoint(ctx context.Context, pdClient pd.Client, ts uint64) error 
 	return nil
 }
 
-// UpdateServiceSafePoint register BackupTS to PD, to lock down BackupTS as safePoint with TTL seconds.
-func UpdateServiceSafePoint(ctx context.Context, pdClient pd.Client, sp BRServiceSafePoint, keyspaceName string) error {
+// UpdateServiceSafePoint register TS to PD, to lock down TS as safePoint with TTL seconds.
+func UpdateServiceSafePoint(ctx context.Context, pdClient pd.Client, sp ServiceSafePoint, keyspaceName string) error {
 	log.Info("update PD safePoint limit with TTL", zap.Object("safePoint", sp), zap.Any("keyspaceName", keyspaceName))
-	lastSafePoint, err := UpdatePdCliServiceSafePoint(ctx, pdClient, sp.ID, sp.TTL, sp.BackupTS-1, keyspaceName)
-	if lastSafePoint > sp.BackupTS-1 {
+	lastSafePoint, err := UpdatePdCliServiceSafePoint(ctx, pdClient, sp.ID, sp.TTL, sp.TS-1, keyspaceName)
+	if lastSafePoint > sp.TS-1 {
 		log.Warn("service GC safe point lost, we may fail to back up if GC lifetime isn't long enough",
 			zap.Uint64("lastSafePoint", lastSafePoint),
 			zap.Object("safePoint", sp),
@@ -179,13 +179,13 @@ func IsKeyspaceNotExistError(err error) bool {
 func StartServiceSafePointKeeper(
 	ctx context.Context,
 	pdClient pd.Client,
-	sp BRServiceSafePoint,
+	sp ServiceSafePoint,
 ) error {
 	if sp.ID == "" || sp.TTL <= 0 {
 		return errors.Annotatef(berrors.ErrInvalidArgument, "invalid service safe point %v", sp)
 	}
 	keyspaceName := tidbconfig.GetGlobalConfig().KeyspaceName
-	if err := CheckGCSafePoint(ctx, pdClient, sp.BackupTS); err != nil {
+	if err := CheckGCSafePoint(ctx, pdClient, sp.TS); err != nil {
 		return errors.Trace(err)
 	}
 	// Update service safe point immediately to cover the gap between starting
@@ -213,7 +213,7 @@ func StartServiceSafePointKeeper(
 					)
 				}
 			case <-checkTick.C:
-				if err := CheckGCSafePoint(ctx, pdClient, sp.BackupTS); err != nil {
+				if err := CheckGCSafePoint(ctx, pdClient, sp.TS); err != nil {
 					log.Panic("cannot pass gc safe point check, aborting",
 						zap.Error(err),
 						zap.Object("safePoint", sp),
