@@ -62,6 +62,8 @@ type TiDBWorker struct {
 	TidbPool string `toml:"tidb-pool" json:"tidb-pool"`
 	// RegistryAddr specifies the address of the TiDB worker service.
 	RegistryAddr string `toml:"registry-addr" json:"registry-addr"`
+	// APIServerAddr specifies the address of the TiDB worker API server.
+	APIServerAddr string `toml:"api-server" json:"api-server"`
 	// DDLWorkerCount specifies the desired number of DDL workers.
 	// It only applies when TiDB is running as master.
 	DDLWorkerCount int `toml:"ddl-worker-count" json:"ddl-worker-count"`
@@ -88,10 +90,11 @@ const (
 // defaultTiDBWorker creates a new TiDBWorker.
 func defaultTiDBWorker() TiDBWorker {
 	return TiDBWorker{
-		Enable:       false,
-		Role:         RoleMaster,
-		TidbPool:     "tidb-pool",
-		RegistryAddr: "root:@tcp(serverless-cluster-tidb.tidb-serverless.svc:4000)/serverless",
+		Enable:        false,
+		Role:          RoleMaster,
+		TidbPool:      "tidb-pool",
+		RegistryAddr:  "root:@tcp(serverless-cluster-tidb.tidb-serverless.svc:4000)/serverless",
+		APIServerAddr: "http://scaler-svc.tidb-worker:9080",
 	}
 }
 

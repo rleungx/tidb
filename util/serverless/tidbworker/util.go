@@ -15,6 +15,9 @@
 package tidbworker
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/pingcap/tidb/config"
@@ -38,15 +41,12 @@ func IsBgTaskMaster(taskType string) bool {
 	if GlobalTiDBWorkerManager == nil {
 		return false
 	}
-	switch TaskWorkerType(taskType) {
-	case WorkerTypeDDL:
-		return config.GetGlobalConfig().TiDBWorker.DDLWorkerCount > 0
-	case WorkerTypeBatch:
-		return config.GetGlobalConfig().TiDBWorker.BatchWorkerCount > 0
-	default:
-		logutil.BgLogger().Warn("[tidb-worker] unsupported task type for tidb worker", zap.String("task-type", taskType))
+	enabled, _, err := loadBgTaskConfig(taskType)
+	if err != nil {
+		logutil.BgLogger().Warn("[tidb-worker] failed to load worker config", zap.Error(err))
+		return false
 	}
-	return false
+	return enabled
 }
 
 // IsGCWorker returns whether the current TiDB is a GC worker.
@@ -62,13 +62,12 @@ func IsGCV2Worker() bool {
 // SchedulerNodes generate scheduler nodes according to tidb worker config instead of current
 // cluster topology.
 func SchedulerNodes(workerType string, gTaskID int64) []*infosync.ServerInfo {
-	var nodeCount int
-	switch workerType {
-	case WorkerTypeDDL:
-		nodeCount = config.GetGlobalConfig().TiDBWorker.DDLWorkerCount
-	case WorkerTypeBatch:
-		nodeCount = config.GetGlobalConfig().TiDBWorker.BatchWorkerCount
-	default:
+	enabled, nodeCount, err := loadBgTaskConfig(workerType)
+	if err != nil {
+		logutil.BgLogger().Warn("[tidb-worker] failed to load worker config", zap.Error(err))
+		return nil
+	}
+	if !enabled || nodeCount == 0 {
 		return nil
 	}
 	nodes := make([]*infosync.ServerInfo, nodeCount)
@@ -85,4 +84,27 @@ func SchedulerNodes(workerType string, gTaskID int64) []*infosync.ServerInfo {
 func IsWorkerExecID(execID, workerType string) bool {
 	prefix := workerIDPrefix + workerType + "-"
 	return len(execID) > len(prefix) && execID[:len(prefix)] == prefix
+}
+
+func loadBgTaskConfig(workerType string) (enabled bool, workerCount int, err error) {
+	addr, err := url.JoinPath(config.GetGlobalConfig().TiDBWorker.APIServerAddr, "scaler/api/v1/bgtask", workerType+"-worker")
+	if err != nil {
+		return false, 0, err
+	}
+	res, err := http.Get(addr)
+	if err != nil {
+		return false, 0, err
+	}
+	defer res.Body.Close()
+
+	type config struct {
+		Paused      bool `json:"paused"`
+		WorkerCount int  `json:"worker-count"`
+	}
+	var cfg config
+	err = json.NewDecoder(res.Body).Decode(&cfg)
+	if err != nil {
+		return false, 0, err
+	}
+	return !cfg.Paused, cfg.WorkerCount, nil
 }
