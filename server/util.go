@@ -285,6 +285,9 @@ func dumpBinaryRow(buffer []byte, columns []*ColumnInfo, row chunk.Row, d *resul
 			// To compatible with MySQL, here we treat it as utf-8.
 			d.updateDataEncoding(mysql.DefaultCollationID)
 			buffer = dumpLengthEncodedString(buffer, d.encodeData(hack.Slice(row.GetJSON(i).String())))
+		case mysql.TypeTiDBVectorFloat32:
+			d.updateDataEncoding(mysql.DefaultCollationID)
+			buffer = dumpLengthEncodedString(buffer, d.encodeData(hack.Slice(row.GetVectorFloat32(i).String())))
 		default:
 			return nil, errInvalidType.GenWithStack("invalid type %v", columns[i].Type)
 		}
@@ -458,6 +461,9 @@ func dumpTextRow(buffer []byte, columns []*ColumnInfo, row chunk.Row, d *resultE
 			// To compatible with MySQL, here we treat it as utf-8.
 			d.updateDataEncoding(mysql.DefaultCollationID)
 			buffer = dumpLengthEncodedString(buffer, d.encodeData(hack.Slice(row.GetJSON(i).String())))
+		case mysql.TypeTiDBVectorFloat32:
+			d.updateDataEncoding(mysql.DefaultCollationID)
+			buffer = dumpLengthEncodedString(buffer, d.encodeData(hack.Slice(row.GetVectorFloat32(i).String())))
 		default:
 			return nil, errInvalidType.GenWithStack("invalid type %v", columns[i].Type)
 		}

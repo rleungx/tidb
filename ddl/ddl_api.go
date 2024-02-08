@@ -1258,7 +1258,7 @@ func getDefaultValue(ctx sessionctx.Context, col *table.Column, option *ast.Colu
 	}
 
 	if v.Kind() == types.KindBinaryLiteral || v.Kind() == types.KindMysqlBit {
-		if types.IsTypeBlob(tp) || tp == mysql.TypeJSON {
+		if types.IsTypeBlob(tp) || tp == mysql.TypeJSON || tp == mysql.TypeTiDBVectorFloat32 {
 			// BLOB/TEXT/JSON column cannot have a default value.
 			// Skip the unnecessary decode procedure.
 			return v.GetString(), false, err
@@ -2879,7 +2879,8 @@ func checkPartitionByList(ctx sessionctx.Context, tbInfo *model.TableInfo) error
 
 func isValidKeyPartitionColType(fieldType types.FieldType) bool {
 	switch fieldType.GetType() {
-	case mysql.TypeBlob, mysql.TypeMediumBlob, mysql.TypeLongBlob, mysql.TypeJSON, mysql.TypeGeometry:
+	case mysql.TypeBlob, mysql.TypeMediumBlob, mysql.TypeLongBlob, mysql.TypeJSON, mysql.TypeGeometry,
+		mysql.TypeTiDBVectorFloat32:
 		return false
 	default:
 		return true

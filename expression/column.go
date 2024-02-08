@@ -83,6 +83,11 @@ func (col *CorrelatedColumn) VecEvalJSON(ctx sessionctx.Context, input *chunk.Ch
 	return genVecFromConstExpr(ctx, col, types.ETJson, input, result)
 }
 
+// VecEvalVectorFloat32 evaluates this expression in a vectorized manner.
+func (col *CorrelatedColumn) VecEvalVectorFloat32(ctx sessionctx.Context, input *chunk.Chunk, result *chunk.Column) error {
+	return genVecFromConstExpr(ctx, col, types.ETVectorFloat32, input, result)
+}
+
 // Eval implements Expression interface.
 func (col *CorrelatedColumn) Eval(row chunk.Row) (types.Datum, error) {
 	return *col.Data, nil
@@ -147,6 +152,14 @@ func (col *CorrelatedColumn) EvalJSON(ctx sessionctx.Context, row chunk.Row) (ty
 		return types.BinaryJSON{}, true, nil
 	}
 	return col.Data.GetMysqlJSON(), false, nil
+}
+
+// EvalVectorFloat32 returns VectorFloat32 representation of CorrelatedColumn.
+func (col *CorrelatedColumn) EvalVectorFloat32(ctx sessionctx.Context, row chunk.Row) (types.VectorFloat32, bool, error) {
+	if col.Data.IsNull() {
+		return types.ZeroVectorFloat32, true, nil
+	}
+	return col.Data.GetVectorFloat32(), false, nil
 }
 
 // Equal implements Expression interface.
@@ -372,6 +385,12 @@ func (col *Column) VecEvalJSON(ctx sessionctx.Context, input *chunk.Chunk, resul
 	return nil
 }
 
+// VecEvalVectorFloat32 evaluates this expression in a vectorized manner.
+func (col *Column) VecEvalVectorFloat32(ctx sessionctx.Context, input *chunk.Chunk, result *chunk.Column) error {
+	input.Column(col.Index).CopyReconstruct(input.Sel(), result)
+	return nil
+}
+
 const columnPrefix = "Column#"
 
 // String implements Stringer interface.
@@ -482,6 +501,14 @@ func (col *Column) EvalJSON(ctx sessionctx.Context, row chunk.Row) (types.Binary
 		return types.BinaryJSON{}, true, nil
 	}
 	return row.GetJSON(col.Index), false, nil
+}
+
+// EvalVectorFloat32 returns VectorFloat32 representation of Column.
+func (col *Column) EvalVectorFloat32(ctx sessionctx.Context, row chunk.Row) (types.VectorFloat32, bool, error) {
+	if row.IsNull(col.Index) {
+		return types.ZeroVectorFloat32, true, nil
+	}
+	return row.GetVectorFloat32(col.Index), false, nil
 }
 
 // Clone implements Expression interface.

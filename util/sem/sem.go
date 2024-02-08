@@ -237,7 +237,8 @@ func IsInvisibleSysVar(varNameInLower string) bool {
 		variable.TiDBStmtSummaryFilename,
 		tidbAuditRetractLog,
 		variable.TiDBEnableAsyncCommit,
-		variable.TiDBEnableResourceControl:
+		variable.TiDBEnableResourceControl,
+		variable.TiDBEnableVectorType:
 		return true
 	}
 	return IsStrictMode() && strictModeInvisibleSysVar(varNameInLower)

@@ -15,6 +15,7 @@
 package expression
 
 import (
+	"github.com/pingcap/errors"
 	"github.com/pingcap/tidb/parser/mysql"
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/types"
@@ -281,6 +282,8 @@ func (c *caseWhenFunctionClass) getFunction(ctx sessionctx.Context, args []Expre
 	case types.ETJson:
 		sig = &builtinCaseWhenJSONSig{bf}
 		sig.setPbCode(tipb.ScalarFuncSig_CaseWhenJson)
+	default:
+		return nil, errors.Errorf("%s is not supported for CASE WHEN", tp)
 	}
 	return sig, nil
 }
@@ -582,6 +585,8 @@ func (c *ifFunctionClass) getFunction(ctx sessionctx.Context, args []Expression)
 	case types.ETJson:
 		sig = &builtinIfJSONSig{bf}
 		sig.setPbCode(tipb.ScalarFuncSig_IfJson)
+	default:
+		return nil, errors.Errorf("%s is not supported for IF()", evalTps)
 	}
 	return sig, nil
 }
@@ -782,6 +787,8 @@ func (c *ifNullFunctionClass) getFunction(ctx sessionctx.Context, args []Express
 	case types.ETJson:
 		sig = &builtinIfNullJSONSig{bf}
 		sig.setPbCode(tipb.ScalarFuncSig_IfNullJson)
+	default:
+		return nil, errors.Errorf("%s is not supported for IFNULL()", evalTps)
 	}
 	return sig, nil
 }

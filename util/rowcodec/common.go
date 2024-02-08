@@ -39,16 +39,17 @@ var (
 
 // First byte in the encoded value which specifies the encoding type.
 const (
-	NilFlag          byte = 0
-	BytesFlag        byte = 1
-	CompactBytesFlag byte = 2
-	IntFlag          byte = 3
-	UintFlag         byte = 4
-	FloatFlag        byte = 5
-	DecimalFlag      byte = 6
-	VarintFlag       byte = 8
-	VaruintFlag      byte = 9
-	JSONFlag         byte = 10
+	NilFlag           byte = 0
+	BytesFlag         byte = 1
+	CompactBytesFlag  byte = 2
+	IntFlag           byte = 3
+	UintFlag          byte = 4
+	FloatFlag         byte = 5
+	DecimalFlag       byte = 6
+	VarintFlag        byte = 8
+	VaruintFlag       byte = 9
+	JSONFlag          byte = 10
+	VectorFloat32Flag byte = 20
 )
 
 func bytesToU32Slice(b []byte) []uint32 {
@@ -342,6 +343,8 @@ func appendDatumForChecksum(buf []byte, dat *data.Datum, typ byte) (out []byte, 
 		out = binary.LittleEndian.AppendUint64(buf, v)
 	case mysql.TypeJSON:
 		out = appendLengthValue(buf, []byte(dat.GetMysqlJSON().String()))
+	case mysql.TypeTiDBVectorFloat32:
+		out = dat.GetVectorFloat32().SerializeTo(buf)
 	case mysql.TypeNull, mysql.TypeGeometry:
 		out = buf
 	default:
