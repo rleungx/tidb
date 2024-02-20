@@ -315,9 +315,10 @@ type Config struct {
 	KeyspaceActivateMode bool `toml:"keyspace-activate" json:"keyspace-activate"`
 	MaxIdleSeconds       uint `toml:"max-idle-seconds" json:"max-idle-seconds"`
 	// ActivationTimeout specifies the maximum allowed time for tidb to activate from standby mode.
-	ActivationTimeout          uint `toml:"activation-timeout" json:"activation-timeout"`
-	EnableRULimit              bool `toml:"enable-ru-limit" json:"enable-ru-limit"`
-	EnableAlterUserPessimistic bool `toml:"enable-alter-user-pessimistic" json:"enable-alter-user-pessimistic"`
+	ActivationTimeout          uint   `toml:"activation-timeout" json:"activation-timeout"`
+	EnableRULimit              bool   `toml:"enable-ru-limit" json:"enable-ru-limit"`
+	EnableAlterUserPessimistic bool   `toml:"enable-alter-user-pessimistic" json:"enable-alter-user-pessimistic"`
+	ExportID                   string `toml:"export-id" json:"export-id"`
 
 	TiDBWorker TiDBWorker `toml:"tidb-worker" json:"tidb-worker"`
 
@@ -1187,6 +1188,7 @@ var defaultConf = Config{
 	},
 	RewriteCollations: make(map[string]map[string]string),
 	TiDBWorker:        defaultTiDBWorker(),
+	ExportID:          "",
 }
 
 var (

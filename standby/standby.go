@@ -46,6 +46,7 @@ const (
 // ActivateRequest is the request body for activating the tidb server.
 type ActivateRequest struct {
 	KeyspaceName string `json:"keyspace_name"`
+	ExportID     string `json:"export_id"`
 }
 
 type sessionManager interface {
@@ -243,7 +244,12 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 	defer mu.RUnlock()
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"state": "%s", "keyspace_name": "%s"}`, state, activateRequest.KeyspaceName)
+	if activateRequest.ExportID != "" {
+		fmt.Fprintf(w, `{"state": "%s", "keyspace_name": "%s","export_id": "%s"}`,
+			state, activateRequest.KeyspaceName, activateRequest.ExportID)
+	} else {
+		fmt.Fprintf(w, `{"state": "%s", "keyspace_name": "%s"}`, state, activateRequest.KeyspaceName)
+	}
 }
 
 var server *http.Server

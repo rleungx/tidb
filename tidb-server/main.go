@@ -147,6 +147,7 @@ const (
 	nmKeyspaceActivate  = "keyspace-activate"
 
 	nmEnableOnlyRunUpgrade = "enable-only-run-upgrade"
+	nmExportID             = "export-id"
 )
 
 var (
@@ -206,6 +207,8 @@ var (
 	keyspaceActivateMode = flagBoolean(nmKeyspaceActivate, false, "start tidb-server as keyspaceActivate")
 
 	enableOnlyRunUpgrade = flagBoolean(nmEnableOnlyRunUpgrade, false, "only run upgrade and exit")
+
+	exportID = flag.String(nmExportID, "", "export id")
 )
 
 func main() {
@@ -236,6 +239,7 @@ func main() {
 			config.GetGlobalConfig().ActivationTimeout)
 		config.UpdateGlobal(func(c *config.Config) {
 			c.KeyspaceName = activateRequest.KeyspaceName
+			c.ExportID = activateRequest.ExportID
 		})
 		// replace mainErrHandler to make sure standby handler can exit gracefully.
 		mainErrHandler = func(err error) {
@@ -258,9 +262,15 @@ func main() {
 	var keyspaceID uint32
 	if keyspaceMeta != nil {
 		keyspaceID = keyspaceMeta.GetId()
+		exportID := config.GetGlobalConfig().ExportID
 		if config.GetGlobalConfig().EnableRULimit {
-			log.Info("setting up serverless resource control", zap.Uint32("keyspaceID", keyspaceID))
-			config.DefaultResourceGroup = strconv.FormatUint(uint64(keyspaceID), 10)
+			if exportID != "" {
+				log.Info("setting up serverless resource control", zap.String("exportID", exportID))
+				config.DefaultResourceGroup = exportID
+			} else {
+				log.Info("setting up serverless resource control", zap.Uint32("keyspaceID", keyspaceID))
+				config.DefaultResourceGroup = strconv.FormatUint(uint64(keyspaceID), 10)
+			}
 			tikv.EnableResourceControl()
 		}
 		if keyspaceMeta.Config != nil {
@@ -888,6 +898,10 @@ func overrideConfig(cfg *config.Config) {
 
 	if actualFlags[nmEnableOnlyRunUpgrade] {
 		cfg.EnableOnlyRunUpgrade = *enableOnlyRunUpgrade
+	}
+
+	if actualFlags[nmExportID] {
+		cfg.ExportID = *exportID
 	}
 }
 
