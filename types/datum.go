@@ -1783,15 +1783,23 @@ func (d *Datum) convertToMysqlJSON(_ *stmtctx.StatementContext, _ *FieldType) (r
 	return ret, errors.Trace(err)
 }
 
-func (d *Datum) convertToVectorFloat32(_ *stmtctx.StatementContext, _ *FieldType) (ret Datum, err error) {
+func (d *Datum) convertToVectorFloat32(_ *stmtctx.StatementContext, ft *FieldType) (ret Datum, err error) {
 	switch d.k {
 	case KindVectorFloat32:
+		v := d.GetVectorFloat32()
+		if err = v.CheckDimsFitColumn(ft.GetFlen()); err != nil {
+			return ret, errors.Trace(err)
+		}
 		ret = *d
 	case KindString, KindBytes:
 		var v VectorFloat32
-		if v, err = ParseVectorFloat32(d.GetString()); err == nil {
-			ret.SetVectorFloat32(v)
+		if v, err = ParseVectorFloat32(d.GetString()); err != nil {
+			return ret, errors.Trace(err)
 		}
+		if err = v.CheckDimsFitColumn(ft.GetFlen()); err != nil {
+			return ret, errors.Trace(err)
+		}
+		ret.SetVectorFloat32(v)
 	default:
 		return invalidConv(d, mysql.TypeTiDBVectorFloat32)
 	}

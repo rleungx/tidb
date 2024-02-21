@@ -1421,6 +1421,11 @@ func checkColumn(colDef *ast.ColumnDef) error {
 		if variable.EnableVectorType.Load() != true {
 			return errors.Errorf("vector type is not supported")
 		}
+		if tp.GetFlen() != types.UnspecifiedLength {
+			if err := types.CheckVectorDimValid(tp.GetFlen()); err != nil {
+				return err
+			}
+		}
 	default:
 		// TODO: Add more types.
 	}

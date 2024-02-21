@@ -8496,13 +8496,14 @@ CastType:
 		tp.SetCollate(charset.CollationBin)
 		$$ = tp
 	}
-|	"VECTOR" OptVectorElementType
+|	"VECTOR" OptVectorElementType OptFieldLen
 	{
 		elementType := $2.(*ast.VectorElementType)
 		if elementType.Tp != mysql.TypeFloat {
 			yylex.AppendError(yylex.Errorf("Only VECTOR<FLOAT> is supported for now"))
 		}
 		tp := types.NewFieldType(mysql.TypeTiDBVectorFloat32)
+		tp.SetFlen($3.(int))
 		tp.SetDecimal(0)
 		tp.SetCharset(charset.CharsetBin)
 		tp.SetCollate(charset.CollationBin)
@@ -12608,13 +12609,14 @@ StringType:
 		}
 		$$ = tp
 	}
-|	"VECTOR" OptVectorElementType
+|	"VECTOR" OptVectorElementType OptFieldLen
 	{
 		elementType := $2.(*ast.VectorElementType)
 		if elementType.Tp != mysql.TypeFloat {
 			yylex.AppendError(yylex.Errorf("Only VECTOR<FLOAT> is supported for now"))
 		}
 		tp := types.NewFieldType(mysql.TypeTiDBVectorFloat32)
+		tp.SetFlen($3.(int))
 		tp.SetDecimal(0)
 		tp.SetCharset(charset.CharsetBin)
 		tp.SetCollate(charset.CollationBin)
