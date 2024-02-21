@@ -45,7 +45,11 @@ func TestAuditLogRotate(t *testing.T) {
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
 
-	_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	fileName := "tidb-audit-log-rotate"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
+
+	_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 
 	tk.MustExec("SET global tidb_audit_log_reserved_backups = 2")
@@ -55,7 +59,7 @@ func TestAuditLogRotate(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 
-	files, err := deleteAllAuditLogs(workDir, "tidb-audit-", ".log")
+	files, err := deleteAllAuditLogs(workDir, fmt.Sprintf("%s-", fileName), ".log")
 	require.NoError(t, err)
 	require.Equal(t, 2, len(files), files)
 }
@@ -71,10 +75,15 @@ func TestAuditLogEnableRule(t *testing.T) {
 	tk := testkit.NewTestKit(t, store)
 	err := tk.Session().Auth(&auth.UserIdentity{Username: "root", Hostname: "%"}, nil, nil, nil)
 	require.NoError(t, err)
+
+	fileName := "tidb-audit-admin"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
+
 	tk.MustExec("SET global tidb_audit_enabled = 1")
 	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", filepath.Join(tempDir, DefAuditLogName)))
 
-	_, err = deleteAllAuditLogs(tempDir, "tidb-audit", ".log")
+	_, err = deleteAllAuditLogs(tempDir, fileName, ".log")
 	require.NoError(t, err)
 
 	tk.MustExec("use test")
@@ -104,7 +113,7 @@ func TestAuditLogEnableRule(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	_, err = deleteAllAuditLogs(tempDir, "tidb-audit", ".log")
+	_, err = deleteAllAuditLogs(tempDir, fileName, ".log")
 	require.NoError(t, err)
 }
 
@@ -118,6 +127,10 @@ func TestAuditAdmin(t *testing.T) {
 	tk := testkit.NewTestKit(t, store)
 	err := tk.Session().Auth(&auth.UserIdentity{Username: "root", Hostname: "%"}, nil, nil, nil)
 	require.NoError(t, err)
+
+	fileName := "tidb-audit-restricted-admin"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
 
 	tk.MustExec("CREATE USER testuser")
 	tk2 := testkit.NewTestKit(t, store)
@@ -135,7 +148,7 @@ func TestAuditAdmin(t *testing.T) {
 	tk2.MustExec(`set global tidb_audit_enabled = 0`)
 	tk2.MustQuery(`select * from mysql.audit_log_filters`).Check(testkit.Rows(`all_query {"filter":[{"class":["QUERY"]}]}`))
 
-	_, err = deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	_, err = deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 }
 
@@ -149,6 +162,10 @@ func TestRestrictedAuditAdmin(t *testing.T) {
 	conn := server.CreateMockConn(t, srv)
 	defer conn.Close()
 	tk := testkit.NewTestKit(t, store)
+
+	fileName := "tidb-audit-restricted-admin"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
 
 	tk.MustExec("CREATE USER testuser")
 	tk2 := testkit.NewTestKit(t, store)
@@ -166,7 +183,7 @@ func TestRestrictedAuditAdmin(t *testing.T) {
 	tk2.MustExec(`set global tidb_audit_enabled = 0`)
 	tk2.MustQuery(`select * from mysql.audit_log_filters`).Check(testkit.Rows(`all_query {"filter":[{"class":["QUERY"]}]}`))
 
-	_, err = deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	_, err = deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 }
 
@@ -178,13 +195,16 @@ func TestEventClass(t *testing.T) {
 	conn := server.CreateMockConn(t, srv)
 	defer conn.Close()
 
+	fileName := "tidb-audit-event-class"
+	logName := fmt.Sprintf("%s.log", fileName)
 	defer func() {
-		_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+		_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 		require.NoError(t, err)
 	}()
-	logPath := filepath.Join(workDir, DefAuditLogName)
-	_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	logPath := filepath.Join(workDir, logName)
+	_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
+	require.NoError(t, conn.HandleQuery(context.Background(), fmt.Sprintf("SET global tidb_audit_log = '%s'", logName)))
 	require.NoError(t, conn.HandleQuery(context.Background(), "SET global tidb_audit_enabled = 1"))
 	require.NoError(t, conn.HandleQuery(context.Background(), "SELECT audit_log_create_filter('all', '{}')"))
 	require.NoError(t, conn.HandleQuery(context.Background(), "SELECT audit_log_create_rule('%@%', 'all')"))
@@ -238,7 +258,8 @@ func lastLineContainsMessage(logpath, msg string) (ok bool, str string, err erro
 }
 
 func TestServerlessDisabled(t *testing.T) {
-	conf := config.AuditLog{Enable: false, Path: "tidb-audit.log"}
+	fileName := "audit-serverless-disabled"
+	conf := config.AuditLog{Enable: false, Path: fmt.Sprintf("%s.log", fileName)}
 
 	registerForServerlessTest(&conf)
 	store := testkit.CreateMockStore(t)
@@ -248,11 +269,11 @@ func TestServerlessDisabled(t *testing.T) {
 	defer conn.Close()
 
 	defer func() {
-		_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+		_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 		require.NoError(t, err)
 	}()
 	logPath := filepath.Join(workDir, conf.Path)
-	_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 
 	sqls := []string{
@@ -271,9 +292,10 @@ func TestServerlessDisabled(t *testing.T) {
 }
 
 func TestServerlessEnabled(t *testing.T) {
+	fileName := "tidb-audit-serverless-enabled"
 	conf := config.AuditLog{
 		Enable:      true,
-		Path:        "tidb-audit.log",
+		Path:        fmt.Sprintf("%s.log", fileName),
 		Format:      LogFormatText,
 		MaxFilesize: 10,
 		MaxLifetime: 60 * 60,
@@ -287,11 +309,11 @@ func TestServerlessEnabled(t *testing.T) {
 	defer conn.Close()
 
 	defer func() {
-		_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+		_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 		require.NoError(t, err)
 	}()
 	logPath := filepath.Join(workDir, conf.Path)
-	_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 
 	testcases := []struct {

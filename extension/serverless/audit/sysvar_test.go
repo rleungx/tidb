@@ -89,7 +89,8 @@ func containsMessage(logpath, msg string) (ok bool, str string, err error) {
 }
 
 func TestAuditEnabled(t *testing.T) {
-	_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	fileName := "tidb-audit-enabled"
+	_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 
 	register4Test()
@@ -102,15 +103,18 @@ func TestAuditEnabled(t *testing.T) {
 	err = tk.Session().Auth(&auth.UserIdentity{Username: "root", Hostname: "%"}, nil, nil, nil)
 	require.NoError(t, err)
 
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
+
 	tk.MustQuery("SELECT @@global.tidb_audit_enabled").Check(testkit.Rows("0"))
 	require.False(t, globalLogManager.Enabled())
 	require.NoError(t, conn.HandleQuery(context.Background(), "SET global tidb_audit_enabled = 1"))
 	tk.MustQuery("SELECT @@global.tidb_audit_enabled").Check(testkit.Rows("1"))
 	require.True(t, globalLogManager.Enabled())
-	require.Equal(t, filepath.Join(workDir, DefAuditLogName), globalLogManager.getLogPath())
+	require.Equal(t, filepath.Join(workDir, logName), globalLogManager.getLogPath())
 	time.Sleep(time.Second)
 
-	files, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	files, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 	require.True(t, len(files) > 0, files)
 }
@@ -121,15 +125,16 @@ func TestAuditLogDefault(t *testing.T) {
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
 
-	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows(DefAuditLogName))
-	require.Equal(t, DefAuditLogName, globalLogManager.GetLogConfigPath())
-	require.Equal(t, filepath.Join(workDir, DefAuditLogName), globalLogManager.getLogPath())
+	logName := DefAuditLogName
+	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows(logName))
+	require.Equal(t, logName, globalLogManager.GetLogConfigPath())
+	require.Equal(t, filepath.Join(workDir, logName), globalLogManager.getLogPath())
 
 	// Set empty log name
 	tk.MustExec("SET global tidb_audit_log = ''")
 	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows(""))
 	require.Equal(t, "", globalLogManager.GetLogConfigPath())
-	require.Equal(t, filepath.Join(workDir, DefAuditLogName), globalLogManager.getLogPath())
+	require.Equal(t, filepath.Join(workDir, logName), globalLogManager.getLogPath())
 
 	// Set custom log name
 	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", "custom-tidb-audit.log"))
@@ -168,12 +173,13 @@ func TestAuditLogDefaultInstanceLog(t *testing.T) {
 	}()
 	register4Test()
 
+	logName := DefAuditLogName
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
-	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", DefAuditLogName))
-	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows(DefAuditLogName))
-	require.Equal(t, DefAuditLogName, globalLogManager.GetLogConfigPath())
-	require.Equal(t, filepath.Join(tempDir, DefAuditLogName), globalLogManager.getLogPath())
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
+	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows(logName))
+	require.Equal(t, logName, globalLogManager.GetLogConfigPath())
+	require.Equal(t, filepath.Join(tempDir, logName), globalLogManager.getLogPath())
 
 	tk.MustExec("SET global tidb_audit_log = 'tidb-audit-%e.log'")
 	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows("tidb-audit-%e.log"))
@@ -192,27 +198,31 @@ func TestAuditLogFormat(t *testing.T) {
 	err := tk.Session().Auth(&auth.UserIdentity{Username: "root", Hostname: "%"}, nil, nil, nil)
 	require.NoError(t, err)
 
-	_, err = deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	fileName := "tidb-audit-format"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
+
+	_, err = deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
-	_, err = deleteAllAuditLogs(workDir, "tidb-audit", ".json")
+	_, err = deleteAllAuditLogs(workDir, fileName, ".json")
 	require.NoError(t, err)
 
 	tk.MustQuery("SELECT @@global.tidb_audit_log_format").Check(testkit.Rows("TEXT"))
 	require.NoError(t, conn.HandleQuery(context.Background(), "SET global tidb_audit_enabled = 1"))
-	require.Equal(t, DefAuditLogName, globalLogManager.GetLogConfigPath())
-	require.Equal(t, filepath.Join(workDir, DefAuditLogName), globalLogManager.getLogPath())
+	require.Equal(t, logName, globalLogManager.GetLogConfigPath())
+	require.Equal(t, filepath.Join(workDir, logName), globalLogManager.getLogPath())
 	require.Equal(t, "TEXT", globalLogManager.GetLogFormat())
 
 	require.NoError(t, conn.HandleQuery(context.Background(), "SET global tidb_audit_log_format = 'JSON'"))
 	tk.MustQuery("SELECT @@global.tidb_audit_log_format").Check(testkit.Rows("JSON"))
-	require.Equal(t, DefAuditLogName, globalLogManager.GetLogConfigPath())
-	require.Equal(t, filepath.Join(workDir, DefAuditLogName+".json"), globalLogManager.getLogPath())
+	require.Equal(t, logName, globalLogManager.GetLogConfigPath())
+	require.Equal(t, filepath.Join(workDir, logName+".json"), globalLogManager.getLogPath())
 	require.Equal(t, "JSON", globalLogManager.GetLogFormat())
 
-	files, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	files, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(files), files)
-	files, err = deleteAllAuditLogs(workDir, "tidb-audit", ".json")
+	files, err = deleteAllAuditLogs(workDir, fileName, ".json")
 	require.NoError(t, err)
 	require.Equal(t, 1, len(files), files)
 }
@@ -226,6 +236,10 @@ func TestAuditLogMaxSize(t *testing.T) {
 	defer conn.Close()
 	tk := testkit.NewTestKit(t, store)
 
+	fileName := "tidb-audit-max-size"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
+
 	// test setting
 	tk.MustQuery("SELECT @@global.tidb_audit_log_max_filesize").Check(testkit.Rows("100"))
 	require.Equal(t, DefAuditLogFileMaxSize, globalLogManager.GetFileMaxSize())
@@ -238,12 +252,12 @@ func TestAuditLogMaxSize(t *testing.T) {
 
 	// test rotation
 	tk.MustExec("SET global tidb_audit_log_max_filesize = 1")
-	_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 	for i := 0; i <= 10_240; i++ {
 		require.NoError(t, conn.HandleQuery(context.Background(), "set global tidb_audit_enabled = 1"))
 	}
-	files, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	files, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 	require.Greater(t, len(files), 1, files)
 }
@@ -255,14 +269,18 @@ func TestAuditLogMaxLifetime(t *testing.T) {
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
 
-	_, err := deleteAllAuditLogs(tempDir, "tidb-audit", ".log")
+	fileName := "tidb-audit-max-lifetime"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
+
+	_, err := deleteAllAuditLogs(tempDir, fileName, ".log")
 	require.NoError(t, err)
 
 	tk.MustQuery("SELECT @@global.tidb_audit_enabled").Check(testkit.Rows("0"))
 	tk.MustQuery("SELECT @@global.tidb_audit_log_max_lifetime").Check(testkit.Rows("86400"))
 
-	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", filepath.Join(tempDir, DefAuditLogName)))
-	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows(filepath.Join(tempDir, DefAuditLogName)))
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", filepath.Join(tempDir, logName)))
+	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows(filepath.Join(tempDir, logName)))
 
 	tk.MustExec("SET global tidb_audit_enabled = 1")
 	tk.MustQuery("SELECT @@global.tidb_audit_enabled").Check(testkit.Rows("1"))
@@ -271,7 +289,7 @@ func TestAuditLogMaxLifetime(t *testing.T) {
 	require.Equal(t, int64(3), globalLogManager.GetFileMaxLifetime())
 	// Generate 3 log files
 	time.Sleep(10 * time.Second)
-	files, err := getAllAuditLogs(tempDir, "tidb-audit", ".log")
+	files, err := getAllAuditLogs(tempDir, fileName, ".log")
 	require.NoError(t, err)
 	require.Equal(t, 3, len(files), files)
 
@@ -281,7 +299,7 @@ func TestAuditLogMaxLifetime(t *testing.T) {
 	// Not generate log file anymore
 	time.Sleep(7 * time.Second)
 
-	files, err = deleteAllAuditLogs(tempDir, "tidb-audit", ".log")
+	files, err = deleteAllAuditLogs(tempDir, fileName, ".log")
 	require.NoError(t, err)
 	require.Equal(t, 3, len(files), files)
 }
@@ -293,14 +311,18 @@ func TestAuditLogReservedBackups(t *testing.T) {
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
 
+	fileName := "tidb-audit-reserved-backups"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
+
 	tk.MustQuery("SELECT @@global.tidb_audit_log_reserved_backups").Check(testkit.Rows("10"))
 
 	tk.MustExec("SET global tidb_audit_enabled = 1")
 	tk.MustQuery("SELECT @@global.tidb_audit_enabled").Check(testkit.Rows("1"))
-	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", filepath.Join(tempDir, DefAuditLogName)))
-	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows(filepath.Join(tempDir, DefAuditLogName)))
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", filepath.Join(tempDir, logName)))
+	tk.MustQuery("SELECT @@global.tidb_audit_log").Check(testkit.Rows(filepath.Join(tempDir, logName)))
 
-	_, err := deleteAllAuditLogs(tempDir, "tidb-audit", ".log")
+	_, err := deleteAllAuditLogs(tempDir, fileName, ".log")
 	require.NoError(t, err)
 
 	// Generate 5 log files, only two files are reserved
@@ -312,7 +334,7 @@ func TestAuditLogReservedBackups(t *testing.T) {
 	time.Sleep(16 * time.Second)
 	tk.MustExec("SET global tidb_audit_log_max_lifetime = 0")
 	tk.MustQuery("SELECT @@global.tidb_audit_log_max_lifetime").Check(testkit.Rows("0"))
-	files, err := deleteAllAuditLogs(tempDir, "tidb-audit-2", ".log")
+	files, err := deleteAllAuditLogs(tempDir, fmt.Sprintf("%s-2", fileName), ".log")
 	require.NoError(t, err)
 	require.Equal(t, 2, len(files), files)
 
@@ -325,7 +347,7 @@ func TestAuditLogReservedBackups(t *testing.T) {
 	time.Sleep(16 * time.Second)
 	tk.MustExec("SET global tidb_audit_log_max_lifetime = 0")
 	tk.MustQuery("SELECT @@global.tidb_audit_log_max_lifetime").Check(testkit.Rows("0"))
-	files, err = deleteAllAuditLogs(tempDir, "tidb-audit-", ".log")
+	files, err = deleteAllAuditLogs(tempDir, fmt.Sprintf("%s-", fileName), ".log")
 	require.NoError(t, err)
 	require.Equal(t, 5, len(files), files)
 }
@@ -383,9 +405,12 @@ func TestAuditLogRedact(t *testing.T) {
 	err := tk.Session().Auth(&auth.UserIdentity{Username: "root", Hostname: "%"}, nil, nil, nil)
 	require.NoError(t, err)
 	tk.MustExec("SET global tidb_audit_enabled = 1")
-	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", filepath.Join(tempDir, DefAuditLogName)))
 
-	_, err = deleteAllAuditLogs(tempDir, "tidb-audit", ".log")
+	fileName := "tidb-audit-redact"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", filepath.Join(tempDir, logName)))
+
+	_, err = deleteAllAuditLogs(tempDir, fileName, ".log")
 	require.NoError(t, err)
 
 	tk.MustExec("use test")
@@ -415,7 +440,7 @@ func TestAuditLogRedact(t *testing.T) {
 		tk.MustExec("SET global tidb_audit_log_redacted = 1")
 		tk.MustQuery("select @@global.tidb_audit_log_redacted").Check(testkit.Rows("1"))
 		require.NoError(t, conn.HandleQuery(context.Background(), testcase.sql))
-		ok, log, err := containsMessage(filepath.Join(tempDir, DefAuditLogName), testcase.redactedSQL)
+		ok, log, err := containsMessage(filepath.Join(tempDir, logName), testcase.redactedSQL)
 		require.NoError(t, err)
 		require.True(t, ok, log)
 
@@ -423,7 +448,7 @@ func TestAuditLogRedact(t *testing.T) {
 		tk.MustExec("SET global tidb_audit_log_redacted = 0")
 		tk.MustQuery("select @@global.tidb_audit_log_redacted").Check(testkit.Rows("0"))
 		require.NoError(t, conn.HandleQuery(context.Background(), testcase.sql))
-		ok, log, err = containsMessage(filepath.Join(tempDir, DefAuditLogName), testcase.sql)
+		ok, log, err = containsMessage(filepath.Join(tempDir, logName), testcase.sql)
 		require.NoError(t, err)
 		require.True(t, ok, log)
 	}
@@ -432,16 +457,16 @@ func TestAuditLogRedact(t *testing.T) {
 	tk.MustExec("SET global tidb_audit_log_redacted = 1")
 	require.True(t, globalLogManager.RedactLog())
 	require.NoError(t, conn.HandleQuery(context.Background(), "create user if not exists testuser identified by '1234'"))
-	ok, log, err := containsMessage(filepath.Join(tempDir, DefAuditLogName), "create user if not exists `testuser` identified by ?")
+	ok, log, err := containsMessage(filepath.Join(tempDir, logName), "create user if not exists `testuser` identified by ?")
 	require.NoError(t, err)
 	require.True(t, ok, log)
 	tk.MustExec("SET global tidb_audit_log_redacted = 0")
 	require.False(t, globalLogManager.RedactLog())
 	require.NoError(t, conn.HandleQuery(context.Background(), "create user if not exists testuser identified by '1234'"))
-	ok, log, err = containsMessage(filepath.Join(tempDir, DefAuditLogName), "create user if not exists `testuser` identified by ?")
+	ok, log, err = containsMessage(filepath.Join(tempDir, logName), "create user if not exists `testuser` identified by ?")
 	require.NoError(t, err)
 	require.True(t, ok, log)
 
-	_, err = deleteAllAuditLogs(tempDir, "tidb-audit", ".log")
+	_, err = deleteAllAuditLogs(tempDir, fileName, ".log")
 	require.NoError(t, err)
 }

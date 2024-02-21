@@ -35,6 +35,11 @@ func TestFilterSpec(t *testing.T) {
 	register4Test()
 	store := testkit.CreateMockStore(t)
 	tk := testkit.NewTestKit(t, store)
+
+	fileName := "tidb-audit-filter-spec"
+	logName := fmt.Sprintf("%s.log", fileName)
+	tk.MustExec(fmt.Sprintf("SET global tidb_audit_log = '%s'", logName))
+
 	cases := []struct {
 		spec        filterSpec
 		invalid     bool
@@ -480,7 +485,7 @@ func TestFilterSpec(t *testing.T) {
 		tk.MustExec("SELECT audit_log_remove_rule('%@%','test')")
 		tk.MustExec("SELECT audit_log_remove_filter('test')")
 	}
-	_, err := deleteAllAuditLogs(workDir, "tidb-audit", ".log")
+	_, err := deleteAllAuditLogs(workDir, fileName, ".log")
 	require.NoError(t, err)
 }
 
