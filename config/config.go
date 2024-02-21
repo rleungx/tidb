@@ -322,6 +322,8 @@ type Config struct {
 
 	TiDBWorker TiDBWorker `toml:"tidb-worker" json:"tidb-worker"`
 
+	AuditLog AuditLog `toml:"audit-log" json:"audit-log"`
+
 	// The following items are deprecated. We need to keep them here temporarily
 	// to support the upgrade process. They can be removed in future.
 
@@ -1188,6 +1190,7 @@ var defaultConf = Config{
 	},
 	RewriteCollations: make(map[string]map[string]string),
 	TiDBWorker:        defaultTiDBWorker(),
+	AuditLog:          defaultAuditLog(),
 	ExportID:          "",
 }
 

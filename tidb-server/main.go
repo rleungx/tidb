@@ -42,6 +42,7 @@ import (
 	"github.com/pingcap/tidb/executor"
 	"github.com/pingcap/tidb/extension"
 	_ "github.com/pingcap/tidb/extension/_import"
+	"github.com/pingcap/tidb/extension/serverless/audit"
 	"github.com/pingcap/tidb/keyspace"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/metrics"
@@ -239,6 +240,10 @@ func main() {
 			config.GetGlobalConfig().ActivationTimeout)
 		config.UpdateGlobal(func(c *config.Config) {
 			c.KeyspaceName = activateRequest.KeyspaceName
+			if activateRequest.AuditLog != nil {
+				c.AuditLog.Enable = activateRequest.AuditLog.Enable
+				c.AuditLog.EncryptKey = activateRequest.AuditLog.EncryptKey
+			}
 			c.ExportID = activateRequest.ExportID
 		})
 		// replace mainErrHandler to make sure standby handler can exit gracefully.
@@ -299,6 +304,8 @@ func main() {
 		mainErrHandler(err)
 	}
 	err = setupLog(keyspaceID)
+	mainErrHandler(err)
+	err = setupAuditLog()
 	mainErrHandler(err)
 	_, err = setupExtensions()
 	mainErrHandler(err)
@@ -1101,6 +1108,11 @@ func setupLog(keyspaceID uint32) error {
 	// trigger internal http(s) client init.
 	util.InternalHTTPClient()
 	return nil
+}
+
+func setupAuditLog() error {
+	auditLogCfg := config.GetGlobalConfig().AuditLog
+	return audit.RegisterForServerless(&auditLogCfg)
 }
 
 func setupExtensions() (*extension.Extensions, error) {

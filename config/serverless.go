@@ -147,3 +147,40 @@ func (w *TiDBWorker) Valid(c *Config) error {
 	}
 	return nil
 }
+
+const (
+	// LogFormatText is stardard log format surrounded with []
+	LogFormatText = "TEXT"
+	// LogFormatJSON is json format
+	LogFormatJSON = "JSON"
+)
+
+// AuditLog is the config for serverless audit log
+type AuditLog struct {
+	// Enable indicates whether audit log will be recorded
+	Enable bool `toml:"enable" json:"enable"`
+	// Path is the audit log output path
+	Path string `toml:"path" json:"path"`
+	// Format is the output format of audit log, both text and json are supported
+	Format string `toml:"format" json:"format"`
+	// MaxFilesize is the maximum file size before the log file be rotated, unit is MB
+	MaxFilesize int64 `toml:"max-filesize" json:"max-filesize"`
+	// MaxLifetime is the maximum time before the log file be rotated, unit is second
+	MaxLifetime int64 `toml:"max-lifetime" json:"max-lifetime"`
+	// Redacted indicates whether audit log redaction is enabled. If it set to true, user data will be replaced with `?`
+	Redacted bool `toml:"redacted" json:"redacted"`
+	// EncryptKey is used to encrypt sensitive informations in audit log. This key should be 32 bytes, we use AES-256 for encryption
+	EncryptKey string `toml:"encrypt-key" json:"encrypt-key"`
+}
+
+func defaultAuditLog() AuditLog {
+	return AuditLog{
+		Enable:      false,
+		Path:        "tidb-audit.log",
+		Format:      LogFormatText,
+		MaxFilesize: 10,
+		MaxLifetime: 24 * 60 * 60,
+		Redacted:    true,
+		EncryptKey:  "",
+	}
+}

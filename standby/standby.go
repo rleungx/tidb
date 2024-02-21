@@ -45,8 +45,22 @@ const (
 
 // ActivateRequest is the request body for activating the tidb server.
 type ActivateRequest struct {
-	KeyspaceName string `json:"keyspace_name"`
-	ExportID     string `json:"export_id"`
+	KeyspaceName string          `json:"keyspace_name"`
+	AuditLog     *AuditLogConfig `json:"audit_log,omitempty"`
+	ExportID     string          `json:"export_id"`
+}
+
+func (r *ActivateRequest) auditLogEnabled() bool {
+	if r.AuditLog == nil {
+		return false
+	}
+	return r.AuditLog.Enable
+}
+
+// AuditLogConfig is the configuration about audit log when activating the tidb server.
+type AuditLogConfig struct {
+	Enable     bool   `json:"enable"`
+	EncryptKey string `json:"encrypt_key"`
 }
 
 type sessionManager interface {
@@ -160,6 +174,14 @@ func Handler(sm sessionManager) *http.ServeMux {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		if req.AuditLog != nil && req.AuditLog.Enable {
+			if len(req.AuditLog.EncryptKey) != 32 {
+				logutil.BgLogger().Error("bad audit log encrypt key", zap.String("encrypt_key", req.AuditLog.EncryptKey))
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			logutil.BgLogger().Info("activate with audit log enabled", zap.String("keyspaceName", req.KeyspaceName))
+		}
 
 		mu.Lock()
 		if state == standbyState {
@@ -170,6 +192,11 @@ func Handler(sm sessionManager) *http.ServeMux {
 			mu.Unlock()
 			w.WriteHeader(http.StatusPreconditionFailed)
 			w.Write([]byte("server is not in standby mode"))
+			return
+		} else if activateRequest.auditLogEnabled() != req.auditLogEnabled() {
+			mu.Unlock()
+			w.WriteHeader(http.StatusPreconditionFailed)
+			w.Write([]byte("server audit log status has changed"))
 			return
 		}
 		// if client tries to activate with same keyspace name, wait for ready signal and return 200.

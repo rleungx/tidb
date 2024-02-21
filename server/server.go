@@ -37,6 +37,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http" //nolint:goimports
+
 	// For pprof
 	_ "net/http/pprof" // #nosec G108
 	"os"
@@ -782,6 +783,7 @@ func (cc *clientConn) connectInfo() *variable.ConnectionInfo {
 	}
 	connInfo := &variable.ConnectionInfo{
 		ConnectionID:      cc.connectionID,
+		GwConnID:          cc.gwConnID,
 		ConnectionType:    connType,
 		Host:              cc.peerHost,
 		ClientIP:          cc.peerHost,
