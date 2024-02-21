@@ -1108,6 +1108,9 @@ func scalarExprSupportedByTiKV(sf *ScalarFunction) bool {
 		ast.JSONInsert /*ast.JSONReplace,*/, ast.JSONRemove, ast.JSONLength,
 		ast.JSONUnquote, ast.JSONContains, ast.JSONValid,
 
+		// vector functions.
+		ast.VecDims, ast.VecL1Distance, ast.VecL2Distance, ast.VecNegativeInnerProduct, ast.VecCosineDistance, ast.VecL2Norm, ast.VecAsText,
+
 		// date functions.
 		ast.Date, ast.Week /* ast.YearWeek, ast.ToSeconds */, ast.DateDiff,
 		/* ast.TimeDiff, ast.AddTime,  ast.SubTime, */
@@ -1311,6 +1314,8 @@ func scalarExprSupportedByFlash(function *ScalarFunction) bool {
 		return true
 	case ast.IsIPv4, ast.IsIPv6:
 		return true
+	case ast.VecDims, ast.VecL1Distance, ast.VecL2Distance, ast.VecNegativeInnerProduct, ast.VecCosineDistance, ast.VecL2Norm, ast.VecAsText:
+		return true
 	}
 	return false
 }
@@ -1442,10 +1447,6 @@ func canScalarFuncPushDown(scalarFunc *ScalarFunction, pc PbConverter, storeType
 }
 
 func canExprPushDown(expr Expression, pc PbConverter, storeType kv.StoreType, canEnumPush bool) bool {
-	if expr.GetType().GetType() == mysql.TypeTiDBVectorFloat32 {
-		// For both TiKV and TiFlash, currently Vector cannot be pushed.
-		return false
-	}
 	if storeType == kv.TiFlash {
 		switch expr.GetType().GetType() {
 		case mysql.TypeEnum, mysql.TypeBit, mysql.TypeSet, mysql.TypeGeometry, mysql.TypeUnspecified:

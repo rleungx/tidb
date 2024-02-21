@@ -47,6 +47,7 @@ var (
 	_ builtinFunc = &builtinCoalesceStringSig{}
 	_ builtinFunc = &builtinCoalesceTimeSig{}
 	_ builtinFunc = &builtinCoalesceDurationSig{}
+	_ builtinFunc = &builtinCoalesceVectorFloat32Sig{}
 
 	_ builtinFunc = &builtinGreatestIntSig{}
 	_ builtinFunc = &builtinGreatestRealSig{}
@@ -55,6 +56,7 @@ var (
 	_ builtinFunc = &builtinGreatestDurationSig{}
 	_ builtinFunc = &builtinGreatestTimeSig{}
 	_ builtinFunc = &builtinGreatestCmpStringAsTimeSig{}
+	_ builtinFunc = &builtinGreatestVectorFloat32Sig{}
 	_ builtinFunc = &builtinLeastIntSig{}
 	_ builtinFunc = &builtinLeastRealSig{}
 	_ builtinFunc = &builtinLeastDecimalSig{}
@@ -62,6 +64,8 @@ var (
 	_ builtinFunc = &builtinLeastTimeSig{}
 	_ builtinFunc = &builtinLeastDurationSig{}
 	_ builtinFunc = &builtinLeastCmpStringAsTimeSig{}
+	_ builtinFunc = &builtinLeastVectorFloat32Sig{}
+
 	_ builtinFunc = &builtinIntervalIntSig{}
 	_ builtinFunc = &builtinIntervalRealSig{}
 
@@ -220,6 +224,9 @@ func (c *coalesceFunctionClass) getFunction(ctx sessionctx.Context, args []Expre
 	case types.ETJson:
 		sig = &builtinCoalesceJSONSig{bf}
 		sig.setPbCode(tipb.ScalarFuncSig_CoalesceJson)
+	case types.ETVectorFloat32:
+		sig = &builtinCoalesceVectorFloat32Sig{bf}
+		// sig.setPbCode(tipb.ScalarFuncSig_CoalesceVectorFloat32)
 	default:
 		return nil, errors.Errorf("%s is not supported for COALESCE()", retEvalTp)
 	}
@@ -377,6 +384,28 @@ func (b *builtinCoalesceJSONSig) Clone() builtinFunc {
 func (b *builtinCoalesceJSONSig) evalJSON(row chunk.Row) (res types.BinaryJSON, isNull bool, err error) {
 	for _, a := range b.getArgs() {
 		res, isNull, err = a.EvalJSON(b.ctx, row)
+		if err != nil || !isNull {
+			break
+		}
+	}
+	return res, isNull, err
+}
+
+// builtinCoalesceVectorFloat32Sig is builtin function coalesce signature which return type vector float32.
+// See http://dev.mysql.com/doc/refman/5.7/en/comparison-operators.html#function_coalesce
+type builtinCoalesceVectorFloat32Sig struct {
+	baseBuiltinFunc
+}
+
+func (b *builtinCoalesceVectorFloat32Sig) Clone() builtinFunc {
+	newSig := &builtinCoalesceVectorFloat32Sig{}
+	newSig.cloneFrom(&b.baseBuiltinFunc)
+	return newSig
+}
+
+func (b *builtinCoalesceVectorFloat32Sig) evalVectorFloat32(row chunk.Row) (res types.VectorFloat32, isNull bool, err error) {
+	for _, a := range b.getArgs() {
+		res, isNull, err = a.EvalVectorFloat32(b.ctx, row)
 		if err != nil || !isNull {
 			break
 		}
@@ -552,6 +581,9 @@ func (c *greatestFunctionClass) getFunction(ctx sessionctx.Context, args []Expre
 			sig = &builtinGreatestTimeSig{bf, false}
 			sig.setPbCode(tipb.ScalarFuncSig_GreatestTime)
 		}
+	case types.ETVectorFloat32:
+		sig = &builtinGreatestVectorFloat32Sig{bf}
+		// sig.setPbCode(tipb.ScalarFuncSig_GreatestVectorFloat32)
 	default:
 		return nil, errors.Errorf("unsupported type %s during evaluation", argTp)
 	}
@@ -807,6 +839,29 @@ func (b *builtinGreatestDurationSig) evalDuration(row chunk.Row) (res types.Dura
 	return res, false, nil
 }
 
+type builtinGreatestVectorFloat32Sig struct {
+	baseBuiltinFunc
+}
+
+func (b *builtinGreatestVectorFloat32Sig) Clone() builtinFunc {
+	newSig := &builtinGreatestVectorFloat32Sig{}
+	newSig.cloneFrom(&b.baseBuiltinFunc)
+	return newSig
+}
+
+func (b *builtinGreatestVectorFloat32Sig) evalVectorFloat32(row chunk.Row) (res types.VectorFloat32, isNull bool, err error) {
+	for i := 0; i < len(b.args); i++ {
+		v, isNull, err := b.args[i].EvalVectorFloat32(b.ctx, row)
+		if isNull || err != nil {
+			return types.VectorFloat32{}, true, err
+		}
+		if i == 0 || v.Compare(res) > 0 {
+			res = v
+		}
+	}
+	return res, false, nil
+}
+
 type leastFunctionClass struct {
 	baseFunctionClass
 }
@@ -867,6 +922,9 @@ func (c *leastFunctionClass) getFunction(ctx sessionctx.Context, args []Expressi
 			sig = &builtinLeastTimeSig{bf, false}
 			sig.setPbCode(tipb.ScalarFuncSig_LeastTime)
 		}
+	case types.ETVectorFloat32:
+		sig = &builtinLeastVectorFloat32Sig{bf}
+		// sig.setPbCode(tipb.ScalarFuncSig_LeastVectorFloat32)
 	default:
 		return nil, errors.Errorf("unsupported type %s during evaluation", argTp)
 	}
@@ -1085,6 +1143,29 @@ func (b *builtinLeastDurationSig) evalDuration(row chunk.Row) (res types.Duratio
 		v, isNull, err := b.args[i].EvalDuration(b.ctx, row)
 		if isNull || err != nil {
 			return types.Duration{}, true, err
+		}
+		if i == 0 || v.Compare(res) < 0 {
+			res = v
+		}
+	}
+	return res, false, nil
+}
+
+type builtinLeastVectorFloat32Sig struct {
+	baseBuiltinFunc
+}
+
+func (b *builtinLeastVectorFloat32Sig) Clone() builtinFunc {
+	newSig := &builtinLeastVectorFloat32Sig{}
+	newSig.cloneFrom(&b.baseBuiltinFunc)
+	return newSig
+}
+
+func (b *builtinLeastVectorFloat32Sig) evalVectorFloat32(row chunk.Row) (res types.VectorFloat32, isNull bool, err error) {
+	for i := 0; i < len(b.args); i++ {
+		v, isNull, err := b.args[i].EvalVectorFloat32(b.ctx, row)
+		if isNull || err != nil {
+			return types.VectorFloat32{}, true, err
 		}
 		if i == 0 || v.Compare(res) < 0 {
 			res = v
