@@ -1044,7 +1044,7 @@ var MySQLErrName = map[uint16]*mysql.ErrMessage{
 	ErrLoadParquetFromLocal:             mysql.Message("Do not support loading parquet files from local. Please try to load the parquet files from the cloud storage", nil),
 	ErrLoadDataEmptyPath:                mysql.Message("The value of INFILE must not be empty when LOAD DATA from LOCAL", nil),
 	ErrLoadDataUnsupportedFormat:        mysql.Message("The FORMAT '%s' is not supported", nil),
-	ErrLoadDataInvalidURI:               mysql.Message("The URI of INFILE is invalid. Reason: %s. Please provide a valid URI, such as 's3://import/test.csv?access_key_id={your_access_key_id ID}&secret_access_key={your_secret_access_key}&session_token={your_session_token}'", nil),
+	ErrLoadDataInvalidURI:               mysql.Message("The URI of INFILE is invalid. Reason: %s. Please provide a valid URI, such as 's3://import/test.csv?access-key={your_access_key_id ID}&secret-access-key={your_secret_access_key}&session-token={your_session_token}'", nil),
 	ErrLoadDataCantAccess:               mysql.Message("Access to the source file has been denied. Reason: %s. Please check the URI, access key and secret access key are correct", nil),
 	ErrLoadDataCantRead:                 mysql.Message("Failed to read source files. Reason: %s. %s", nil),
 	ErrLoadDataWrongFormatConfig:        mysql.Message("", nil),
@@ -1104,6 +1104,7 @@ var MySQLErrName = map[uint16]*mysql.ErrMessage{
 	ErrPartitionColumnStatsMissing: mysql.Message("Build global-level stats failed due to missing partition-level column stats: %s, please run analyze table to refresh columns of all partitions", nil),
 	ErrDDLSetting:                  mysql.Message("Error happened when %s DDL: %s", nil),
 	ErrIngestFailed:                mysql.Message("Ingest failed: %s", nil),
+	ErrIngestCheckEnvFailed:        mysql.Message("Check ingest environment failed: %s", nil),
 	ErrNotSupportedWithSem:         mysql.Message("Feature '%s' is not supported when security enhanced mode is enabled", nil),
 
 	ErrPlacementPolicyCheck:            mysql.Message("Placement policy didn't meet the constraint, reason: %s", nil),

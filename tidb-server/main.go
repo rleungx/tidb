@@ -305,6 +305,7 @@ func main() {
 	}
 	err = setupLog(keyspaceID)
 	mainErrHandler(err)
+	memory.InitMemoryHook()
 	err = setupAuditLog()
 	mainErrHandler(err)
 	_, err = setupExtensions()

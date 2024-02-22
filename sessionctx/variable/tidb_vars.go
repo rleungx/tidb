@@ -883,6 +883,9 @@ const (
 
 	// TiDBAnalyzeSkipColumnTypes indicates the column types whose statistics would not be collected when executing the ANALYZE command.
 	TiDBAnalyzeSkipColumnTypes = "tidb_analyze_skip_column_types"
+
+	// TiDBOptEnableHashJoin indicates whether to enable hash join.
+	TiDBOptEnableHashJoin = "tidb_opt_enable_hash_join"
 )
 
 // TiDB vars that have only global scope
@@ -1360,6 +1363,7 @@ const (
 	DefTiDBLockUnchangedKeys                          = false
 	DefTiDBEnableRemoteCoprocessor                    = false
 	DefTiDBEnableAsyncIndexCreation                   = false
+	DefTiDBOptEnableHashJoin                          = true
 	DefTiDBEnableVectorType                           = false
 )
 

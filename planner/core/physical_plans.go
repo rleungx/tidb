@@ -808,10 +808,10 @@ type PhysicalTableScan struct {
 	// AccessCondition is used to calculate range.
 	AccessCondition []expression.Expression
 	filterCondition []expression.Expression
-	// lateMaterializationFilterCondition is used to record the filter conditions
+	// LateMaterializationFilterCondition is used to record the filter conditions
 	// that are pushed down to table scan from selection by late materialization.
 	// TODO: remove this field after we support pushing down selection to coprocessor.
-	lateMaterializationFilterCondition []expression.Expression
+	LateMaterializationFilterCondition []expression.Expression
 
 	Table   *model.TableInfo
 	Columns []*model.ColumnInfo
@@ -1890,10 +1890,20 @@ func (p *PhysicalHashAgg) MemoryUsage() (sum int64) {
 
 // NewPhysicalHashAgg creates a new PhysicalHashAgg from a LogicalAggregation.
 func NewPhysicalHashAgg(la *LogicalAggregation, newStats *property.StatsInfo, prop *property.PhysicalProperty) *PhysicalHashAgg {
+	newGbyItems := make([]expression.Expression, len(la.GroupByItems))
+	copy(newGbyItems, la.GroupByItems)
+	newAggFuncs := make([]*aggregation.AggFuncDesc, len(la.AggFuncs))
+	// There's some places that rewrites the aggFunc in-place.
+	// I clone it first.
+	// It needs a well refactor to make sure that the physical optimize should not change the things of logical plan.
+	// It's bad for cascades
+	for i, aggFunc := range la.AggFuncs {
+		newAggFuncs[i] = aggFunc.Clone()
+	}
 	agg := basePhysicalAgg{
-		GroupByItems: la.GroupByItems,
-		AggFuncs:     la.AggFuncs,
-	}.initForHash(la.ctx, newStats, la.blockOffset, prop)
+		GroupByItems: newGbyItems,
+		AggFuncs:     newAggFuncs,
+	}.initForHash(la.SCtx(), newStats, la.SelectBlockOffset(), prop)
 	return agg
 }
 

@@ -16,9 +16,19 @@ error = '''
 backup range invalid
 '''
 
+["BR:Backup:ErrBackupKeyIsLocked"]
+error = '''
+backup key is locked
+'''
+
 ["BR:Backup:ErrBackupNoLeader"]
 error = '''
 backup no leader
+'''
+
+["BR:Backup:ErrBackupRegion"]
+error = '''
+backup region error
 '''
 
 ["BR:Common:ErrEnvNotSpecified"]
@@ -144,6 +154,11 @@ unknown error occur on tikv
 ["BR:KV:ErrNotTiKVStorage"]
 error = '''
 storage is not tikv
+'''
+
+["BR:KV:ErrPossibleInconsistency"]
+error = '''
+the cluster state might be inconsistent
 '''
 
 ["BR:PD:ErrPDBatchScanRegion"]
@@ -404,6 +419,11 @@ ingest tikv failed
 ["Lightning:KV:ErrKVRaftProposalDropped"]
 error = '''
 raft proposal dropped
+'''
+
+["Lightning:KV:ErrNoLeader"]
+error = '''
+write to tikv with no leader returned, region '%d', leader: %d
 '''
 
 ["Lightning:KV:NotLeader"]
@@ -1416,6 +1436,11 @@ error = '''
 Ingest failed: %s
 '''
 
+["ddl:8256"]
+error = '''
+Check ingest environment failed: %s
+'''
+
 ["ddl:8260"]
 error = '''
 Job [%v] can't be paused: %s
@@ -1728,7 +1753,7 @@ The FORMAT '%s' is not supported
 
 ["executor:8158"]
 error = '''
-The URI of INFILE is invalid. Reason: %s. Please provide a valid URI, such as 's3://import/test.csv?access_key_id={your_access_key_id ID}&secret_access_key={your_secret_access_key}&session_token={your_session_token}'
+The URI of INFILE is invalid. Reason: %s. Please provide a valid URI, such as 's3://import/test.csv?access-key={your_access_key_id ID}&secret-access-key={your_secret_access_key}&session-token={your_session_token}'
 '''
 
 ["executor:8159"]

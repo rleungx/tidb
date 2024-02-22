@@ -32,7 +32,6 @@ import (
 	"github.com/pingcap/tidb/bindinfo"
 	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl"
-	"github.com/pingcap/tidb/ddl/syncer"
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/domain/infosync"
 	"github.com/pingcap/tidb/expression"
@@ -1109,9 +1108,6 @@ func upgrade(s Session) {
 		logutil.BgLogger().Fatal("[upgrade] init metadata lock failed", zap.Error(err))
 	}
 
-	if ver >= int64(SupportUpgradeStateVer) {
-		syncUpgradeState(s)
-	}
 	if isNull {
 		upgradeToVer99Before(s)
 	}
@@ -1125,9 +1121,6 @@ func upgrade(s Session) {
 	}
 	if isNull {
 		upgradeToVer99After(s)
-	}
-	if ver >= int64(SupportUpgradeStateVer) {
-		syncNormalRunning(s)
 	}
 
 	variable.DDLForce2Queue.Store(false)
@@ -1155,54 +1148,6 @@ func upgrade(s Session) {
 			zap.Error(err))
 	}
 	logutil.BgLogger().Info("[upgrade] upgrade all succeed", zap.Int64("currentBootstrapVersion", currentBootstrapVersion))
-}
-
-func syncUpgradeState(s Session) {
-	totalInterval := time.Duration(internalSQLTimeout) * time.Second
-	ctx, cancelFunc := context.WithTimeout(context.Background(), totalInterval)
-	defer cancelFunc()
-	dom := domain.GetDomain(s)
-	err := dom.DDL().StateSyncer().UpdateGlobalState(ctx, syncer.NewStateInfo(syncer.StateUpgrading))
-	if err != nil {
-		logutil.BgLogger().Fatal("[upgrading] update global state failed", zap.String("state", syncer.StateUpgrading), zap.Error(err))
-	}
-
-	interval := 200 * time.Millisecond
-	retryTimes := int(totalInterval / interval)
-	for i := 0; i < retryTimes; i++ {
-		op, err := owner.GetOwnerOpValue(ctx, dom.EtcdClient(), ddl.DDLOwnerKey, "upgrade bootstrap")
-		if err == nil && op.String() == owner.OpGetUpgradingState.String() {
-			break
-		}
-		if i == retryTimes-1 {
-			logutil.BgLogger().Fatal("[upgrading] get owner op failed", zap.Stringer("state", op), zap.Error(err))
-		}
-		if i%10 == 0 {
-			logutil.BgLogger().Warn("[upgrading] get owner op failed", zap.Stringer("state", op), zap.Error(err))
-		}
-		time.Sleep(interval)
-	}
-
-	logutil.BgLogger().Info("[upgrading] update global state to upgrading", zap.String("state", syncer.StateUpgrading))
-}
-
-func syncNormalRunning(s Session) {
-	jobErrs, err := ddl.ResumeAllJobsBySystem(s)
-	if err != nil {
-		logutil.BgLogger().Warn("[upgrading] resume all paused jobs failed", zap.Error(err))
-	}
-	for _, e := range jobErrs {
-		logutil.BgLogger().Warn("[upgrading] resume the job failed ", zap.Error(e))
-	}
-
-	ctx, cancelFunc := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancelFunc()
-	dom := domain.GetDomain(s)
-	err = dom.DDL().StateSyncer().UpdateGlobalState(ctx, syncer.NewStateInfo(syncer.StateNormalRunning))
-	if err != nil {
-		logutil.BgLogger().Fatal("[upgrading] update global state to normal failed", zap.Error(err))
-	}
-	logutil.BgLogger().Info("[upgrading] update global state to normal running finished")
 }
 
 // checkOwnerVersion is used to wait the DDL owner to be elected in the cluster and check it is the same version as this TiDB.

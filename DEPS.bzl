@@ -3578,8 +3578,8 @@ def go_deps():
         name = "com_github_pingcap_errors",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/pingcap/errors",
-        sum = "h1:m5ZsBa5o/0CkzZXfXLaThzKuR85SnHHetqBCpzQ30h8=",
-        version = "v0.11.5-0.20221009092201-b66cddb77c32",
+        sum = "h1:yqyP+k0mgRPpXJQDOCrtaG2YZym0ZDD+vt5JzlBUkrw=",
+        version = "v0.11.5-0.20231212100244-799fae176cfb",
     )
     go_repository(
         name = "com_github_pingcap_failpoint",
@@ -3606,8 +3606,8 @@ def go_deps():
         name = "com_github_pingcap_kvproto",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/pingcap/kvproto",
-        sum = "h1:qbLm5cOdCWxZ0mt6SaN2aXI+KFekbPqURd6YkNI+XRI=",
-        version = "v0.0.0-20230904082117-ecdbf1f8c130",
+        sum = "h1:n3FMveYjc2VuETjo6YhmsgkDx0P/yLJTvk96BJdCq6Y=",
+        version = "v0.0.0-20240109063850-932639606bcf",
     )
     go_repository(
         name = "com_github_pingcap_log",
@@ -3706,6 +3706,13 @@ def go_deps():
         importpath = "github.com/power-devops/perfstat",
         sum = "h1:0LFwY6Q3gMACTjAbMZBjXAqTOzOwFaj2Ld6cjeQ7Rig=",
         version = "v0.0.0-20221212215047-62379fc7944b",
+    )
+    go_repository(
+        name = "com_github_prashantv_gostub",
+        build_file_proto_mode = "disable",
+        importpath = "github.com/prashantv/gostub",
+        sum = "h1:BTyx3RfQjRHnUWaGF9oQos79AlQ5k8WNktv7VGvVH4g=",
+        version = "v1.1.0",
     )
     go_repository(
         name = "com_github_prometheus_client_golang",

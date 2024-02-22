@@ -634,7 +634,10 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		var reorgTp model.ReorgType
 		reorgTp, err = pickBackfillType(w.ctx, job, indexInfo.Unique, d)
 		if err != nil {
-			break
+			if !errorIsRetryable(err, job) {
+				job.State = model.JobStateCancelled
+			}
+			return ver, err
 		}
 		if reorgTp.NeedMergeProcess() {
 			// Increase telemetryAddIndexIngestUsage
@@ -676,7 +679,7 @@ func (w *worker) onCreateIndex(d *ddlCtx, t *meta.Meta, job *model.Job, isPK boo
 		job.SchemaState = model.StateWriteReorganization
 	case model.StateWriteReorganization:
 		// reorganization -> public
-		tbl, err := getTable(d.store, schemaID, tblInfo)
+		tbl, err := getTable((*asAutoIDRequirement)(d), schemaID, tblInfo)
 		if err != nil {
 			return ver, errors.Trace(err)
 		}
