@@ -385,6 +385,11 @@ type Config struct {
 	// 2. 123,456: means only display tiflash ru for keyspace id 123 and 456.
 	// 3. "": empty string means tiflash ru will not display for all keyspaces.
 	DisplayTiFlashRU string `toml:"display-tiflash-ru" json:"display-tiflash-ru"`
+	// ForceEnableVectorType controls whether vector type is forcibly enabled.
+	// When set to true, the variable of TIDB_ENABLE_VECTOR_TYPE will be discarded and vector will
+	// be always enabled. This is a temp config. It is only used to overwrite TIDB_ENABLE_VECTOR_TYPE
+	// in the canary pool before a control plane waitlist is implemented.
+	ForceEnableVectorType bool `toml:"force-enable-vector-type" json:"force-enable-vector-type"`
 }
 
 // CSE is the config collection for the cloud storage engine.
@@ -1192,6 +1197,8 @@ var defaultConf = Config{
 	TiDBWorker:        defaultTiDBWorker(),
 	AuditLog:          defaultAuditLog(),
 	ExportID:          "",
+
+	ForceEnableVectorType: false,
 }
 
 var (

@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/domain"
 	"github.com/pingcap/tidb/expression"
 	"github.com/pingcap/tidb/infoschema"
@@ -1425,7 +1426,7 @@ func checkColumn(colDef *ast.ColumnDef) error {
 			return types.ErrTooBigDisplayWidth.GenWithStackByArgs(colDef.Name.Name.O, mysql.MaxBitDisplayWidth)
 		}
 	case mysql.TypeTiDBVectorFloat32:
-		if variable.EnableVectorType.Load() != true {
+		if !variable.EnableVectorType.Load() && !config.GetGlobalConfig().ForceEnableVectorType {
 			return errors.Errorf("vector type is not supported")
 		}
 		if tp.GetFlen() != types.UnspecifiedLength {
