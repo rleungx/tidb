@@ -4,10 +4,6 @@ name: Bump TiDB Version to aws-shared-provider
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: "Bump the TiDB version from this branch"
-        required: true
-        default: "release-7.1-keyspace"
       version:
         description: "Version to bump, like commit sha"
         required: true
@@ -24,20 +20,14 @@ on:
           - prod
 
 jobs:
-  check-tidb-version:
-    name: check tidb version
+  bump-tidb-version:
+    name: bump tidb version
     runs-on: self-hosted
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Check commit exists
-        run: |
-          exists=$(git branch -r --contains ${{ github.event.inputs.version }} | grep -v "origin/${{ github.event.inputs.branch }}")
-          if [ -z "$exists" ]; then
-            echo "commit ${{ github.event.inputs.version }} does not exist"
-            exit 1
-          fi
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.version }}
 
       - name: Invoke workflow in aws-shared-provider repo with inputs
         uses: benc-uk/workflow-dispatch@v1
