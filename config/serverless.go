@@ -167,6 +167,10 @@ type AuditLog struct {
 	MaxFilesize int64 `toml:"max-filesize" json:"max-filesize"`
 	// MaxLifetime is the maximum time before the log file be rotated, unit is second
 	MaxLifetime int64 `toml:"max-lifetime" json:"max-lifetime"`
+	// ReservedBackups is the number of rotated log files to reserve.
+	ReservedBackups int `toml:"reserved-backups" json:"reserved-backups"`
+	// ReservedDays is the day to reseve rotated log files.
+	ReservedDays int `toml:"reserved-days" json:"reserved-days"`
 	// Redacted indicates whether audit log redaction is enabled. If it set to true, user data will be replaced with `?`
 	Redacted bool `toml:"redacted" json:"redacted"`
 	// EncryptKey is used to encrypt sensitive informations in audit log. This key should be 32 bytes, we use AES-256 for encryption
@@ -175,12 +179,14 @@ type AuditLog struct {
 
 func defaultAuditLog() AuditLog {
 	return AuditLog{
-		Enable:      false,
-		Path:        "tidb-audit.log",
-		Format:      LogFormatText,
-		MaxFilesize: 10,
-		MaxLifetime: 24 * 60 * 60,
-		Redacted:    true,
-		EncryptKey:  "",
+		Enable:          false,
+		Path:            "tidb-audit.log",
+		Format:          LogFormatText,
+		MaxFilesize:     1,
+		MaxLifetime:     24 * 60 * 60,
+		ReservedBackups: 1,
+		ReservedDays:    0,
+		Redacted:        true,
+		EncryptKey:      "",
 	}
 }

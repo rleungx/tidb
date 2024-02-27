@@ -373,7 +373,8 @@ func newConnEventEntry(tp extension.ConnEventTp, info *extension.ConnEventInfo) 
 		fields = append(fields, serverlessFields()...)
 		if tp != extension.ConnDisconnected {
 			// only log current db when connect or change user
-			fields = append(fields, zap.String(LogKeyCurrentDB, info.DB))
+			currentDB, _ := encryptIfKeySet(info.DB, cfg.EncryptKey, cfg.EncryptIv)
+			fields = append(fields, zap.String(LogKeyCurrentDB, currentDB))
 		}
 		return append(
 			fields,
