@@ -100,9 +100,16 @@ type ReverseExpr interface {
 	ReverseEval(sc *stmtctx.StatementContext, res types.Datum, rType types.RoundingType) (val types.Datum, err error)
 }
 
+// Explainable is the interface for expressions to output themselves in EXPLAIN context.
+type Explainable interface {
+	// StringForExplain
+	StringForExplain() string
+}
+
 // Expression represents all scalar expression in SQL.
 type Expression interface {
 	fmt.Stringer
+	Explainable
 	goJSON.Marshaler
 	VecExpr
 	ReverseExpr

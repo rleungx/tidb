@@ -109,9 +109,9 @@ func ExplainExpressionList(exprs []Expression, schema *Schema) string {
 	for i, expr := range exprs {
 		switch expr.(type) {
 		case *Column, *CorrelatedColumn:
-			builder.WriteString(expr.String())
+			builder.WriteString(expr.StringForExplain())
 		case *Constant:
-			v := expr.String()
+			v := expr.StringForExplain()
 			length := 64
 			if len(v) < length {
 				builder.WriteString(v)
@@ -119,11 +119,11 @@ func ExplainExpressionList(exprs []Expression, schema *Schema) string {
 				builder.WriteString(fmt.Sprintf("%s(len:%d)", v[:length], len(v)))
 			}
 			builder.WriteString("->")
-			builder.WriteString(schema.Columns[i].String())
+			builder.WriteString(schema.Columns[i].StringForExplain())
 		default:
-			builder.WriteString(expr.String())
+			builder.WriteString(expr.StringForExplain())
 			builder.WriteString("->")
-			builder.WriteString(schema.Columns[i].String())
+			builder.WriteString(schema.Columns[i].StringForExplain())
 		}
 		if i+1 < len(exprs) {
 			builder.WriteString(", ")

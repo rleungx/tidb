@@ -407,6 +407,20 @@ func (col *Column) String() string {
 	return builder.String()
 }
 
+// StringForExplain implements Explainable interface.
+func (col *Column) StringForExplain() string {
+	if col.IsHidden {
+		// A hidden column must be a virtual generated column, we should output its expression.
+		return col.VirtualExpr.StringForExplain()
+	}
+	if col.OrigName != "" {
+		return col.OrigName
+	}
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "%s%d", columnPrefix, col.UniqueID)
+	return builder.String()
+}
+
 // MarshalJSON implements json.Marshaler interface.
 func (col *Column) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("%q", col)), nil

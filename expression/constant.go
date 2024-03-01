@@ -114,6 +114,17 @@ func (c *Constant) String() string {
 	return fmt.Sprintf("%v", c.Value.GetValue())
 }
 
+// StringForExplain implements Explainable interface.
+func (c *Constant) StringForExplain() string {
+	if c.ParamMarker != nil {
+		dt := c.ParamMarker.GetUserVar()
+		c.Value.SetValue(dt.GetValue(), c.RetType)
+	} else if c.DeferredExpr != nil {
+		return c.DeferredExpr.StringForExplain()
+	}
+	return c.Value.StringForExplain()
+}
+
 // MarshalJSON implements json.Marshaler interface.
 func (c *Constant) MarshalJSON() ([]byte, error) {
 	return []byte(fmt.Sprintf("%q", c)), nil

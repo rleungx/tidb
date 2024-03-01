@@ -2070,6 +2070,16 @@ func (d *Datum) ToString() (string, error) {
 	}
 }
 
+// StringForExplain implements Explainable interface.
+func (d *Datum) StringForExplain() string {
+	switch d.Kind() {
+	case KindVectorFloat32:
+		return d.GetVectorFloat32().StringForExplain()
+	default:
+		return fmt.Sprintf("%v", d.GetValue())
+	}
+}
+
 // ToBytes gets the bytes representation of the datum.
 func (d *Datum) ToBytes() ([]byte, error) {
 	switch d.k {
