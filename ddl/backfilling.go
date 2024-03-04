@@ -515,13 +515,13 @@ func handleOneResult(result *backfillResult, scheduler backfillScheduler, consum
 	}
 	keeper.updateNextKey(result.taskID, result.nextKey)
 	if taskSeq%(scheduler.currentWorkerSize()*4) == 0 {
+		err := consumer.dc.isReorgRunnable(reorgInfo.ID, consumer.distribute)
+		if err != nil {
+			logutil.BgLogger().Warn("[ddl] backfill worker is not runnable", zap.Error(err))
+			scheduler.drainTasks() // Make it quit early.
+			return err
+		}
 		if !consumer.distribute {
-			err := consumer.dc.isReorgRunnable(reorgInfo.ID, consumer.distribute)
-			if err != nil {
-				logutil.BgLogger().Warn("[ddl] backfill worker is not runnable", zap.Error(err))
-				scheduler.drainTasks() // Make it quit early.
-				return err
-			}
 			failpoint.Inject("MockGetIndexRecordErr", func() {
 				// Make sure this job didn't failed because by the "Write conflict" error.
 				if dbterror.ErrNotOwner.Equal(err) {
@@ -536,7 +536,7 @@ func handleOneResult(result *backfillResult, scheduler backfillScheduler, consum
 		}
 		// We try to adjust the worker size regularly to reduce
 		// the overhead of loading the DDL related global variables.
-		err := scheduler.adjustWorkerSize()
+		err = scheduler.adjustWorkerSize()
 		if err != nil {
 			logutil.BgLogger().Warn("[ddl] cannot adjust backfill worker size",
 				zap.Int64("job ID", reorgInfo.ID), zap.Error(err))
@@ -660,7 +660,7 @@ func setSessCtxLocation(sctx sessionctx.Context, tzLocation *model.TimeZoneLocat
 
 var (
 	backfillTaskChanSize = 128
-	mergeKVRangeCount    = 8
+	backfillRegionBatch  = 8
 )
 
 // SetBackfillTaskChanSizeForTest is only used for test.
@@ -731,9 +731,9 @@ func (dc *ddlCtx) writePhysicalTableRecord(sessPool *sess.Pool, t table.Physical
 				return errors.Trace(err)
 			}
 
-			mergeCnt := mergeKVRangeCount
-			if config.GetGlobalConfig().MergeKVRangeCount != 0 {
-				mergeCnt = config.GetGlobalConfig().MergeKVRangeCount
+			mergeCnt := backfillRegionBatch
+			if config.GetGlobalConfig().BackfillRegionBatch != 0 {
+				mergeCnt = config.GetGlobalConfig().BackfillRegionBatch
 			}
 			totalKVRanges = mergeKVRanges(kvRanges, mergeCnt)
 

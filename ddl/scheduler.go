@@ -18,26 +18,24 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	gerrors "errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/pingcap/errors"
-	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/br/pkg/lightning/common"
-	"github.com/pingcap/tidb/config"
 	"github.com/pingcap/tidb/ddl/ingest"
 	ddlutil "github.com/pingcap/tidb/ddl/util"
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
+	"github.com/pingcap/tidb/disttask/framework/scheduler/execute"
 	"github.com/pingcap/tidb/domain/infosync"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/meta"
 	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/store/copr"
 	"github.com/pingcap/tidb/table"
 	"github.com/pingcap/tidb/util/logutil"
-	"github.com/pingcap/tidb/util/mathutil"
 	"go.uber.org/zap"
 )
 
@@ -45,7 +43,11 @@ import (
 var MockDMLExecutionAddIndexSubTaskFinish func()
 
 type backfillSchedulerHandle struct {
-	d             *ddl
+	*scheduler.BaseScheduler
+	d         *ddl
+	task      *proto.Task
+	taskTable scheduler.TaskTable
+
 	db            *model.DBInfo
 	index         *model.IndexInfo
 	job           *model.Job
@@ -72,24 +74,32 @@ type BackfillSubTaskMeta struct {
 	PhysicalTableID int64  `json:"physical_table_id"`
 	StartKey        []byte `json:"start_key"`
 	EndKey          []byte `json:"end_key"`
+	SubTaskIndex    int    `json:"sub_task_index"`
 }
 
-// BackfillMinimalTask is the minimal-task for backfilling index.
-type BackfillMinimalTask struct {
+func newBackfillDistScheduler(ctx context.Context, id string, task *proto.Task, taskTable scheduler.TaskTable, d *ddl) scheduler.Scheduler {
+	s := &backfillSchedulerHandle{
+		BaseScheduler: scheduler.NewBaseScheduler(ctx, id, task.ID, taskTable),
+		d:             d,
+		task:          task,
+		taskTable:     taskTable,
+		ctx:           ctx,
+	}
+	s.BaseScheduler.Extension = s
+	return s
 }
 
-// IsMinimalTask implements the MinimalTask interface.
-func (b *BackfillMinimalTask) IsMinimalTask() {
-}
-
-// NewBackfillSchedulerHandle creates a new backfill scheduler.
-func NewBackfillSchedulerHandle(taskMeta []byte, d *ddl, stepForImport bool) (scheduler.Scheduler, error) {
-	bh := &backfillSchedulerHandle{d: d}
+func (bh *backfillSchedulerHandle) Init(ctx context.Context) error {
+	err := bh.BaseScheduler.Init(ctx)
+	if err != nil {
+		return err
+	}
+	d := bh.d
 
 	bgm := &BackfillGlobalMeta{}
-	err := json.Unmarshal(taskMeta, bgm)
+	err = json.Unmarshal(bh.task.Meta, bgm)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	bh.eleTypeKey = bgm.EleTypeKey
@@ -98,7 +108,7 @@ func NewBackfillSchedulerHandle(taskMeta []byte, d *ddl, stepForImport bool) (sc
 
 	db, tbl, err := d.getTableByTxn((*asAutoIDRequirement)(d.ddlCtx), jobMeta.SchemaID, jobMeta.TableID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	bh.isPartition = tbl.Meta().GetPartitionInfo() != nil
 	bh.db = db
@@ -110,14 +120,9 @@ func NewBackfillSchedulerHandle(taskMeta []byte, d *ddl, stepForImport bool) (sc
 	if indexInfo == nil {
 		logutil.BgLogger().Warn("[ddl-ingest] cannot init cop request sender",
 			zap.Int64("table ID", tbl.Meta().ID), zap.Int64("index ID", bgm.EleID))
-		return nil, errors.New("cannot find index info")
+		return errors.New("cannot find index info")
 	}
 	bh.index = indexInfo
-
-	if stepForImport {
-		bh.stepForImport = true
-		return bh, nil
-	}
 
 	d.setDDLLabelForTopSQL(jobMeta.ID, jobMeta.Query)
 	d.setDDLSourceForDiagnosis(jobMeta.ID, jobMeta.Type)
@@ -125,7 +130,43 @@ func NewBackfillSchedulerHandle(taskMeta []byte, d *ddl, stepForImport bool) (sc
 	bh.jc = jobCtx
 	d.newReorgCtx(jobMeta.ID, 0)
 
-	return bh, nil
+	bc, err := ingest.LitBackCtxMgr.Register(d.ctx, bh.index.Unique, bh.job.ID, d.etcdCli)
+	if err != nil {
+		logutil.BgLogger().Warn("[ddl] lightning register error", zap.Error(err))
+		return err
+	}
+	bh.bc = bc
+
+	ser, err := infosync.GetServerInfo()
+	if err != nil {
+		return err
+	}
+	path := fmt.Sprintf("distAddIndex/%d/%s:%d", bh.job.ID, ser.IP, ser.Port)
+	response, err := d.etcdCli.Get(ctx, path)
+	if err != nil {
+		return err
+	}
+	if len(response.Kvs) > 0 {
+		cnt, err := strconv.Atoi(string(response.Kvs[0].Value))
+		if err != nil {
+			return err
+		}
+		bh.totalRowCnt = int64(cnt)
+	}
+
+	bh.done = make(chan struct{})
+	go bh.UpdateStatLoop()
+
+	return nil
+}
+
+func (s *backfillSchedulerHandle) IsIdempotent(_ *proto.Subtask) bool {
+	return true
+}
+
+func (s *backfillSchedulerHandle) GetSubtaskExecutor(ctx context.Context, task *proto.Task, summary *execute.Summary) (execute.SubtaskExecutor, error) {
+	s.stepForImport = task.Step == proto.StepTwo
+	return &BackFillSubtaskExecutor{b: s}, nil
 }
 
 // UpdateStatLoop updates the row count of adding index.
@@ -154,44 +195,6 @@ func (b *backfillSchedulerHandle) UpdateStatLoop() {
 	}
 }
 
-// InitSubtaskExecEnv implements the Scheduler interface.
-func (b *backfillSchedulerHandle) InitSubtaskExecEnv(ctx context.Context) error {
-	logutil.BgLogger().Info("[ddl] lightning init subtask exec env")
-	d := b.d
-
-	bc, err := ingest.LitBackCtxMgr.Register(d.ctx, b.index.Unique, b.job.ID, d.etcdCli)
-	if err != nil {
-		logutil.BgLogger().Warn("[ddl] lightning register error", zap.Error(err))
-		return err
-	}
-	b.bc = bc
-	if b.stepForImport {
-		return b.doFlushAndHandleError(ingest.FlushModeForceGlobal)
-	}
-	b.ctx = ctx
-
-	ser, err := infosync.GetServerInfo()
-	if err != nil {
-		return err
-	}
-	path := fmt.Sprintf("distAddIndex/%d/%s:%d", b.job.ID, ser.IP, ser.Port)
-	response, err := d.etcdCli.Get(ctx, path)
-	if err != nil {
-		return err
-	}
-	if len(response.Kvs) > 0 {
-		cnt, err := strconv.Atoi(string(response.Kvs[0].Value))
-		if err != nil {
-			return err
-		}
-		b.totalRowCnt = int64(cnt)
-	}
-
-	b.done = make(chan struct{})
-	go b.UpdateStatLoop()
-	return nil
-}
-
 func (b *backfillSchedulerHandle) doFlushAndHandleError(mode ingest.FlushMode) error {
 	_, _, err := b.bc.Flush(b.index.ID, mode)
 	if err != nil {
@@ -204,13 +207,40 @@ func (b *backfillSchedulerHandle) doFlushAndHandleError(mode ingest.FlushMode) e
 	return nil
 }
 
-// SplitSubtask implements the Scheduler interface.
-func (b *backfillSchedulerHandle) SplitSubtask(ctx context.Context, subtask []byte) ([]proto.MinimalTask, error) {
-	logutil.BgLogger().Info("[ddl] lightning split subtask")
-
-	if b.stepForImport {
-		return nil, nil
+// Close implements the Scheduler interface.
+func (b *backfillSchedulerHandle) Close() {
+	if !gerrors.Is(b.ctx.Err(), context.Canceled) {
+		// The context is upper layer's context, if the context is canceled, means the tidb is closed.
+		// So we don't need to cleanup exec env.
+		logutil.BgLogger().Info("[ddl] lightning cleanup subtask exec env")
+		ingest.LitBackCtxMgr.Unregister(b.job.ID)
 	}
+	close(b.done)
+	b.d.removeReorgCtx(b.job.ID)
+	b.BaseScheduler.Close()
+}
+
+// Rollback implements the Scheduler interface.
+func (b *backfillSchedulerHandle) Rollback(ctx context.Context, task *proto.Task) error {
+	logutil.BgLogger().Info("[ddl] rollback backfill add index task", zap.Int64("jobID", b.job.ID))
+	ingest.LitBackCtxMgr.Unregister(b.job.ID)
+	b.d.removeReorgCtx(b.job.ID)
+	return b.BaseScheduler.Rollback(ctx, task)
+}
+
+// BackFillSubtaskExecutor is the executor for backfill subtask.
+type BackFillSubtaskExecutor struct {
+	b *backfillSchedulerHandle
+}
+
+// Init is used to initialize the environment for the subtask executor.
+func (e *BackFillSubtaskExecutor) Init(context.Context) error {
+	return nil
+}
+
+// RunSubtask implements the Executor interface.
+func (b *BackFillSubtaskExecutor) RunSubtask(ctx context.Context, task *proto.Subtask) error {
+	logutil.BgLogger().Info("[ddl] run subtask", zap.Any("step", task.Step), zap.Int64("subtask", task.ID), zap.Int64("jobID", b.b.job.ID))
 
 	fnCtx, fnCancel := context.WithCancel(context.Background())
 	defer fnCancel()
@@ -218,17 +248,24 @@ func (b *backfillSchedulerHandle) SplitSubtask(ctx context.Context, subtask []by
 	go func() {
 		select {
 		case <-ctx.Done():
-			b.d.notifyReorgWorkerJobStateChange(b.job)
+			// If the task is cancelled, we should cancel the reorg worker.
+			b.b.job.State = model.JobStateCancelled
+			b.b.d.notifyReorgWorkerJobStateChange(b.b.job)
 		case <-fnCtx.Done():
 		}
 	}()
 
-	d := b.d
+	d := b.b.d
 	sm := &BackfillSubTaskMeta{}
-	err := json.Unmarshal(subtask, sm)
+	err := json.Unmarshal(task.Meta, sm)
 	if err != nil {
 		logutil.BgLogger().Error("[ddl] unmarshal error", zap.Error(err))
-		return nil, err
+		return err
+	}
+
+	if b.b.stepForImport {
+		err = b.b.bc.Import(b.b.index.ID, b.b.index.Unique, b.b.ptbl)
+		return nil
 	}
 
 	var startKey, endKey kv.Key
@@ -236,161 +273,80 @@ func (b *backfillSchedulerHandle) SplitSubtask(ctx context.Context, subtask []by
 
 	currentVer, err1 := getValidCurrentVersion(d.store)
 	if err1 != nil {
-		return nil, errors.Trace(err1)
+		return errors.Trace(err1)
 	}
 
-	if !b.isPartition {
+	if !b.b.isPartition {
 		startKey, endKey = sm.StartKey, sm.EndKey
-		tbl = b.ptbl
+		tbl = b.b.ptbl
 	} else {
 		pid := sm.PhysicalTableID
-		parTbl := b.ptbl.(table.PartitionedTable)
-		startKey, endKey, err = getTableRange(b.jc, d.ddlCtx, parTbl.GetPartition(pid), currentVer.Ver, b.job.Priority)
+		parTbl := b.b.ptbl.(table.PartitionedTable)
+		startKey, endKey, err = getTableRange(b.b.jc, d.ddlCtx, parTbl.GetPartition(pid), currentVer.Ver, b.b.job.Priority)
 		if err != nil {
 			logutil.BgLogger().Error("[ddl] get table range error", zap.Error(err))
-			return nil, err
+			return err
 		}
 		tbl = parTbl.GetPartition(pid)
 	}
 
-	mockReorgInfo := &reorgInfo{Job: b.job, d: d.ddlCtx}
+	mockReorgInfo := &reorgInfo{Job: b.b.job, d: d.ddlCtx, StartKey: startKey, EndKey: endKey}
 	elements := make([]*meta.Element, 0)
-	elements = append(elements, &meta.Element{ID: b.index.ID, TypeKey: meta.IndexElementKey})
+	elements = append(elements, &meta.Element{ID: b.b.index.ID, TypeKey: meta.IndexElementKey})
 	mockReorgInfo.elements = elements
 	mockReorgInfo.currElement = mockReorgInfo.elements[0]
 
-	ingestScheduler := newIngestBackfillScheduler(ctx, mockReorgInfo, d.sessPool, tbl, true)
+	ingestScheduler := newIngestBackfillScheduler(b.b.ctx, mockReorgInfo, d.sessPool, tbl, true)
 	defer ingestScheduler.close(true)
 
 	consumer := newResultConsumer(d.ddlCtx, mockReorgInfo, nil, true)
-	consumer.run(ingestScheduler, startKey, &b.totalRowCnt)
+	consumer.run(ingestScheduler, startKey, &b.b.totalRowCnt)
 
 	err = ingestScheduler.setupWorkers()
 	if err != nil {
 		logutil.BgLogger().Error("[ddl] setup workers error", zap.Error(err))
-		return nil, err
+		return err
 	}
 
-	var (
-		totalKVRanges []kv.KeyRange
-		baseTaskID    int
-	)
+	baseID := genBaseBackfillTaskIDBySubTaskIndex(sm.SubTaskIndex)
+	taskIDAlloc := newTaskIDAllocator(baseID)
 
-	if ingestScheduler.checkpointMgr != nil {
-		totalKVRanges = ingestScheduler.checkpointMgr.GetKVRanges()
-		if len(totalKVRanges) == 0 {
-			kvRanges, err := splitTableRanges(b.ptbl, d.store, startKey, endKey, copr.UnspecifiedLimit)
-			if err != nil {
-				return nil, err
-			}
+	kvRanges := []kv.KeyRange{{StartKey: startKey, EndKey: endKey}}
+	logutil.BgLogger().Info("[ddl] start backfill workers to reorg record",
+		zap.Int("workerCnt", ingestScheduler.currentWorkerSize()),
+		zap.Int("regionCnt", len(kvRanges)),
+		zap.String("startKey", hex.EncodeToString(startKey)),
+		zap.String("endKey", hex.EncodeToString(endKey)))
 
-			mergeCnt := mergeKVRangeCount
-			if config.GetGlobalConfig().MergeKVRangeCount != 0 {
-				mergeCnt = config.GetGlobalConfig().MergeKVRangeCount
-			}
-			totalKVRanges = mergeKVRanges(kvRanges, mergeCnt)
+	sendTasks(ingestScheduler, consumer, tbl, kvRanges, mockReorgInfo, taskIDAlloc)
 
-			err = ingestScheduler.checkpointMgr.UpdateKVRanges(totalKVRanges)
-			if err != nil {
-				return nil, err
-			}
-			logutil.BgLogger().Info("[ddl] save ranges for reorg to checkpoint",
-				zap.Int("range count", len(totalKVRanges)),
-				zap.Int("source range count", len(kvRanges)))
-		}
-		baseTaskID = ingestScheduler.checkpointMgr.GetBaseTaskID()
-		logutil.BgLogger().Info("[ddl] get kv ranges for reorg",
-			zap.Int("range count", len(totalKVRanges)),
-			zap.Int("base task ID", baseTaskID),
-		)
-	}
-
-	taskIDAlloc := newTaskIDAllocator(baseTaskID)
-	for {
-		var kvRanges []kv.KeyRange
-		if ingestScheduler.checkpointMgr != nil {
-			n := mathutil.Min(backfillTaskChanSize, len(totalKVRanges))
-			kvRanges, totalKVRanges = totalKVRanges[:n], totalKVRanges[n:]
-		} else {
-			kvRanges, err = splitTableRanges(b.ptbl, d.store, startKey, endKey, backfillTaskChanSize)
-		}
-		if err != nil {
-			return nil, err
-		}
-		if len(kvRanges) == 0 {
-			break
-		}
-
-		logutil.BgLogger().Info("[ddl] start backfill workers to reorg record",
-			zap.Int("workerCnt", ingestScheduler.currentWorkerSize()),
-			zap.Int("regionCnt", len(kvRanges)),
-			zap.String("startKey", hex.EncodeToString(startKey)),
-			zap.String("endKey", hex.EncodeToString(endKey)))
-
-		sendTasks(ingestScheduler, consumer, tbl, kvRanges, mockReorgInfo, taskIDAlloc)
-		if consumer.shouldAbort() {
-			break
-		}
-		rangeEndKey := kvRanges[len(kvRanges)-1].EndKey
-		startKey = rangeEndKey.Next()
-		if startKey.Cmp(endKey) >= 0 {
-			break
-		}
-	}
 	ingestScheduler.close(false)
-
 	if err := consumer.getResult(); err != nil {
-		return nil, err
+		return err
 	}
 
-	if b.isPartition {
-		return nil, b.doFlushAndHandleError(ingest.FlushModeForceGlobal)
-	}
-	return nil, b.doFlushAndHandleError(ingest.FlushModeForceLocalAndCheckDiskQuota)
+	return b.b.doFlushAndHandleError(ingest.FlushModeForceLocal)
 }
 
-// OnSubtaskFinished implements the Scheduler interface.
-func (*backfillSchedulerHandle) OnSubtaskFinished(context.Context, []byte) error {
-	failpoint.Inject("mockDMLExecutionAddIndexSubTaskFinish", func(val failpoint.Value) {
-		//nolint:forcetypeassert
-		if val.(bool) && MockDMLExecutionAddIndexSubTaskFinish != nil {
-			MockDMLExecutionAddIndexSubTaskFinish()
-		}
-	})
+// Cleanup implements the Executor interface.
+func (b *BackFillSubtaskExecutor) Cleanup(context.Context) error {
 	return nil
 }
 
-// CleanupSubtaskExecEnv implements the Scheduler interface.
-func (b *backfillSchedulerHandle) CleanupSubtaskExecEnv(context.Context) error {
-	logutil.BgLogger().Info("[ddl] lightning cleanup subtask exec env")
-
-	if b.isPartition || b.stepForImport {
-		ingest.LitBackCtxMgr.Unregister(b.job.ID)
-	}
-
-	if !b.stepForImport {
-		close(b.done)
-		b.d.removeReorgCtx(b.job.ID)
-	}
+// OnFinished implements the Executor interface.
+func (b *BackFillSubtaskExecutor) OnFinished(context.Context, *proto.Subtask) error {
 	return nil
 }
 
-// Rollback implements the Scheduler interface.
-func (b *backfillSchedulerHandle) Rollback(context.Context) error {
-	logutil.BgLogger().Info("[ddl] rollback backfill add index task", zap.Int64("jobID", b.job.ID))
-	ingest.LitBackCtxMgr.Unregister(b.job.ID)
-	b.d.removeReorgCtx(b.job.ID)
+// Rollback implements the Executor interface.
+func (b *BackFillSubtaskExecutor) Rollback(context.Context) error {
 	return nil
 }
 
-// BackFillSubtaskExecutor is the executor for backfill subtask.
-type BackFillSubtaskExecutor struct {
-	Task proto.MinimalTask
-}
+const maxBackfillTaskCount = 100000000
 
-// Run implements the Executor interface.
-func (b *BackFillSubtaskExecutor) Run(_ context.Context) error {
-	return nil
+func genBaseBackfillTaskIDBySubTaskIndex(subTaskIndex int) int {
+	return subTaskIndex * maxBackfillTaskCount
 }
 
 // BackfillTaskType is the type of backfill task.

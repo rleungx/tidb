@@ -107,6 +107,12 @@ func (*MockBackendCtx) CollectRemoteDuplicateRows(indexID int64, _ table.Table) 
 	return nil
 }
 
+// Import implements BackendCtx.Import interface.
+func (*MockBackendCtx) Import(indexID int64, _ bool, _ table.Table) error {
+	logutil.BgLogger().Info("mock backend ctx import", zap.Int64("indexID", indexID))
+	return nil
+}
+
 // FinishImport implements BackendCtx.FinishImport interface.
 func (*MockBackendCtx) FinishImport(indexID int64, _ bool, _ table.Table) error {
 	logutil.BgLogger().Info("mock backend ctx finish import", zap.Int64("indexID", indexID))

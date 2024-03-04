@@ -38,6 +38,7 @@ import (
 	"github.com/pingcap/tidb/types"
 	_ "github.com/pingcap/tidb/types/parser_driver" // for parser driver
 	"github.com/pingcap/tidb/util/collate"
+	distroleutil "github.com/pingcap/tidb/util/distrole"
 	"github.com/pingcap/tidb/util/errmsg"
 	"github.com/pingcap/tidb/util/gctuner"
 	"github.com/pingcap/tidb/util/intest"
@@ -2732,6 +2733,23 @@ var defaultSysVars = []*SysVar{
 			return nil
 		},
 	},
+	{Scope: ScopeInstance, Name: TiDBServiceScope, Value: "", Type: TypeStr,
+		Validation: func(_ *SessionVars, normalizedValue string, originalValue string, _ ScopeFlag) (string, error) {
+			_, ok := distroleutil.ToTiDBServiceScope(originalValue)
+			if !ok {
+				err := fmt.Errorf("incorrect value: `%s`. %s options: %s",
+					originalValue,
+					TiDBServiceScope, `"", background`)
+				return normalizedValue, err
+			}
+			return normalizedValue, nil
+		},
+		SetGlobal: func(ctx context.Context, vars *SessionVars, s string) error {
+			ServiceScope.Store(strings.ToLower(s))
+			return nil
+		}, GetGlobal: func(ctx context.Context, vars *SessionVars) (string, error) {
+			return ServiceScope.Load(), nil
+		}},
 	{Scope: ScopeGlobal, Name: TiDBEnableVectorType, Value: BoolToOnOff(DefTiDBEnableVectorType), Type: TypeBool, SetGlobal: func(ctx context.Context, vars *SessionVars, s string) error {
 		EnableVectorType.Store(TiDBOptOn(s))
 		return nil

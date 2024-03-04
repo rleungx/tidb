@@ -29,8 +29,10 @@ import (
 	"github.com/pingcap/tidb/disttask/framework/dispatcher"
 	"github.com/pingcap/tidb/disttask/framework/proto"
 	"github.com/pingcap/tidb/disttask/framework/scheduler"
+	"github.com/pingcap/tidb/disttask/framework/scheduler/execute"
 	"github.com/pingcap/tidb/disttask/framework/storage"
 	"github.com/pingcap/tidb/domain"
+	"github.com/pingcap/tidb/domain/infosync"
 	"github.com/pingcap/tidb/errno"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/parser"
@@ -52,6 +54,7 @@ import (
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/mathutil"
 	"github.com/pingcap/tidb/util/memory"
+	"github.com/pingcap/tidb/util/serverless/tidbworker"
 	"github.com/pingcap/tidb/util/sqlexec"
 	"go.uber.org/zap"
 )
@@ -165,7 +168,7 @@ func registerGlobalJob(ctx context.Context, stmt *ast.NonTransactionalDMLStmt, s
 	if err != nil {
 		return nil, err
 	}
-	taskID, err := globalTaskManager.AddNewGlobalTask(taskKey, batchJobType, batchJobConcurrency, metadata)
+	taskID, err := globalTaskManager.AddNewGlobalTask(ctx, taskKey, batchJobType, batchJobConcurrency, metadata)
 	if err != nil {
 		return nil, err
 	}
@@ -204,21 +207,62 @@ type batchJobSubtask struct {
 
 func (batchJobSubtask) IsMinimalTask() {}
 
-type taskFlowHandle struct {
+var _ dispatcher.Extension = (*batchExtension)(nil)
+
+type batchDispatcher struct {
+	*dispatcher.BaseDispatcher
 	store kv.Storage
 }
 
-func (h taskFlowHandle) ProcessNormalFlow(ctx context.Context, th dispatcher.TaskHandle, gTask *proto.Task) (metas [][]byte, err error) {
-	if gTask.Step != 0 {
+func newBatchDispatcher(ctx context.Context, store kv.Storage, taskMgr dispatcher.TaskManager,
+	serverID string, task *proto.Task) dispatcher.Dispatcher {
+	dsp := batchDispatcher{
+		store:          store,
+		BaseDispatcher: dispatcher.NewBaseDispatcher(ctx, taskMgr, serverID, task),
+	}
+	dsp.Extension = &batchExtension{store}
+	return &dsp
+}
+
+type batchExtension struct {
+	store kv.Storage
+}
+
+func (batchExtension) OnTick(_ context.Context, _ *proto.Task) {
+}
+
+// StepStr convert proto.Step to string.
+func StepStr(step proto.Step) string {
+	switch step {
+	case proto.StepInit:
+		return "init"
+	case proto.StepOne:
+		return "run"
+	case proto.StepDone:
+		return "done"
+	default:
+		return "unknown"
+	}
+}
+
+func (b batchExtension) OnNextSubtasksBatch(ctx context.Context, h dispatcher.TaskHandle, task *proto.Task, serverInfo []*infosync.ServerInfo, step proto.Step) (subtaskMetas [][]byte, err error) {
+	logger := logutil.BgLogger().With(
+		zap.Stringer("type", task.Type),
+		zap.Int64("task-id", task.ID),
+		zap.String("curr-step", StepStr(task.Step)),
+		zap.String("next-step", StepStr(step)),
+	)
+
+	var taskMeta batchJobMeta
+	if err = json.Unmarshal(task.Meta, &taskMeta); err != nil {
+		return nil, err
+	}
+	logger.Info("on next subtasks batch")
+	if step == proto.StepDone {
 		return nil, nil
 	}
 
-	var taskMeta batchJobMeta
-	if err = json.Unmarshal(gTask.Meta, &taskMeta); err != nil {
-		return nil, err
-	}
-
-	se, err := createSession(h.store)
+	se, err := createSession(b.store)
 	if err != nil {
 		return nil, err
 	}
@@ -283,64 +327,99 @@ func (h taskFlowHandle) ProcessNormalFlow(ctx context.Context, th dispatcher.Tas
 		if err != nil {
 			return nil, err
 		}
-		metas = append(metas, meta)
+		subtaskMetas = append(subtaskMetas, meta)
 	}
-	gTask.Step++
-
 	return
 }
 
-func (taskFlowHandle) ProcessErrFlow(ctx context.Context, h dispatcher.TaskHandle, gTask *proto.Task, receiveErr [][]byte) (meta []byte, err error) {
-	firstErr := receiveErr[0]
-	gTask.Error = firstErr
-
-	return nil, nil
-}
-
-type batchScheduler struct {
-}
-
-func (s batchScheduler) InitSubtaskExecEnv(ctx context.Context) error {
+func (batchExtension) OnDone(_ context.Context, _ dispatcher.TaskHandle, _ *proto.Task) error {
 	return nil
 }
 
-func (s batchScheduler) SplitSubtask(ctx context.Context, subtask []byte) ([]proto.MinimalTask, error) {
-	var subtaskMeta batchJobSubtask
-	if err := json.Unmarshal(subtask, &subtaskMeta); err != nil {
-		return nil, err
+func (batchExtension) GetEligibleInstances(ctx context.Context, task *proto.Task) ([]*infosync.ServerInfo, bool, error) {
+	// Return placeholder nodes according to setting if tidb worker for batch is enabled.
+	if variable.EnableDistTask.Load() && tidbworker.IsBgTaskMaster(string(task.Type)) {
+		return tidbworker.SchedulerNodes(tidbworker.TaskWorkerType(string(task.Type)), task.ID), true, nil
 	}
-	return []proto.MinimalTask{subtaskMeta}, nil
+	serverInfos, err := dispatcher.GenerateSchedulerNodes(ctx)
+	if err != nil {
+		return nil, true, err
+	}
+	return serverInfos, true, nil
 }
 
-func (s batchScheduler) CleanupSubtaskExecEnv(ctx context.Context) error {
-	return nil
+func (batchExtension) IsRetryableErr(error) bool {
+	return true
 }
 
-func (s batchScheduler) OnSubtaskFinished(ctx context.Context, subtask []byte) error {
-	return nil
+func (batchExtension) GetNextStep(task *proto.Task) proto.Step {
+	switch task.Step {
+	case proto.StepInit:
+		return proto.StepOne
+	case proto.StepOne:
+		return proto.StepDone
+	default:
+		return proto.StepDone
+	}
 }
 
-func (s batchScheduler) Rollback(ctx context.Context) error {
-	return nil
+var _ scheduler.Scheduler = (*batchDistScheduler)(nil)
+var _ scheduler.Extension = (*batchDistScheduler)(nil)
+var _ execute.SubtaskExecutor = (*batchSubtaskExecutor)(nil)
+
+func newBatchDistScheduler(ctx context.Context, id string, task *proto.Task, taskTable scheduler.TaskTable, store kv.Storage) scheduler.Scheduler {
+	s := &batchDistScheduler{
+		BaseScheduler: scheduler.NewBaseScheduler(ctx, id, task.ID, taskTable),
+		store:         store,
+	}
+	s.BaseScheduler.Extension = s
+	return s
 }
 
-type batchSubtaskExecutor struct {
-	task  batchJobSubtask
+type batchDistScheduler struct {
+	*scheduler.BaseScheduler
 	store kv.Storage
 }
 
-func (e *batchSubtaskExecutor) Run(ctx context.Context) error {
+func (s batchDistScheduler) IsIdempotent(_ *proto.Subtask) bool {
+	return true
+}
+
+func (s batchDistScheduler) GetSubtaskExecutor(ctx context.Context, task *proto.Task, summary *execute.Summary) (execute.SubtaskExecutor, error) {
+	return &batchSubtaskExecutor{s.store}, nil
+}
+
+type batchSubtaskExecutor struct {
+	store kv.Storage
+}
+
+// Init is used to initialize the environment for the subtask executor.
+func (e *batchSubtaskExecutor) Init(context.Context) error {
+	return nil
+}
+
+// RunSubtask is used to run the subtask.
+func (e *batchSubtaskExecutor) RunSubtask(ctx context.Context, subtask *proto.Subtask) error {
+	batchTask := &batchJobSubtask{}
+	err := json.Unmarshal(subtask.Meta, batchTask)
+	if err != nil {
+		logutil.BgLogger().Error("unmarshal error",
+			zap.String("category", "ddl"),
+			zap.Error(err))
+		return err
+	}
+
 	se, err := createSession(e.store)
 	if err != nil {
 		return err
 	}
-	se.GetSessionVars().CurrentDB = e.task.DB
-	se.GetSessionVars().ReadStaleness = e.task.ReadStaleness
+	se.GetSessionVars().CurrentDB = batchTask.DB
+	se.GetSessionVars().ReadStaleness = batchTask.ReadStaleness
 	if config.DefaultResourceGroup != "" {
 		se.GetSessionVars().ResourceGroupName = config.DefaultResourceGroup
 	}
 
-	stmts, _, err := se.ParseSQL(ctx, e.task.Stmt)
+	stmts, _, err := se.ParseSQL(ctx, batchTask.Stmt)
 	if err != nil {
 		return err
 	}
@@ -364,17 +443,17 @@ func (e *batchSubtaskExecutor) Run(ctx context.Context) error {
 		return err
 	}
 
-	_, start, err := codec.DecodeOne(e.task.Start)
+	_, start, err := codec.DecodeOne(batchTask.Start)
 	if err != nil {
 		return err
 	}
-	_, end, err := codec.DecodeOne(e.task.End)
+	_, end, err := codec.DecodeOne(batchTask.End)
 	if err != nil {
 		return err
 	}
 
 	j := job{
-		jobID: e.task.JobID,
+		jobID: batchTask.JobID,
 		start: start,
 		end:   end,
 	}
@@ -383,21 +462,30 @@ func (e *batchSubtaskExecutor) Run(ctx context.Context) error {
 	return err
 }
 
+func (e *batchSubtaskExecutor) Cleanup(context.Context) error {
+	return nil
+}
+
+func (e *batchSubtaskExecutor) OnFinished(ctx context.Context, subtask *proto.Subtask) error {
+	return nil
+}
+
+func (e *batchSubtaskExecutor) Rollback(context.Context) error {
+	return nil
+}
+
 // RegisterBatchDisttask registers handlers for async batch non-transactional DML.
 func RegisterBatchDisttask(store kv.Storage) {
-	dispatcher.RegisterTaskFlowHandle(batchJobType, taskFlowHandle{
-		store: store,
-	})
-	scheduler.RegisterSchedulerConstructor(batchJobType,
-		func(taskMeta []byte, step int64) (scheduler.Scheduler, error) {
-			return batchScheduler{}, nil
+	dispatcher.RegisterDispatcherFactory(batchJobType,
+		func(ctx context.Context, taskMgr dispatcher.TaskManager, serverID string, task *proto.Task) dispatcher.Dispatcher {
+			return newBatchDispatcher(ctx, store, taskMgr, serverID, task)
 		})
-	scheduler.RegisterSubtaskExectorConstructor(batchJobType, func(minimalTask proto.MinimalTask, step int64) (scheduler.SubtaskExecutor, error) {
-		return &batchSubtaskExecutor{
-			task:  minimalTask.(batchJobSubtask),
-			store: store,
-		}, nil
-	})
+
+	scheduler.RegisterTaskType(batchJobType,
+		func(ctx context.Context, id string, task *proto.Task, taskTable scheduler.TaskTable) scheduler.Scheduler {
+			return newBatchDistScheduler(ctx, id, task, taskTable, store)
+		},
+	)
 }
 
 // we require:

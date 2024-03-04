@@ -1012,6 +1012,11 @@ func (do *Domain) Close() {
 	}
 	gctuner.WaitMemoryLimitTunerExitInTest()
 	close(do.mdlCheckCh)
+	// close MockGlobalServerInfoManagerEntry in order to refresh mock server info.
+	if intest.InTest {
+		infosync.MockGlobalServerInfoManagerEntry.Close()
+	}
+
 	logutil.BgLogger().Info("domain closed", zap.Duration("take time", time.Since(startTime)))
 }
 
@@ -1384,6 +1389,22 @@ func (do *Domain) checkReplicaRead(ctx context.Context, pdClient pd.Client) erro
 	return nil
 }
 
+func generateSubtaskExecID(ctx context.Context, ID string) string {
+	serverInfos, err := infosync.GetAllServerInfo(ctx)
+	if err != nil || len(serverInfos) == 0 {
+		return ""
+	}
+	if serverNode, ok := serverInfos[ID]; ok {
+		return disttaskutil.GenerateExecID(serverNode.IP, serverNode.Port)
+	}
+	return ""
+}
+
+// InitInfo4Test init infosync for distributed execution test.
+func (do *Domain) InitInfo4Test() {
+	infosync.MockGlobalServerInfoManagerEntry.Add(do.ddl.GetID(), do.ServerID)
+}
+
 // InitDistTaskLoop initializes the distributed task framework.
 func (do *Domain) InitDistTaskLoop(ctx context.Context) error {
 	failpoint.Inject("MockDisableDistTask", func(val failpoint.Value) {
@@ -1392,8 +1413,15 @@ func (do *Domain) InitDistTaskLoop(ctx context.Context) error {
 		}
 	})
 
-	taskManager := storage.NewTaskManager(ctx, do.resourcePool)
-	serverID := generateSubtaskExecID(ctx, do.ddl.GetID())
+	taskManager := storage.NewTaskManager(do.sysSessionPool)
+	var serverID string
+
+	if intest.InTest {
+		do.InitInfo4Test()
+		serverID = disttaskutil.GenerateSubtaskExecID4Test(do.ddl.GetID())
+	} else {
+		serverID = disttaskutil.GenerateSubtaskExecID(ctx, do.ddl.GetID())
+	}
 	// Overwrite scheduler id for DDL worker.
 	// Use config to check since tidb worker manager may get initialized after.
 	workerConfig := config.GetGlobalConfig().TiDBWorker
@@ -1403,6 +1431,7 @@ func (do *Domain) InitDistTaskLoop(ctx context.Context) error {
 	if workerConfig.Enable && workerConfig.Role == config.RoleBatchWorker {
 		serverID = config.GetGlobalConfig().TiDBWorker.ExecID
 	}
+
 	if serverID == "" {
 		errMsg := fmt.Sprintf("TiDB node ID( = %s ) not found in available TiDB nodes list", do.ddl.GetID())
 		return errors.New(errMsg)
@@ -1417,62 +1446,52 @@ func (do *Domain) InitDistTaskLoop(ctx context.Context) error {
 		defer func() {
 			storage.SetTaskManager(nil)
 		}()
-		do.distTaskFrameworkLoop(ctx, taskManager, schedulerManager)
+		do.distTaskFrameworkLoop(ctx, taskManager, schedulerManager, serverID)
 	}, "distTaskFrameworkLoop")
 	return nil
 }
 
-func generateSubtaskExecID(ctx context.Context, ID string) string {
-	serverInfos, err := infosync.GetAllServerInfo(ctx)
-	if err != nil || len(serverInfos) == 0 {
-		return ""
+func (do *Domain) distTaskFrameworkLoop(ctx context.Context, taskManager *storage.TaskManager, schedulerManager *scheduler.Manager, serverID string) {
+	err := schedulerManager.Start()
+	if err != nil {
+		logutil.BgLogger().Error("dist task scheduler manager start failed", zap.Error(err))
+		return
 	}
-	if serverNode, ok := serverInfos[ID]; ok {
-		return disttaskutil.GenerateExecID(serverNode.IP, serverNode.Port)
-	}
-	return ""
-}
-
-func (do *Domain) distTaskFrameworkLoop(ctx context.Context, taskManager *storage.TaskManager, schedulerManager *scheduler.Manager) {
-	schedulerManager.Start()
-	logutil.BgLogger().Info("dist task scheduler started")
+	logutil.BgLogger().Info("dist task scheduler manager started")
 	defer func() {
-		logutil.BgLogger().Info("stopping dist task scheduler")
+		logutil.BgLogger().Info("stopping dist task scheduler manager")
 		schedulerManager.Stop()
-		logutil.BgLogger().Info("dist task scheduler stopped")
+		logutil.BgLogger().Info("dist task scheduler manager stopped")
 	}()
 
-	var dispatch dispatcher.Dispatch
+	var dispatcherManager *dispatcher.Manager
 	startDispatchIfNeeded := func() {
-		if dispatch != nil {
+		if dispatcherManager != nil && dispatcherManager.Inited() {
 			return
 		}
-
-		newDispatch, err := dispatcher.NewDispatcher(ctx, taskManager)
+		var err error
+		dispatcherManager, err = dispatcher.NewManager(ctx, taskManager, serverID)
 		if err != nil {
-			logutil.BgLogger().Error("failed to create a disttask dispatcher", zap.Error(err))
+			logutil.BgLogger().Error("failed to create a dist task dispatcher manager", zap.Error(err))
 			return
 		}
-		dispatch = newDispatch
-		dispatch.Start()
-		logutil.BgLogger().Info("a new dist task dispatcher started for current node becomes the DDL owner")
+		dispatcherManager.Start()
 	}
 	stopDispatchIfNeeded := func() {
-		if dispatch != nil {
-			logutil.BgLogger().Info("stopping dist task dispatcher because the current node is not DDL owner anymore")
-			dispatch.Stop()
-			dispatch = nil
-			logutil.BgLogger().Info("dist task dispatcher stopped")
+		if dispatcherManager != nil && dispatcherManager.Inited() {
+			logutil.BgLogger().Info("stopping dist task dispatcher manager because the current node is not DDL owner anymore", zap.String("id", do.ddl.GetID()))
+			dispatcherManager.Stop()
+			logutil.BgLogger().Info("dist task dispatcher manager stopped", zap.String("id", do.ddl.GetID()))
 		}
 	}
 
-	ticker := time.Tick(time.Second)
+	ticker := time.NewTicker(time.Second)
 	for {
 		select {
 		case <-do.exit:
 			stopDispatchIfNeeded()
 			return
-		case <-ticker:
+		case <-ticker.C:
 			if do.ddl.OwnerManager().IsOwner() {
 				startDispatchIfNeeded()
 			} else {
@@ -1679,7 +1698,6 @@ func (do *Domain) LoadSysVarCacheLoop(ctx sessionctx.Context) error {
 					failpoint.Continue()
 				}
 			})
-
 			if !ok {
 				logutil.BgLogger().Error("LoadSysVarCacheLoop loop watch channel closed")
 				watchCh = do.etcdClient.Watch(context.Background(), sysVarCacheKey)

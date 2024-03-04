@@ -40,7 +40,7 @@ require (
 	github.com/go-ldap/ldap/v3 v3.4.4
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gogo/protobuf v1.3.2
-	github.com/golang/mock v1.6.0
+	github.com/golang/mock v1.5.0
 	github.com/golang/protobuf v1.5.3
 	github.com/golang/snappy v0.0.4
 	github.com/golangci/gofmt v0.0.0-20220901101216-f2edd75033f2
@@ -114,6 +114,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.4.0
 	go.uber.org/goleak v1.2.1
+	go.uber.org/mock v0.3.0
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.26.0
 	golang.org/x/exp v0.0.0-20230711005742-c3f37128e5a4
@@ -283,7 +284,6 @@ require (
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/tiancaiamao/gp v0.0.0-20221230034425-4025bc8a4d4a // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect

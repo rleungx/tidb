@@ -48,4 +48,6 @@ header:
     - "build/image/.ci_bazel"
     - "**/OWNERS"
     - "OWNERS_ALIASES"
+    - disttask/framework/dispatcher/mock/
+    - disttask/framework/mock/
   comment: on-failure

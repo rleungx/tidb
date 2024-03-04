@@ -47,6 +47,7 @@ type BackendCtx interface {
 	Unregister(jobID, indexID int64)
 
 	CollectRemoteDuplicateRows(indexID int64, tbl table.Table) error
+	Import(indexID int64, unique bool, tbl table.Table) error
 	FinishImport(indexID int64, unique bool, tbl table.Table) error
 	ResetWorkers(jobID, indexID int64)
 	Flush(indexID int64, mode FlushMode) (flushed, imported bool, err error)
@@ -121,6 +122,20 @@ func (bc *litBackendCtx) CollectRemoteDuplicateRows(indexID int64, tbl table.Tab
 		logutil.BgLogger().Error(LitErrRemoteDupExistErr,
 			zap.String("table", tbl.Meta().Name.O), zap.Int64("index ID", indexID))
 		return tikv.ErrKeyExists
+	}
+	return nil
+}
+
+// Import imports all the key-values in engine into the storage.
+func (bc *litBackendCtx) Import(indexID int64, unique bool, tbl table.Table) error {
+	ei, exist := bc.Load(indexID)
+	if !exist {
+		return dbterror.ErrIngestFailed.FastGenByArgs("ingest engine not found")
+	}
+
+	err := ei.Import()
+	if err != nil {
+		return err
 	}
 	return nil
 }

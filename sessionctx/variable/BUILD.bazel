@@ -43,6 +43,7 @@ go_library(
         "//util/collate",
         "//util/dbterror",
         "//util/disk",
+        "//util/distrole",
         "//util/errmsg",
         "//util/execdetails",
         "//util/gctuner",

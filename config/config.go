@@ -227,7 +227,7 @@ type Config struct {
 	IsBranch                   bool                    `toml:"is-branch" json:"is-branch"`
 	TiKVAPIServiceAddr         string                  `toml:"tikv-api-service-addr" json:"tikv-api-service-addr"`
 	EnableFastReorgCheckpoint  bool                    `toml:"enable-fast-reorg-checkpoint" json:"enable-fast-reorg-checkpoint"`
-	MergeKVRangeCount          int                     `toml:"merge-kv-range-count" json:"merge-kv-range-count"`
+	BackfillRegionBatch        int                     `toml:"backfill-region-batch" json:"backfill-region-batch"`
 	Log                        Log                     `toml:"log" json:"log"`
 	Instance                   Instance                `toml:"instance" json:"instance"`
 	Security                   Security                `toml:"security" json:"security"`
@@ -378,6 +378,9 @@ type Config struct {
 	TiFlashReplicas TiFlashReplicas `toml:"tiflash-replicas" json:"tiflash-replicas"`
 	// Rewrite collations for certain keyspaces
 	RewriteCollations map[string]map[string]string `toml:"rewrite-collations" json:"rewrite-collations"`
+
+	// TiDBServiceScope indicates the role for tidb for distributed task framework.
+	TiDBServiceScope string `toml:"tidb_service_scope" json:"tidb_service_scope"`
 	// EnableOnlyRunUpgrade indicates whether only run upgrade process.
 	EnableOnlyRunUpgrade bool `toml:"enable-only-run-upgrade" json:"enable-only-run-upgrade"`
 	// DisplayTiFlashRU indicates whether show tiflash ru in explain analyze and stmt log.
@@ -647,6 +650,8 @@ type Instance struct {
 	MaxConnections    uint32     `toml:"max_connections" json:"max_connections"`
 	TiDBEnableDDL     AtomicBool `toml:"tidb_enable_ddl" json:"tidb_enable_ddl"`
 	TiDBRCReadCheckTS bool       `toml:"tidb_rc_read_check_ts" json:"tidb_rc_read_check_ts"`
+	// TiDBServiceScope indicates the role for tidb for distributed task framework.
+	TiDBServiceScope string `toml:"tidb_service_scope" json:"tidb_service_scope"`
 }
 
 func (l *Log) getDisableTimestamp() bool {
@@ -1068,6 +1073,7 @@ var defaultConf = Config{
 		MaxConnections:              0,
 		TiDBEnableDDL:               *NewAtomicBool(true),
 		TiDBRCReadCheckTS:           false,
+		TiDBServiceScope:            "",
 	},
 	Status: Status{
 		ReportStatus:          true,

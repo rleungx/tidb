@@ -71,6 +71,7 @@ import (
 	"github.com/pingcap/tidb/util/cpuprofile"
 	"github.com/pingcap/tidb/util/deadlockhistory"
 	"github.com/pingcap/tidb/util/disk"
+	distroleutil "github.com/pingcap/tidb/util/distrole"
 	"github.com/pingcap/tidb/util/domainutil"
 	"github.com/pingcap/tidb/util/gcutil"
 	"github.com/pingcap/tidb/util/kvcache"
@@ -146,6 +147,7 @@ const (
 	nmActivationTimeout = "activation-timeout"
 	nmMaxIdleSeconds    = "max-idle-seconds"
 	nmKeyspaceActivate  = "keyspace-activate"
+	nmTiDBServiceScope  = "tidb-service-scope"
 
 	nmEnableOnlyRunUpgrade = "enable-only-run-upgrade"
 	nmExportID             = "export-id"
@@ -206,7 +208,7 @@ var (
 	maxIdleSeconds    = flag.Uint(nmMaxIdleSeconds, 0, "max idle seconds for a connection, 0 means no limit")
 	// Keyspace Activate
 	keyspaceActivateMode = flagBoolean(nmKeyspaceActivate, false, "start tidb-server as keyspaceActivate")
-
+	serviceScope         = flag.String(nmTiDBServiceScope, "", "tidb service scope")
 	enableOnlyRunUpgrade = flagBoolean(nmEnableOnlyRunUpgrade, false, "only run upgrade and exit")
 
 	exportID = flag.String(nmExportID, "", "export id")
@@ -888,6 +890,17 @@ func overrideConfig(cfg *config.Config) {
 		cfg.KeyspaceName = *keyspaceName
 	}
 
+	if actualFlags[nmTiDBServiceScope] {
+		scope, ok := distroleutil.ToTiDBServiceScope(*serviceScope)
+		if !ok {
+			err := fmt.Errorf("incorrect value: `%s`. %s options: %s",
+				*serviceScope,
+				nmTiDBServiceScope, `"", background`)
+			terror.MustNil(err)
+		}
+		cfg.Instance.TiDBServiceScope = scope
+	}
+
 	if actualFlags[nmStandby] {
 		cfg.StandByMode = *standbyMode
 	}
@@ -1095,6 +1108,10 @@ func setGlobalVars() error {
 	txninfo.Recorder.ResizeSummaries(cfg.TrxSummary.TransactionSummaryCapacity)
 	txninfo.Recorder.SetMinDuration(time.Duration(cfg.TrxSummary.TransactionIDDigestMinDuration) * time.Millisecond)
 	chunk.InitChunkAllocSize(cfg.TiDBMaxReuseChunk, cfg.TiDBMaxReuseColumn)
+
+	if len(cfg.Instance.TiDBServiceScope) > 0 {
+		variable.ServiceScope.Store(strings.ToLower(cfg.Instance.TiDBServiceScope))
+	}
 
 	return nil
 }

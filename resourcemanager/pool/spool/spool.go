@@ -66,10 +66,10 @@ func NewPool(name string, size int32, component util.Component, options ...Optio
 	result.capacity = size
 	result.originCapacity = size
 	result.concurrencyMetrics.Set(float64(size))
-	err := resourcemanager.InstanceResourceManager.Register(result, name, component)
-	if err != nil {
-		return nil, err
-	}
+	// // err := resourcemanager.InstanceResourceManager.Register(result, name, component)
+	// if err != nil {
+	// 	return nil, err
+	// }
 	return result, nil
 }
 

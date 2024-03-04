@@ -89,7 +89,10 @@ func (bc *litBackendCtx) Unregister(jobID, indexID int64) {
 		return
 	}
 
+	// clean up OpenedEngine data
 	ei.Clean()
+	// clean up ClosedEngine data
+	ei.CleanAfterImport()
 	bc.Delete(indexID)
 	bc.MemRoot.ReleaseWithTag(encodeEngineTag(jobID, indexID))
 	bc.MemRoot.Release(StructSizeWriterCtx * int64(ei.writerCount))

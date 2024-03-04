@@ -1063,6 +1063,9 @@ const (
 	AuthenticationLDAPSimpleInitPoolSize = "authentication_ldap_simple_init_pool_size"
 	// AuthenticationLDAPSimpleMaxPoolSize defines the max size of connection pool to LDAP server for SASL plugin.
 	AuthenticationLDAPSimpleMaxPoolSize = "authentication_ldap_simple_max_pool_size"
+
+	// TiDBServiceScope indicates the role for tidb for distributed task framework.
+	TiDBServiceScope = "tidb_service_scope"
 )
 
 // TiDB intentional limits
@@ -1457,6 +1460,7 @@ var (
 	// always set the default value to false because the resource control in kv-client is not inited
 	// It will be initialized to the right value after the first call of `rebuildSysVarCache`
 	EnableResourceControl = atomic.NewBool(false)
+	ServiceScope          = atomic.NewString("")
 	EnableVectorType      = atomic.NewBool(false)
 )
 

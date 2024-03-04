@@ -51,6 +51,13 @@ const (
 // EmptyFileLogConfig is an empty FileLogConfig.
 var EmptyFileLogConfig = FileLogConfig{}
 
+const (
+	// GRPCDebugEnvName is the environment variable name for GRPC_DEBUG.
+	GRPCDebugEnvName = "GRPC_DEBUG"
+	// LogFieldCategory is the field key of log category.
+	LogFieldCategory = "category"
+)
+
 // FileLogConfig serializes file log related config in toml/json.
 type FileLogConfig struct {
 	log.FileLogConfig
@@ -254,6 +261,11 @@ func (*traceLog) Sync() error {
 	return nil
 }
 
+// WithCategory attaches category to context.
+func WithCategory(ctx context.Context, category string) context.Context {
+	return WithFields(ctx, zap.String(LogFieldCategory, category))
+}
+
 // WithKeyValue attaches key/value to context.
 func WithKeyValue(ctx context.Context, key, value string) context.Context {
 	var logger *zap.Logger
@@ -287,4 +299,20 @@ func SetTag(ctx context.Context, key string, value interface{}) {
 	if span := opentracing.SpanFromContext(ctx); span != nil && span.Tracer() != nil {
 		span.SetTag(key, value)
 	}
+}
+
+// WithFields attaches key/value to context.
+func WithFields(ctx context.Context, fields ...zap.Field) context.Context {
+	var logger *zap.Logger
+	if ctxLogger, ok := ctx.Value(CtxLogKey).(*zap.Logger); ok {
+		logger = ctxLogger
+	} else {
+		logger = log.L()
+	}
+
+	if len(fields) > 0 {
+		logger = logger.With(fields...)
+	}
+
+	return context.WithValue(ctx, CtxLogKey, logger)
 }

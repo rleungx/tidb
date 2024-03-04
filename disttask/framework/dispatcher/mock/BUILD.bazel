@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "mock",
+    srcs = ["dispatcher_mock.go"],
+    importpath = "github.com/pingcap/tidb/disttask/framework/dispatcher/mock",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//disttask/framework/dispatcher",
+        "//disttask/framework/proto",
+        "//domain/infosync",
+        "@org_uber_go_mock//gomock",
+    ],
+)

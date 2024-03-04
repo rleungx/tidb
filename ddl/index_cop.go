@@ -157,6 +157,7 @@ func scanRecords(p *copReqSenderPool, task *reorgBackfillTask, se *sess.Session)
 			if p.checkpointMgr != nil {
 				p.checkpointMgr.UpdateTotal(task.id, srcChk.NumRows(), done)
 			}
+
 			idxRs := idxRecResult{id: task.id, chunk: srcChk, done: done, handled: handleChan}
 			failpoint.Inject("MockCopSenderError", func() {
 				idxRs.err = errors.New("mock cop error")

@@ -283,7 +283,7 @@ func (w *worker) runReorgJob(rh *reorgHandler, reorgInfo *reorgInfo, tblInfo *mo
 		deleteETCDRowCntStatIfNecessary(w.ctx, reorgInfo, job, d.etcdCli)
 
 		// Update a job's warnings.
-		w.mergeWarningsIntoJob(job)
+		w.mergeWarningsIntoJob(rc, job)
 
 		d.removeReorgCtx(job.ID)
 
@@ -304,7 +304,7 @@ func (w *worker) runReorgJob(rh *reorgHandler, reorgInfo *reorgInfo, tblInfo *mo
 		updateBackfillProgress(w, reorgInfo, tblInfo, rowCount)
 
 		// Update a job's warnings.
-		w.mergeWarningsIntoJob(job)
+		w.mergeWarningsIntoJob(rc, job)
 
 		rc.resetWarnings()
 
@@ -357,8 +357,7 @@ func overwriteReorgInfoFromGlobalCheckpoint(w *worker, sess *sess.Session, job *
 	return nil
 }
 
-func (w *worker) mergeWarningsIntoJob(job *model.Job) {
-	rc := w.getReorgCtx(job.ID)
+func (w *worker) mergeWarningsIntoJob(rc *reorgCtx, job *model.Job) {
 	rc.mu.Lock()
 	partWarnings := rc.mu.warnings
 	partWarningsCount := rc.mu.warningsCount

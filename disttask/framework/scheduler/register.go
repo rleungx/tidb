@@ -15,61 +15,51 @@
 package scheduler
 
 import (
+	"context"
+
 	"github.com/pingcap/tidb/disttask/framework/proto"
+	"github.com/pingcap/tidb/disttask/framework/scheduler/execute"
 )
 
-type schedulerRegisterOptions struct{}
-
-// Constructor is the constructor of Scheduler.
-type Constructor func(taskMeta []byte, step int64) (Scheduler, error)
-
-// RegisterOption is the register option of Scheduler.
-type RegisterOption func(opts *schedulerRegisterOptions)
-
-// SubtaskExecutorConstructor is the constructor of SubtaskExecutor.
-type SubtaskExecutorConstructor func(minimalTask proto.MinimalTask, step int64) (SubtaskExecutor, error)
-
-type subtaskExecutorRegisterOptions struct {
-	PoolSize int32
+type taskTypeOptions struct {
+	// Summary is the summary of all tasks of the task type.
+	// TODO: better have a summary per task/subtask.
+	Summary *execute.Summary
 }
 
-// SubtaskExecutorRegisterOption is the register option of SubtaskExecutor.
-type SubtaskExecutorRegisterOption func(opts *subtaskExecutorRegisterOptions)
+// TaskTypeOption is the option of TaskType.
+type TaskTypeOption func(opts *taskTypeOptions)
 
 var (
-	schedulerConstructors = make(map[string]Constructor)
-	schedulerOptions      = make(map[string]schedulerRegisterOptions)
-
-	subtaskExecutorConstructors = make(map[string]SubtaskExecutorConstructor)
-	subtaskExecutorOptions      = make(map[string]subtaskExecutorRegisterOptions)
+	// key is task type
+	taskTypes              = make(map[proto.TaskType]taskTypeOptions)
+	taskSchedulerFactories = make(map[proto.TaskType]schedulerFactoryFn)
 )
 
-// RegisterSchedulerConstructor registers the constructor of Scheduler.
-func RegisterSchedulerConstructor(taskType string, constructor Constructor, opts ...RegisterOption) {
-	schedulerConstructors[taskType] = constructor
+type schedulerFactoryFn func(ctx context.Context, id string, task *proto.Task, taskTable TaskTable) Scheduler
 
-	var option schedulerRegisterOptions
+// RegisterTaskType registers the task type.
+func RegisterTaskType(taskType proto.TaskType, factory schedulerFactoryFn, opts ...TaskTypeOption) {
+	var option taskTypeOptions
 	for _, opt := range opts {
 		opt(&option)
 	}
-	schedulerOptions[taskType] = option
+	taskTypes[taskType] = option
+	taskSchedulerFactories[taskType] = factory
 }
 
-// RegisterSubtaskExectorConstructor registers the constructor of SubtaskExecutor.
-func RegisterSubtaskExectorConstructor(taskType string, constructor SubtaskExecutorConstructor, opts ...SubtaskExecutorRegisterOption) {
-	subtaskExecutorConstructors[taskType] = constructor
-
-	var option subtaskExecutorRegisterOptions
-	for _, opt := range opts {
-		opt(&option)
-	}
-	subtaskExecutorOptions[taskType] = option
+// GetSchedulerFactory gets schedulerFactory by task type.
+func GetSchedulerFactory(taskType proto.TaskType) schedulerFactoryFn {
+	return taskSchedulerFactories[taskType]
 }
 
 // ClearSchedulers is only used in test
 func ClearSchedulers() {
-	schedulerConstructors = make(map[string]Constructor)
-	schedulerOptions = make(map[string]schedulerRegisterOptions)
-	subtaskExecutorConstructors = make(map[string]SubtaskExecutorConstructor)
-	subtaskExecutorOptions = make(map[string]subtaskExecutorRegisterOptions)
+	taskTypes = make(map[proto.TaskType]taskTypeOptions)
+	taskSchedulerFactories = make(map[proto.TaskType]schedulerFactoryFn)
+}
+
+// WithSummary is the option of Scheduler to set the summary.
+var WithSummary TaskTypeOption = func(opts *taskTypeOptions) {
+	opts.Summary = execute.NewSummary()
 }

@@ -1911,18 +1911,18 @@ func (w *worker) executeDistGlobalTask(reorgInfo *reorgInfo) error {
 	}
 
 	taskKey := fmt.Sprintf("ddl/%s/%d", taskType, reorgInfo.Job.ID)
-	globalTask, err := globalTaskManager.GetGlobalTaskByKey(taskKey)
+	globalTask, err := globalTaskManager.GetGlobalTaskByKey(w.ctx, taskKey)
 	if err != nil {
 		return err
 	}
 
 	if globalTask == nil {
-		taskID, err := globalTaskManager.AddNewGlobalTask(taskKey, taskType, distPhysicalTableConcurrency, metaData)
+		taskID, err := globalTaskManager.AddNewGlobalTask(w.ctx, taskKey, BackfillTaskType, distPhysicalTableConcurrency, metaData)
 		if err != nil {
 			return nil
 		}
 
-		globalTask, err = globalTaskManager.GetGlobalTaskByID(taskID)
+		globalTask, err = globalTaskManager.GetGlobalTaskByID(w.ctx, taskID)
 		if err != nil {
 			return err
 		}
@@ -1937,7 +1937,7 @@ func (w *worker) executeDistGlobalTask(reorgInfo *reorgInfo) error {
 
 	for {
 		<-ticker.C
-		found, err := globalTaskManager.GetGlobalTaskByID(globalTask.ID)
+		found, err := globalTaskManager.GetTaskByIDWithHistory(w.ctx, globalTask.ID)
 		if err != nil {
 			logutil.BgLogger().Info("[ddl] get global task error", zap.Int64("taskID", globalTask.ID), zap.Error(err))
 			continue
@@ -1952,8 +1952,8 @@ func (w *worker) executeDistGlobalTask(reorgInfo *reorgInfo) error {
 		}
 
 		if found.State == proto.TaskStateReverted {
-			logutil.BgLogger().Error("[ddl] global task reverted", zap.Int64("taskID", globalTask.ID), zap.String("error", string(found.Error)))
-			return errors.New(string(found.Error))
+			logutil.BgLogger().Error("[ddl] global task reverted", zap.Int64("taskID", globalTask.ID), zap.Error(found.Error))
+			return found.Error
 		}
 
 		// TODO: get the original error message.
@@ -1967,7 +1967,7 @@ func (w *worker) executeDistGlobalTask(reorgInfo *reorgInfo) error {
 			}
 
 			if found.State == proto.TaskStatePending || found.State == proto.TaskStateRunning {
-				if err = globalTaskManager.CancelGlobalTask(globalTask.ID); err != nil {
+				if err = globalTaskManager.CancelGlobalTask(w.ctx, globalTask.ID); err != nil {
 					logutil.BgLogger().Error("[ddl] cancel global task error", zap.Int64("taskID", globalTask.ID), zap.Error(err))
 				}
 			}

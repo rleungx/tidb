@@ -53,6 +53,7 @@ type engineInfo struct {
 	jobID        int64
 	indexID      int64
 	openedEngine *backend.OpenedEngine
+	closedEngine *backend.ClosedEngine
 	uuid         uuid.UUID
 	cfg          *backend.EngineConfig
 	writerCount  int
@@ -115,8 +116,8 @@ func (ei *engineInfo) Clean() {
 	}
 }
 
-// ImportAndClean imports the engine data to TiKV and cleans up the local intermediate files.
-func (ei *engineInfo) ImportAndClean() error {
+// Import imports the engine data to TiKV.
+func (ei *engineInfo) Import() error {
 	// Close engine and finish local tasks of lightning.
 	logutil.BgLogger().Info(LitInfoCloseEngine, zap.Int64("job ID", ei.jobID), zap.Int64("index ID", ei.indexID))
 	indexEngine := ei.openedEngine
@@ -126,6 +127,7 @@ func (ei *engineInfo) ImportAndClean() error {
 			zap.Int64("job ID", ei.jobID), zap.Int64("index ID", ei.indexID))
 		return err1
 	}
+	ei.closedEngine = closeEngine
 	ei.openedEngine = nil
 	err := ei.closeWriters()
 	if err != nil {
@@ -144,12 +146,35 @@ func (ei *engineInfo) ImportAndClean() error {
 			zap.Int64("job ID", ei.jobID), zap.Int64("index ID", ei.indexID))
 		return err
 	}
+	return nil
+}
 
-	// Clean up the engine local workspace.
-	err = closeEngine.Cleanup(ei.ctx)
+// CleanAfterImport cleans up the local intermediate files after importing.
+func (ei *engineInfo) CleanAfterImport() error {
+	if ei.closedEngine == nil {
+		return nil
+	}
+
+	err := ei.closedEngine.Cleanup(ei.ctx)
 	if err != nil {
 		logutil.BgLogger().Error(LitErrCloseEngineErr, zap.Error(err),
 			zap.Int64("job ID", ei.jobID), zap.Int64("index ID", ei.indexID))
+		return err
+	}
+
+	// set closedEngine to nil to avoid double cleanup.
+	ei.closedEngine = nil
+	return nil
+}
+
+// ImportAndClean imports the engine data to TiKV and cleans up the local intermediate files.
+func (ei *engineInfo) ImportAndClean() error {
+	err := ei.Import()
+	if err != nil {
+		return err
+	}
+	err = ei.CleanAfterImport()
+	if err != nil {
 		return err
 	}
 	return nil

@@ -589,6 +589,29 @@ const (
        PRIMARY KEY (job_id),
        KEY (create_time),
        KEY (create_user));`
+
+	// CreateDistFrameworkMeta create a system table that distributed task framework use to store meta information
+	CreateDistFrameworkMeta = `CREATE TABLE IF NOT EXISTS mysql.dist_framework_meta (
+        host VARCHAR(100) NOT NULL PRIMARY KEY,
+        role VARCHAR(64),
+        keyspace_id bigint(8) NOT NULL DEFAULT -1);`
+
+	// CreateGlobalTaskHistory is a table about history global task.
+	CreateGlobalTaskHistory = `CREATE TABLE IF NOT EXISTS mysql.tidb_global_task_history (
+		id BIGINT(20) NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    	task_key VARCHAR(256) NOT NULL,
+		type VARCHAR(256) NOT NULL,
+		dispatcher_id VARCHAR(256),
+		state VARCHAR(64) NOT NULL,
+		start_time TIMESTAMP,
+		state_update_time TIMESTAMP,
+		meta LONGBLOB,
+		concurrency INT(11),
+		step INT(11),
+		error BLOB,
+		key(state),
+      	UNIQUE KEY task_key(task_key)
+	);`
 )
 
 // bootstrap initiates system DB for a store.
@@ -875,11 +898,13 @@ const (
 	version145 = 145
 	// version 146 add index for mysql.stats_meta_history and mysql.stats_history.
 	version146 = 146
+	// version 147 merge disttask 7.5
+	version147 = 147
 )
 
 // currentBootstrapVersion is defined as a variable, so we can modify its value for testing.
 // please make sure this is the largest version
-var currentBootstrapVersion int64 = version146
+var currentBootstrapVersion int64 = version147
 
 // DDL owner key's expired time is ManagerSessionTTL seconds, we should wait the time and give more time to have a chance to finish it.
 var internalSQLTimeout = owner.ManagerSessionTTL + 15
@@ -1014,6 +1039,7 @@ var (
 		upgradeToVer144,
 		// We will only use upgradeToVer145 to differentiate versions, so it is skipped here.
 		upgradeToVer146,
+		upgradeToVer147,
 	}
 )
 
@@ -2561,6 +2587,23 @@ func upgradeToVer146(s Session, ver int64) {
 	doReentrantDDL(s, "ALTER TABLE mysql.stats_history ADD INDEX idx_create_time (create_time)", dbterror.ErrDupKeyName)
 }
 
+func upgradeToVer147(s Session, ver int64) {
+	if ver >= version147 {
+		return
+	}
+	logutil.BgLogger().Info("ywq test reach upgrade")
+	// ignore error when upgrading from v7.4 to higher version.
+	doReentrantDDL(s, CreateDistFrameworkMeta, infoschema.ErrTableExists)
+	doReentrantDDL(s, CreateGlobalTaskHistory, infoschema.ErrTableExists)
+	doReentrantDDL(s, "ALTER TABLE mysql.tidb_background_subtask ADD COLUMN `step` INT AFTER `id`", infoschema.ErrColumnExists)
+	doReentrantDDL(s, "ALTER TABLE mysql.tidb_background_subtask ADD COLUMN `summary` JSON", infoschema.ErrColumnExists)
+	doReentrantDDL(s, "ALTER TABLE mysql.tidb_background_subtask_history ADD COLUMN `step` INT AFTER `id`", infoschema.ErrColumnExists)
+	doReentrantDDL(s, "ALTER TABLE mysql.tidb_background_subtask_history ADD COLUMN `error` BLOB", infoschema.ErrColumnExists)
+	doReentrantDDL(s, "ALTER TABLE mysql.tidb_background_subtask_history DROP INDEX `namespace`", dbterror.ErrCantDropFieldOrKey)
+	doReentrantDDL(s, "ALTER TABLE mysql.tidb_background_subtask_history ADD INDEX `idx_task_key`(`task_key`)", dbterror.ErrDupKeyName)
+	doReentrantDDL(s, "ALTER TABLE mysql.tidb_background_subtask_history ADD INDEX `idx_state_update_time`(`state_update_time`)", dbterror.ErrDupKeyName)
+}
+
 func writeOOMAction(s Session) {
 	comment := "oom-action is `log` by default in v3.0.x, `cancel` by default in v4.0.11+"
 	mustExecute(s, `INSERT HIGH_PRIORITY INTO %n.%n VALUES (%?, %?, %?) ON DUPLICATE KEY UPDATE VARIABLE_VALUE= %?`,
@@ -2673,8 +2716,12 @@ func doDDLWorks(s Session) {
 	mustExecute(s, CreateTTLJobHistory)
 	// Create tidb_global_task table
 	mustExecute(s, CreateGlobalTask)
+	// Create tidb_global_task_history table
+	mustExecute(s, CreateGlobalTaskHistory)
 	// Create load_data_jobs
 	mustExecute(s, CreateLoadDataJobs)
+	// create dist_framework_meta
+	mustExecute(s, CreateDistFrameworkMeta)
 }
 
 // doBootstrapSQLFile executes SQL commands in a file as the last stage of bootstrap.

@@ -12,22 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package proto
+package backoff
 
-// TaskStep of Example.
-const (
-	StepOne = iota
-	StepTwo
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
-// TaskExample is the example task.
-type TaskExample struct{}
-
-// SubtaskExample is the example subtask.
-type SubtaskExample struct{}
-
-// MinimalTaskExample is the minimal example task.
-type MinimalTaskExample struct{}
-
-// IsMinimalTask is used to implement the proto.MinimalTask interface.
-func (MinimalTaskExample) IsMinimalTask() {}
+func TestExponential(t *testing.T) {
+	backoffer := NewExponential(1, 1, 1)
+	for i := 0; i < 10; i++ {
+		require.Equal(t, time.Duration(1), backoffer.Backoff(i))
+	}
+	backoffer = NewExponential(1, 1, 10)
+	for i := 0; i < 10; i++ {
+		require.Equal(t, time.Duration(1), backoffer.Backoff(i))
+	}
+	backoffer = NewExponential(1, 2, 10)
+	res := []time.Duration{1, 2, 4, 8, 10, 10, 10, 10, 10, 10}
+	for i := 0; i < 10; i++ {
+		require.Equal(t, res[i], backoffer.Backoff(i))
+	}
+}

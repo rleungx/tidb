@@ -268,7 +268,7 @@ type ingestBackfillScheduler struct {
 
 	copReqSenderPool *copReqSenderPool
 
-	writerPool    *workerpool.WorkerPool[idxRecResult]
+	writerPool    *workerpool.WorkerPool[idxRecResult, workerpool.None]
 	writerMaxID   int
 	poolErr       chan error
 	backendCtx    ingest.BackendCtx
@@ -308,12 +308,9 @@ func (b *ingestBackfillScheduler) setupWorkers() error {
 	}
 	b.copReqSenderPool = copReqSenderPool
 	readerCnt, writerCnt := b.expectedWorkerSize()
-	skipReg := workerpool.OptionSkipRegister[idxRecResult]{}
-	writerPool, err := workerpool.NewWorkerPool[idxRecResult]("ingest_writer",
-		poolutil.DDL, writerCnt, b.createWorker, skipReg)
-	if err != nil {
-		return errors.Trace(err)
-	}
+	writerPool := workerpool.NewWorkerPool[idxRecResult]("ingest_writer",
+		poolutil.DDL, writerCnt, b.createWorker)
+	writerPool.Start(b.ctx)
 	b.writerPool = writerPool
 	b.copReqSenderPool.chunkSender = writerPool
 	b.copReqSenderPool.adjustSize(readerCnt)
@@ -382,7 +379,7 @@ func (b *ingestBackfillScheduler) adjustWorkerSize() error {
 	return nil
 }
 
-func (b *ingestBackfillScheduler) createWorker() workerpool.Worker[idxRecResult] {
+func (b *ingestBackfillScheduler) createWorker() workerpool.Worker[idxRecResult, workerpool.None] {
 	reorgInfo := b.reorgInfo
 	job := reorgInfo.Job
 	sessCtx, err := newSessCtx(reorgInfo)
@@ -447,7 +444,7 @@ func (b *ingestBackfillScheduler) expectedWorkerSize() (readerSize int, writerSi
 	return readerSize, writerSize
 }
 
-func (w *addIndexIngestWorker) HandleTask(rs idxRecResult) {
+func (w *addIndexIngestWorker) HandleTask(rs idxRecResult, _ func(workerpool.None)) {
 	defer util.Recover(metrics.LabelDDL, "ingestWorker.HandleTask", func() {
 		w.resultCh <- &backfillResult{taskID: rs.id, err: dbterror.ErrReorgPanic}
 	}, false)
@@ -460,28 +457,31 @@ func (w *addIndexIngestWorker) HandleTask(rs idxRecResult) {
 		logutil.BgLogger().Error("[ddl-ingest] encounter error when handle index chunk",
 			zap.Int("id", rs.id), zap.Error(rs.err))
 		if rs.handled != nil {
-			rs.handled <- struct{}{}
+			close(rs.handled)
 		}
 		w.resultCh <- result
 		return
 	}
-	if !w.distribute {
-		err := w.d.isReorgRunnable(w.jobID, false)
-		if err != nil {
-			logutil.BgLogger().Error("[ddl-ingest] reorg job is not runnable", zap.Error(err), zap.Int("id", rs.id))
-			close(rs.handled)
-			result.err = err
-			w.resultCh <- result
-			return
-		}
-	}
-	count, nextKey, err := w.WriteLocal(&rs)
-	rs.handled <- struct{}{}
+
+	err := w.d.isReorgRunnable(w.jobID, w.distribute)
 	if err != nil {
+		logutil.BgLogger().Error("[ddl-ingest] encounter error when check reorg is runnable", zap.Int("id", rs.id), zap.Error(err))
+		close(rs.handled)
 		result.err = err
 		w.resultCh <- result
 		return
 	}
+
+	count, nextKey, err := w.WriteLocal(&rs)
+	if err != nil {
+		logutil.BgLogger().Error("[ddl-ingest] encounter error when write chunk", zap.Int("id", rs.id), zap.Error(err))
+		close(rs.handled)
+		result.err = err
+		w.resultCh <- result
+		return
+	}
+
+	rs.handled <- struct{}{}
 	if count == 0 {
 		logutil.BgLogger().Info("[ddl-ingest] finish a cop-request task", zap.Int("id", rs.id))
 		return
@@ -500,6 +500,7 @@ func (w *addIndexIngestWorker) HandleTask(rs idxRecResult) {
 		ResultCounterForTest.Add(1)
 	}
 	w.resultCh <- result
+	return
 }
 
 func (w *addIndexIngestWorker) Close() {}

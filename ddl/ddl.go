@@ -701,17 +701,16 @@ func newDDL(ctx context.Context, options ...Option) *ddl {
 		ddlJobCh:          make(chan struct{}, 100),
 	}
 
-	scheduler.RegisterSchedulerConstructor("backfill",
-		func(taskMeta []byte, step int64) (scheduler.Scheduler, error) {
-			return NewBackfillSchedulerHandle(taskMeta, d, step == proto.StepTwo)
+	dispatcher.RegisterDispatcherFactory(BackfillTaskType,
+		func(ctx context.Context, taskMgr dispatcher.TaskManager, serverID string, task *proto.Task) dispatcher.Dispatcher {
+			return newBackfillDispatcher(ctx, d, taskMgr, serverID, task)
 		})
 
-	dispatcher.RegisterTaskFlowHandle(BackfillTaskType, NewLitBackfillFlowHandle(d))
-	scheduler.RegisterSubtaskExectorConstructor(BackfillTaskType, func(minimalTask proto.MinimalTask, step int64) (scheduler.SubtaskExecutor, error) {
-		return &BackFillSubtaskExecutor{
-			Task: minimalTask,
-		}, nil
-	})
+	scheduler.RegisterTaskType(BackfillTaskType,
+		func(ctx context.Context, id string, task *proto.Task, taskTable scheduler.TaskTable) scheduler.Scheduler {
+			return newBackfillDistScheduler(ctx, id, task, taskTable, d)
+		},
+	)
 
 	// Register functions for enable/disable ddl when changing system variable `tidb_enable_ddl`.
 	variable.EnableDDL = d.EnableDDL

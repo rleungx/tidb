@@ -1737,8 +1737,8 @@ def go_deps():
         name = "com_github_golang_mock",
         build_file_proto_mode = "disable_global",
         importpath = "github.com/golang/mock",
-        sum = "h1:ErTB+efbowRARo13NNdxyJji2egdxLGQhRaY+DUumQc=",
-        version = "v1.6.0",
+        sum = "h1:jlYHihg//f7RRwuPfptm04yp4s7O6Kw8EZiVYIGcH0g=",
+        version = "v1.5.0",
     )
     go_repository(
         name = "com_github_golang_protobuf",
@@ -6558,6 +6558,13 @@ def go_deps():
         importpath = "go.uber.org/goleak",
         sum = "h1:NBol2c7O1ZokfZ0LEU9K6Whx/KnwvepVetCUhtKja4A=",
         version = "v1.2.1",
+    )
+    go_repository(
+        name = "org_uber_go_mock",
+        build_file_proto_mode = "disable",
+        importpath = "go.uber.org/mock",
+        sum = "h1:3mUxI1No2/60yUYax92Pt8eNOEecx2D3lcXZh2NEZJo=",
+        version = "v0.3.0",
     )
     go_repository(
         name = "org_uber_go_multierr",
