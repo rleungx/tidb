@@ -97,7 +97,7 @@ require (
 	github.com/tdakkota/asciicheck v0.2.0
 	github.com/tiancaiamao/appdash v0.0.0-20181126055449-889f96f722a2
 	github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client v0.0.0-20240115055049-6b4e366cf857
-	github.com/tikv/client-go/v2 v2.0.8-0.20240127012913-f3d4bda9fd85
+	github.com/tikv/client-go/v2 v2.0.8-0.20240304062027-038a52519d39
 	github.com/tikv/pd/client v0.0.0-20240301074832-6cb89172ce73
 	github.com/timakin/bodyclose v0.0.0-20221125081123-e39cf3fc478e
 	github.com/twmb/murmur3 v1.1.6
@@ -322,5 +322,3 @@ replace (
 	sourcegraph.com/sourcegraph/appdash => github.com/sourcegraph/appdash v0.0.0-20190731080439-ebfcffb1b5c0
 	sourcegraph.com/sourcegraph/appdash-data => github.com/sourcegraph/appdash-data v0.0.0-20151005221446-73f23eafcf67
 )
-
-replace github.com/tikv/client-go/v2 => github.com/rleungx/client-go/v2 v2.0.0-20240301084547-e93024b64a71
