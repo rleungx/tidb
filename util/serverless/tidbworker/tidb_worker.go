@@ -19,8 +19,6 @@ import (
 	"sync"
 
 	"github.com/pingcap/tidb/sessionctx"
-
-	workercli "github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client"
 )
 
 var (
@@ -32,14 +30,33 @@ var (
 
 // Manager is used to manage TiDB worker.
 type Manager interface {
-	workercli.Client
+	// Role returns the role of the TiDB worker.
+	Role() string
+
 	// InitializeGC registers all existing GC tasks to TiDB worker service.
 	InitializeGC(ctx context.Context, sctx sessionctx.Context) error
+	// RegisterGC notifies the manager that a gc task is registered at ts.
+	// Should only be used by user tidb.
+	RegisterGC(ctx context.Context, ts uint64) error
+	// RecycleGC notifies the manager that all tasks at or before safePoint are finished.
+	// Should only be called by worker.
+	RecycleGC(ctx context.Context, safePoint uint64) error
+
 	// InitializeGCV2 registers the initial GCV2 task to TiDB worker service, this is used to make sure
 	// at least one GCV2 task exists in TiDB worker service.
 	InitializeGCV2(ctx context.Context) error
 	// AbortGCV2 aborts all the GCV2 tasks in TiDB worker service.
 	AbortGCV2(ctx context.Context) error
-	// Role returns the role of the TiDB worker.
-	Role() string
+	// RegisterGCV2 notifies the manager that a round of gc has been performed at gcLastRunTime,
+	// with logical timestamp ts.
+	RegisterGCV2(ctx context.Context, gcLastRunTime int64, ts uint64) error
+	// RecycleGCV2 notifies the manager that all tasks at or before safePoint are finished.
+	RecycleGCV2(ctx context.Context, safePoint uint64) error
+
+	// RegisterBgTask notifies the manager that a background task is registered.
+	// Should only be used by user tidb.
+	RegisterBgTask(ctx context.Context, taskType, taskKey string, gTaskID, subTaskID int64, execID string) error
+	// RecycleBgTask notifies the manager that a background global task is finished.
+	// Should only be called by worker.
+	RecycleBgTask(ctx context.Context, gTaskID int64, taskKey string) error
 }

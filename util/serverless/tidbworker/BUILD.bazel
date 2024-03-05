@@ -13,6 +13,7 @@ go_library(
         "//config",
         "//ddl/util",
         "//domain/infosync",
+        "//metrics",
         "//sessionctx",
         "//util/logutil",
         "@com_github_pingcap_errors//:errors",

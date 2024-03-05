@@ -23,6 +23,7 @@ import (
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/config"
 	ddlutil "github.com/pingcap/tidb/ddl/util"
+	"github.com/pingcap/tidb/metrics"
 	"github.com/pingcap/tidb/sessionctx"
 	workercli "github.com/tidbcloud/aws-shared-provider/pkg/tidbworker/client"
 	"go.uber.org/zap"
@@ -40,6 +41,10 @@ const (
 	WorkerTypeDDL = "ddl"
 	// WorkerTypeBatch is the type of batch background task.
 	WorkerTypeBatch = "batch"
+	// WorkerTypeGCV2 is the type of GCV2 background task.
+	WorkerTypeGCV2 = "gcv2"
+	// WorkerTypeGC is the type of GC background task.
+	WorkerTypeGC = "gc"
 )
 
 // TaskWorkerType converts the task type in global to the type of TiDB worker.
@@ -73,6 +78,7 @@ func InitManager(ctx context.Context, keyspaceName string, cfg config.TiDBWorker
 
 func (m *manager) InitializeGC(ctx context.Context, sctx sessionctx.Context) error {
 	log.Info("[tidb-worker] initialize GC tasks")
+	metrics.WorkerTaskCounter.WithLabelValues(WorkerTypeGC, metrics.InitializeWorkerTasks, "").Inc()
 	tasks, err := ddlutil.LoadDeleteRanges(ctx, sctx, math.MaxUint64)
 	if err != nil {
 		return errors.Trace(err)
@@ -88,6 +94,7 @@ func (m *manager) InitializeGC(ctx context.Context, sctx sessionctx.Context) err
 
 func (m *manager) InitializeGCV2(ctx context.Context) error {
 	log.Info("[tidb-worker] initialize GCV2 tasks")
+	metrics.WorkerTaskCounter.WithLabelValues(WorkerTypeGCV2, metrics.InitializeWorkerTasks, "").Inc()
 	// Use 0 as the timestamp to make sure this task can be cleaned by the completion of any other GCV2 task.
 	err := m.RegisterGCV2(ctx, time.Now().Unix(), 0)
 	if err != nil {
@@ -98,11 +105,13 @@ func (m *manager) InitializeGCV2(ctx context.Context) error {
 
 func (m *manager) RegisterGC(ctx context.Context, ts uint64) error {
 	log.Info("[tidb-worker] register a GC task to worker service", zap.Uint64("ts", ts))
+	metrics.WorkerTaskCounter.WithLabelValues(WorkerTypeGC, metrics.RegisterWorkerTask, "").Inc()
 	return m.client.RegisterGC(ctx, ts)
 }
 
 func (m *manager) RecycleGC(ctx context.Context, safePoint uint64) error {
 	log.Info("[tidb-worker] notify worker service to recycle a GC task", zap.Uint64("safe-point", safePoint))
+	metrics.WorkerTaskCounter.WithLabelValues(WorkerTypeGC, metrics.RecycleWorkerTask, "").Inc()
 	return m.client.RecycleGC(ctx, safePoint)
 }
 
@@ -111,16 +120,19 @@ func (m *manager) RegisterGCV2(ctx context.Context, gcLastRunTime int64, ts uint
 		zap.Int64("gc-last-run-time", gcLastRunTime),
 		zap.Uint64("ts", ts),
 	)
+	metrics.WorkerTaskCounter.WithLabelValues(WorkerTypeGCV2, metrics.RegisterWorkerTask, "").Inc()
 	return m.client.RegisterGCV2(ctx, gcLastRunTime, ts)
 }
 
 func (m *manager) RecycleGCV2(ctx context.Context, safePoint uint64) error {
 	log.Info("[tidb-worker] register a GCV2 task to worker service", zap.Uint64("safe-point", safePoint))
+	metrics.WorkerTaskCounter.WithLabelValues(WorkerTypeGCV2, metrics.RecycleWorkerTask, "").Inc()
 	return m.client.RecycleGCV2(ctx, safePoint)
 }
 
 func (m *manager) AbortGCV2(ctx context.Context) error {
 	log.Info("[tidb-worker] abort all GCV2 tasks")
+	metrics.WorkerTaskCounter.WithLabelValues(WorkerTypeGCV2, metrics.AbortWorkerTask, "").Inc()
 	return m.client.RecycleGCV2(ctx, math.MaxUint64)
 }
 
@@ -136,10 +148,12 @@ func (m *manager) RegisterBgTask(ctx context.Context, taskType, taskKey string, 
 		zap.Int64("subtask-id", subTaskID),
 		zap.String("exec-id", execID),
 	)
+	metrics.WorkerTaskCounter.WithLabelValues(taskType, metrics.RegisterWorkerTask, taskKey).Inc()
 	return m.client.RegisterBgTask(ctx, taskType, taskKey, gTaskID, subTaskID, execID)
 }
 
-func (m *manager) RecycleBgTask(ctx context.Context, gTaskID int64) error {
+func (m *manager) RecycleBgTask(ctx context.Context, gTaskID int64, taskKey string) error {
 	log.Info("[tidb-worker] recycle a background task from worker service", zap.Int64("global-task-id", gTaskID))
+	metrics.WorkerTaskCounter.WithLabelValues("", metrics.RecycleWorkerTask, taskKey).Inc()
 	return m.client.RecycleBgTask(ctx, gTaskID)
 }

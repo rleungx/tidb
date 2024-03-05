@@ -276,4 +276,7 @@ const (
 	LblFairLockingStmtUsed      = "stmt-used"
 	LblFairLockingStmtEffective = "stmt-effective"
 	LblScope                    = "scope"
+
+	LblStep   = "step"
+	LblTaskID = "task_id"
 )

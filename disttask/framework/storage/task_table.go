@@ -736,7 +736,7 @@ func (stm *TaskManager) UpdateGlobalTaskAndAddSubTasks(ctx context.Context, gTas
 		if variable.EnableDistTask.Load() && tidbworker.IsBgTaskMaster(string(gTask.Type)) {
 			switch gTask.State {
 			case proto.TaskStateSucceed, proto.TaskStateFailed, proto.TaskStateReverted, proto.TaskStateRevertFailed:
-				err = tidbworker.GlobalTiDBWorkerManager.RecycleBgTask(ctx, gTask.ID)
+				err = tidbworker.GlobalTiDBWorkerManager.RecycleBgTask(ctx, gTask.ID, gTask.Key)
 			}
 		}
 

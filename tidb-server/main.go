@@ -614,7 +614,7 @@ func initTiDBWorkerManager() error {
 		return nil
 	}
 
-	log.Warn("[tidb-worker] init global TiDB worker manager")
+	log.Info("[tidb-worker] init global TiDB worker manager")
 	ctx := context.Background()
 	if err := tidbworker.InitManager(ctx, config.GetGlobalKeyspaceName(), workerConfig); err != nil {
 		return errors.Trace(err)
