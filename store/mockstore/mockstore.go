@@ -92,6 +92,7 @@ type mockOptions struct {
 	txnLocalLatches  uint
 	storeType        StoreType
 	ddlCheckerHijack bool
+	pdAddrs          []string
 }
 
 // MockTiKVStoreOption is used to control some behavior of mock tikv.
