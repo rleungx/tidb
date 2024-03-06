@@ -64,12 +64,6 @@ type TiDBWorker struct {
 	RegistryAddr string `toml:"registry-addr" json:"registry-addr"`
 	// APIServerAddr specifies the address of the TiDB worker API server.
 	APIServerAddr string `toml:"api-server" json:"api-server"`
-	// DDLWorkerCount specifies the desired number of DDL workers.
-	// It only applies when TiDB is running as master.
-	DDLWorkerCount int `toml:"ddl-worker-count" json:"ddl-worker-count"`
-	// BatchWorkerCount specifies the desired number of batch workers.
-	// It only applies when TiDB is running as master.
-	BatchWorkerCount int `toml:"batch-worker-count" json:"batch-worker-count"`
 	// ExecID specifies execID when TiDB is running as ddl worker.
 	ExecID string `toml:"exec-id" json:"exec-id"`
 }
