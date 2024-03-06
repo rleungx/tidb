@@ -37,7 +37,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http" //nolint:goimports
-
 	// For pprof
 	_ "net/http/pprof" // #nosec G108
 	"os"
@@ -155,6 +154,8 @@ type Server struct {
 	inShutdownMode *uatomic.Bool
 	health         *uatomic.Bool
 
+	skipGracefullyShutdownWait *uatomic.Bool
+
 	sessionMapMutex     sync.Mutex
 	internalSessions    map[interface{}]struct{}
 	autoIDService       *autoid.Service
@@ -237,16 +238,17 @@ func (s *Server) newConn(conn net.Conn) *clientConn {
 // NewServer creates a new Server.
 func NewServer(cfg *config.Config, driver IDriver) (*Server, error) {
 	s := &Server{
-		cfg:               cfg,
-		driver:            driver,
-		concurrentLimiter: NewTokenLimiter(cfg.TokenLimit),
-		clients:           make(map[uint64]*clientConn),
-		normalClosedConns: make(map[string]string),
-		globalConnID:      util.NewGlobalConnID(0, true),
-		internalSessions:  make(map[interface{}]struct{}, 100),
-		health:            uatomic.NewBool(true),
-		inShutdownMode:    uatomic.NewBool(false),
-		printMDLLogTime:   time.Now(),
+		cfg:                        cfg,
+		driver:                     driver,
+		concurrentLimiter:          NewTokenLimiter(cfg.TokenLimit),
+		clients:                    make(map[uint64]*clientConn),
+		normalClosedConns:          make(map[string]string),
+		globalConnID:               util.NewGlobalConnID(0, true),
+		internalSessions:           make(map[interface{}]struct{}, 100),
+		health:                     uatomic.NewBool(true),
+		inShutdownMode:             uatomic.NewBool(false),
+		skipGracefullyShutdownWait: uatomic.NewBool(false),
+		printMDLLogTime:            time.Now(),
 	}
 	s.zeroConnCond = sync.NewCond(&s.rwlock)
 	s.capability = defaultCapability
@@ -558,6 +560,7 @@ func (s *Server) startShutdown() {
 	// before acquiring the s.rwlock and blocking connections.
 	maxWaitTime := time.Duration(s.cfg.GracefulWaitBeforeShutdown) * time.Second
 	if maxWaitTime > 0 {
+		time.Sleep(1 * time.Second) // waiting for some connections handshake to complete.
 		logutil.BgLogger().Info("waiting for stray connections before starting shutdown process", zap.Duration("maxWaitTime", maxWaitTime))
 
 		failpoint.Inject("forceWaitBeforeShutdown", func() {
@@ -621,9 +624,16 @@ func (s *Server) closeListener() {
 
 var gracefulCloseConnectionsTimeout = 15 * time.Second
 
+// ForceShutdown sets the server to skip gracefully shutdown wait.
+func (s *Server) ForceShutdown() {
+	s.skipGracefullyShutdownWait.Store(true)
+}
+
 // Close closes the server.
 func (s *Server) Close() {
-	s.startShutdown()
+	if !s.skipGracefullyShutdownWait.Load() {
+		s.startShutdown()
+	}
 	s.rwlock.Lock() // // prevent new connections
 	defer s.rwlock.Unlock()
 	s.inShutdownMode.Store(true)

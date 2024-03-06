@@ -73,8 +73,7 @@ func StartWatchLastActive(sm sessionManager, maxIdleSecs int) {
 					zap.Int("client-interactive-count", clientInteractiveCount))
 
 				if (connCount == 0 || processCount == 0) && inTransCount == 0 && clientInteractiveCount == 0 {
-					// insure no active connections due to skip grace wait, exit.
-					sm.KillAllConnections()
+					sm.ForceShutdown()
 					SaveTidbNormalRestartInfo("connection idle for too long")
 					signal.TiDBExit()
 				}

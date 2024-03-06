@@ -68,7 +68,7 @@ type sessionManager interface {
 	GetUserProcessList() map[uint64]*util.ProcessInfo
 	GetClientCapabilityList() map[uint64]uint32
 	GetNormalClosedConn(keyspaceName, connID string) string
-	KillAllConnections()
+	ForceShutdown()
 }
 
 var (
@@ -231,9 +231,9 @@ func Handler(sm sessionManager) *http.ServeMux {
 		}
 	})
 	mux.HandleFunc("/tidb-pool/exit", keyspaceChecker(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logutil.BgLogger().Info("receiving exit request, may exit after kill all connections...")
+		logutil.BgLogger().Info("receiving exit request")
 		if sm != nil {
-			sm.KillAllConnections()
+			sm.ForceShutdown()
 			SaveTidbNormalRestartInfo("received exit request")
 		}
 		w.WriteHeader(http.StatusOK)
