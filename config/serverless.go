@@ -66,6 +66,25 @@ type TiDBWorker struct {
 	APIServerAddr string `toml:"api-server" json:"api-server"`
 	// ExecID specifies execID when TiDB is running as ddl worker.
 	ExecID string `toml:"exec-id" json:"exec-id"`
+
+	// LocalMode allows tidb to skip the tidb-worker registry and return a local bg task config.
+	LocalMode LocalMode `toml:"local-mode" json:"local-mode"`
+}
+
+// LocalMode is the config for local mode.
+type LocalMode struct {
+	// Enable indicates whether to start the TiDB worker manager in local mode.
+	Enable bool `toml:"enable" json:"enable"`
+	// BgTaskConfig specifies the response of the TiDB worker API server in local mode.
+	BgTaskConfig map[string]BgTaskConfig `toml:"bg-task-config" json:"bg-task-config"`
+}
+
+// BgTaskConfig is the config for background task.
+type BgTaskConfig struct {
+	// Paused indicates whether the specific background task is paused.
+	Paused bool `toml:"paused" json:"paused"`
+	// WorkerCount indicates the number of workers for the specific background task.
+	WorkerCount int `toml:"worker-count" json:"worker-count"`
 }
 
 const (
@@ -89,6 +108,15 @@ func defaultTiDBWorker() TiDBWorker {
 		TidbPool:      "tidb-pool",
 		RegistryAddr:  "root:@tcp(serverless-cluster-tidb.tidb-serverless.svc:4000)/serverless",
 		APIServerAddr: "http://scaler-svc.tidb-worker:9080",
+		LocalMode:     defaultLocalMode(),
+	}
+}
+
+// defaultLocalMode creates a new LocalMode.
+func defaultLocalMode() LocalMode {
+	return LocalMode{
+		Enable:       false,
+		BgTaskConfig: make(map[string]BgTaskConfig),
 	}
 }
 
@@ -118,7 +146,7 @@ func (w *TiDBWorker) Valid(c *Config) error {
 			// When running as master without enabling SafePointV2, need to disable GC drop table.
 			c.SkipGCWorker = true
 		}
-		if tryConnect(w.RegistryAddr) != nil {
+		if !w.LocalMode.Enable && tryConnect(w.RegistryAddr) != nil {
 			logutil.BgLogger().Error("failed to connect to tidb worker service, fallback to standalone mode")
 			w.Enable = false
 			return nil

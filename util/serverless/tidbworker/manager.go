@@ -62,6 +62,13 @@ func TaskWorkerType(taskType string) string {
 // InitManager initialize the global TiDB worker manager with the given backend.
 func InitManager(ctx context.Context, keyspaceName string, cfg config.TiDBWorker) (err error) {
 	once.Do(func() {
+		if cfg.LocalMode.Enable {
+			GlobalTiDBWorkerManager = &manager{
+				client: &localClient{},
+				role:   cfg.Role,
+			}
+			return
+		}
 		var c workercli.Client
 		c, err = workercli.NewClientWithContext(ctx, keyspaceName, cfg.TidbPool, cfg.RegistryAddr)
 		if err != nil {

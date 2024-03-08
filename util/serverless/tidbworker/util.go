@@ -87,6 +87,14 @@ func IsWorkerExecID(execID, workerType string) bool {
 }
 
 func loadBgTaskConfig(workerType string) (enabled bool, workerCount int, err error) {
+	if config.GetGlobalConfig().TiDBWorker.LocalMode.Enable {
+		cfg, ok := config.GetGlobalConfig().TiDBWorker.LocalMode.BgTaskConfig[workerType]
+		if !ok {
+			return false, 0, nil
+		}
+		return !cfg.Paused, cfg.WorkerCount, nil
+	}
+
 	addr, err := url.JoinPath(config.GetGlobalConfig().TiDBWorker.APIServerAddr, "scaler/api/v1/bgtask", workerType+"-worker")
 	if err != nil {
 		return false, 0, err
@@ -97,11 +105,7 @@ func loadBgTaskConfig(workerType string) (enabled bool, workerCount int, err err
 	}
 	defer res.Body.Close()
 
-	type config struct {
-		Paused      bool `json:"paused"`
-		WorkerCount int  `json:"worker-count"`
-	}
-	var cfg config
+	var cfg config.BgTaskConfig
 	err = json.NewDecoder(res.Body).Decode(&cfg)
 	if err != nil {
 		return false, 0, err
