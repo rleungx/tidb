@@ -1113,6 +1113,8 @@ func setGlobalVars() error {
 		variable.ServiceScope.Store(strings.ToLower(cfg.Instance.TiDBServiceScope))
 	}
 
+	variable.EnableDistTask.Store(cfg.EnableDistTask)
+
 	return nil
 }
 

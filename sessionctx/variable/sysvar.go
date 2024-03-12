@@ -1215,6 +1215,10 @@ var defaultSysVars = []*SysVar{
 		return BoolToOnOff(EnableMDL.Load()), nil
 	}},
 	{Scope: ScopeGlobal, Name: TiDBEnableDistTask, Value: BoolToOnOff(DefTiDBEnableDistTask), Type: TypeBool, SetGlobal: func(_ context.Context, s *SessionVars, val string) error {
+		// Skip apply setting unless in test.
+		if !intest.InTest {
+			return nil
+		}
 		if EnableDistTask.Load() != TiDBOptOn(val) {
 			EnableDistTask.Store(TiDBOptOn(val))
 		}

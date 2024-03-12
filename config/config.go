@@ -321,6 +321,8 @@ type Config struct {
 	ExportID                   string `toml:"export-id" json:"export-id"`
 
 	TiDBWorker TiDBWorker `toml:"tidb-worker" json:"tidb-worker"`
+	// EnableDistTask is used overwrite the user config `tidb_enable_dist_task`.
+	EnableDistTask bool `toml:"enable-dist-task" json:"enable-dist-task"`
 
 	AuditLog AuditLog `toml:"audit-log" json:"audit-log"`
 
@@ -1205,6 +1207,7 @@ var defaultConf = Config{
 	ExportID:          "",
 
 	ForceEnableVectorType: false,
+	EnableDistTask:        false,
 }
 
 var (
