@@ -858,9 +858,13 @@ func TestGetLock(t *testing.T) {
 	tk := testkit.NewTestKit(t, store)
 
 	// Increase pessimistic txn max retry count to make test more stable.
-	cfg := config.GetGlobalConfig()
-	cfg.PessimisticTxn.MaxRetryCount = 2048
-	config.StoreGlobalConfig(cfg)
+	originCfg := config.GetGlobalConfig()
+	newCfg := *originCfg
+	newCfg.PessimisticTxn.MaxRetryCount = 10240
+	config.StoreGlobalConfig(&newCfg)
+	defer func() {
+		config.StoreGlobalConfig(originCfg)
+	}()
 
 	err := tk.ExecToErr("SET GLOBAL tidb_lock_unchanged_keys = true")
 	// No timeout specified
