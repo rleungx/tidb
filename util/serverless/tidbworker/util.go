@@ -70,10 +70,15 @@ func SchedulerNodes(workerType string, gTaskID int64) []*infosync.ServerInfo {
 	if !enabled || nodeCount == 0 {
 		return nil
 	}
+	nodeIP := workerIDPrefix + workerType
+	// If not in local mode, append the global task ID to the node IP.
+	if !config.GetGlobalConfig().TiDBWorker.LocalMode.Enable || !config.GetGlobalConfig().TiDBWorker.LocalMode.StaticExecID {
+		nodeIP += "-" + strconv.FormatInt(gTaskID, 10)
+	}
 	nodes := make([]*infosync.ServerInfo, nodeCount)
 	for i := 0; i < nodeCount; i++ {
 		nodes[i] = &infosync.ServerInfo{
-			IP:   workerIDPrefix + workerType + "-" + strconv.FormatInt(gTaskID, 10),
+			IP:   nodeIP,
 			Port: uint(i),
 		}
 	}

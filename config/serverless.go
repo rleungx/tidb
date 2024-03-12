@@ -77,6 +77,8 @@ type LocalMode struct {
 	Enable bool `toml:"enable" json:"enable"`
 	// BgTaskConfig specifies the response of the TiDB worker API server in local mode.
 	BgTaskConfig map[string]BgTaskConfig `toml:"bg-task-config" json:"bg-task-config"`
+	// StaticExecID fixes the execID of the task generated in local mode.
+	StaticExecID bool `toml:"static-exec-id" json:"static-exec-id"`
 }
 
 // BgTaskConfig is the config for background task.
@@ -117,6 +119,7 @@ func defaultLocalMode() LocalMode {
 	return LocalMode{
 		Enable:       false,
 		BgTaskConfig: make(map[string]BgTaskConfig),
+		StaticExecID: false,
 	}
 }
 
